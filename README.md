@@ -91,11 +91,11 @@ AppDrop's in-app updater checks GitHub Releases hourly and, when a new version i
 
 ## Using AppDrop
 
-### The catalog
+### Browse by category
 
-<img src="screenshots/screenshot-11.png" width="500" alt="Catalog grid">
+<img src="screenshots/screenshot-home.png" width="500" alt="Categories home on iPad">
 
-Browse 43,000+ unique apps (every archived version is available too). Tap *Filters* to narrow by iOS version, device, or sort order. Tap *Select* to enter multi-pick mode for batch installs.
+The home screen sorts 43,000+ vintage apps into categories (Games, Utilities, Entertainment…), with quick rows for **All apps** and **Works Today**. Tap a category to browse it, *Filters* to narrow by iOS version, device, or sort order, and *Select* for multi-pick batch installs.
 
 ### AI search
 
