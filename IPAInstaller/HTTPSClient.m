@@ -20,6 +20,51 @@ static NSError *mkErr(NSInteger code, NSString *msg) {
                             userInfo:@{NSLocalizedDescriptionKey: msg}];
 }
 
+// DNS-over-HTTPS fallback. When the system resolver can't look a host up — e.g. a carrier
+// blocks it at the DNS level (the "DNS: nodename nor servname provided" failure some users in
+// censored regions hit on every download) — resolve it ourselves via Google's DoH JSON API,
+// reached by its LITERAL IP 8.8.8.8 so it needs no DNS itself. Certs aren't verified here
+// (VERIFY_NONE), so the IP-as-SNI handshake is fine (tested OK). The JSON is extracted as the
+// {...} span so it's robust to chunked transfer-encoding. Returns an A-record IP, or nil.
+// Cached per host for the session. Only used as a FALLBACK after getaddrinfo fails.
+static NSString *HC_resolveViaDoH(NSString *host) {
+    if (!host.length) return nil;
+    // Never DoH a literal IP — pointless, and prevents recursion via the 8.8.8.8 request below.
+    struct in_addr a4; struct in6_addr a6;
+    if (inet_pton(AF_INET, [host UTF8String], &a4) == 1 ||
+        inet_pton(AF_INET6, [host UTF8String], &a6) == 1) return nil;
+
+    static NSMutableDictionary *cache = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
+    @synchronized (cache) { NSString *hit = [cache objectForKey:host]; if (hit) return hit; }
+
+    NSString *u = [NSString stringWithFormat:@"https://8.8.8.8/resolve?name=%@&type=A", host];
+    NSInteger code = 0;
+    NSData *d = [HTTPSClient getSyncURL:u timeout:10 statusCode:&code error:NULL];
+    if (!d.length || code != 200) return nil;
+    NSString *s = [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding];
+    NSRange lo = [s rangeOfString:@"{"];
+    NSRange hi = [s rangeOfString:@"}" options:NSBackwardsSearch];
+    if (lo.location == NSNotFound || hi.location == NSNotFound || hi.location < lo.location) return nil;
+    NSData *jd = [[s substringWithRange:NSMakeRange(lo.location, hi.location - lo.location + 1)]
+                    dataUsingEncoding:NSUTF8StringEncoding];
+    id obj = [NSJSONSerialization JSONObjectWithData:jd options:0 error:NULL];
+    if (![obj isKindOfClass:[NSDictionary class]]) return nil;
+    id ans = [(NSDictionary *)obj objectForKey:@"Answer"];
+    if (![ans isKindOfClass:[NSArray class]]) return nil;
+    for (id rec in (NSArray *)ans) {
+        if (![rec isKindOfClass:[NSDictionary class]]) continue;
+        if ([[rec objectForKey:@"type"] intValue] != 1) continue;   // A record (IPv4) only
+        id ip = [rec objectForKey:@"data"];
+        if ([ip isKindOfClass:[NSString class]] && [ip length]) {
+            @synchronized (cache) { [cache setObject:ip forKey:host]; }
+            return ip;
+        }
+    }
+    return nil;
+}
+
 // Custom socket send/recv callbacks for mbedTLS (use raw sockets to bypass iOS TLS stack)
 static int sock_send(void *ctx, const unsigned char *buf, size_t len) {
     int fd = *(int *)ctx;
@@ -204,9 +249,20 @@ static int sock_recv(void *ctx, unsigned char *buf, size_t len) {
     snprintf(portStr, sizeof(portStr), "%d", (int)port);
     int gaErr = getaddrinfo([host UTF8String], portStr, &hints, &res);
     if (gaErr != 0 || !res) {
-        if (outError) *outError = mkErr(2, [NSString stringWithFormat:@"DNS failed: %s",
-                                              gai_strerror(gaErr)]);
-        return nil;
+        // System DNS failed — fall back to DNS-over-HTTPS, then connect to the resolved IP
+        // (SNI/Host stay the original host, set below, so TLS + CDN routing still work).
+        NSString *dohIP = HC_resolveViaDoH(host);
+        if (dohIP.length) {
+            struct addrinfo nh = {0};
+            nh.ai_family = AF_UNSPEC; nh.ai_socktype = SOCK_STREAM; nh.ai_flags = AI_NUMERICHOST;
+            res = NULL;
+            gaErr = getaddrinfo([dohIP UTF8String], portStr, &nh, &res);
+        }
+        if (gaErr != 0 || !res) {
+            if (outError) *outError = mkErr(2, [NSString stringWithFormat:@"DNS failed: %s",
+                                                  gai_strerror(gaErr)]);
+            return nil;
+        }
     }
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) {
@@ -658,8 +714,20 @@ static int sock_recv(void *ctx, unsigned char *buf, size_t len) {
     snprintf(portStr, sizeof(portStr), "%d", (int)port);
     int gaErr = getaddrinfo([host UTF8String], portStr, &hints, &res);
     if (gaErr != 0 || !res) {
-        if (outError) *outError = mkErr(2, [NSString stringWithFormat:@"DNS: %s", gai_strerror(gaErr)]);
-        return NO;
+        // System DNS failed (e.g. a carrier blocks the host at DNS level) — fall back to
+        // DNS-over-HTTPS (8.8.8.8 by literal IP) and connect to the resolved IP. SNI/Host
+        // stay the original host (set below) so archive.org's CDN still routes correctly.
+        NSString *dohIP = HC_resolveViaDoH(host);
+        if (dohIP.length) {
+            struct addrinfo nh = {0};
+            nh.ai_family = AF_UNSPEC; nh.ai_socktype = SOCK_STREAM; nh.ai_flags = AI_NUMERICHOST;
+            res = NULL;
+            gaErr = getaddrinfo([dohIP UTF8String], portStr, &nh, &res);
+        }
+        if (gaErr != 0 || !res) {
+            if (outError) *outError = mkErr(2, [NSString stringWithFormat:@"DNS: %s", gai_strerror(gaErr)]);
+            return NO;
+        }
     }
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) {

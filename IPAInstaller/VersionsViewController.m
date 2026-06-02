@@ -142,18 +142,23 @@
     NSDictionary *v = self.versions[ip.row];
     long long size = [v[@"size"] longLongValue];
     NSString *sizeStr = size > 0 ? [self humanSize:size] : @"taille inconnue";
+    // Mark versions this device can't run (min iOS higher than the device's iOS).
+    BOOL compatible = [[LocalCatalog shared] deviceCanRunMinIOS:v[@"minOS"]];
     cell.textLabel.text = [NSString stringWithFormat:@"v%@ — %@", v[@"version"] ?: @"?", sizeStr];
     cell.textLabel.font = [UIFont boldSystemFontOfSize:14];
+    cell.textLabel.textColor = compatible ? [UIColor blackColor] : [UIColor grayColor];
 
     NSString *url = v[@"url"] ?: @"";
-    // Extract host portion of url for display
     NSURL *u = [NSURL URLWithString:url];
     NSString *host = u.host ?: @"?";
     NSString *fileName = v[@"fileName"] ?: @"";
-    cell.detailTextLabel.text = [NSString stringWithFormat:@"min iOS %@ • %@\n%@",
-                                  v[@"minOS"] ?: @"?", host, fileName];
+    NSString *tag = compatible ? @"" : [T(@"versions.incompatible") stringByAppendingString:@"  "];
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@min iOS %@ • %@\n%@",
+                                  tag, v[@"minOS"] ?: @"?", host, fileName];
     cell.detailTextLabel.font = [UIFont systemFontOfSize:10];
-    cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+    cell.detailTextLabel.textColor = compatible
+        ? [UIColor darkGrayColor]
+        : [UIColor colorWithRed:0.62 green:0.11 blue:0.10 alpha:1.0];   // red = won't run
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     return cell;
 }
@@ -161,7 +166,8 @@
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
     NSDictionary *v = self.versions[ip.row];
-    AppDetailViewController *vc = [[AppDetailViewController alloc] initWithApp:v];
+    // Keep the EXACT version the user picked here (don't auto-switch to a compatible one).
+    AppDetailViewController *vc = [[AppDetailViewController alloc] initWithApp:v allowVersionSwitch:NO];
     [self.navigationController pushViewController:vc animated:YES];
 }
 

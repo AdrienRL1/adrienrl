@@ -17,6 +17,7 @@
 "catalog.loading" = "カタログを読み込み中...";
 "catalog.loading_more" = "読み込み中...";
 "catalog.network_error" = "ネットワークエラー: %@";
+"catalog.tap_retry" = "タップして再試行";
 "catalog.server_invalid" = "サーバ応答が無効です";
 "catalog.apps_count" = "%lu / %ld 個のアプリ%@";
 "catalog.end" = " — 終了";
@@ -46,6 +47,8 @@
 "install.url_placeholder" = "https://archive.org/.../app.ipa";
 "install.button" = "インストール";
 "install.installations" = "インストール (%lu)";
+"install.count_active" = "%ld 件ダウンロード中";
+"install.count_waiting" = "%ld 件待機中";
 
 "settings.title" = "設定";
 "settings.section_diagnostics" = "診断";
@@ -199,6 +202,7 @@
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "ダウンロード";
 "settings.parallel_streams" = "並列ストリーム";
+"settings.max_downloads" = "同時ダウンロード数";
 "settings.parallel_streams_footer" = "archive.org は TCP 接続ごとに帯域を制限しています。ダウンロードを複数の並列チャンク (それぞれ独自の接続) に分割すると、3-4 倍の速度が得られることがあります。4 が一般的に最適 — それ以上は効果が薄く、全体が制限される場合もあります。1 にすると無効化されます。";
 "settings.streams_off" = "1 (シングルストリーム)";
 "settings.streams_n" = "%ld 並列ストリーム";
@@ -262,3 +266,111 @@
 "install.open_in_filza" = "Filzaで開く";
 "install.no_filza_title" = "Filzaが見つかりません";
 "install.no_filza_msg" = "保存先パスをクリップボードにコピーしました。お好みのファイルマネージャーに貼り付けてください。";
+
+/* v1.6 — AI description device verdict */
+"app.verdict.perfect" = "お使いの%@に対応しています";
+"app.verdict.maybe" = "お使いの%@では完全に滑らかに動作しない可能性があります";
+"app.verdict.ram" = "お使いの%@のメモリでは足りない可能性があり、不安定になることがあります";
+"app.verdict.ios" = "iOS %@が必要です — お使いのデバイスはiOS %@です";
+"app.verdict.ipad_only" = "iPad専用 — お使いの%@では動作しません";
+"app.verdict.issues_label" = "注意：";
+
+/* v1.7 category menu */
+"categories.title" = "カテゴリ";
+"categories.all" = "すべてのアプリ";
+"catalog.browse_categories" = "カテゴリ";
+"cat.Games" = "ゲーム";
+"cat.Entertainment" = "エンターテインメント";
+"cat.Social Networking" = "ソーシャルネットワーキング";
+"cat.Photo & Video" = "写真/ビデオ";
+"cat.Music" = "ミュージック";
+"cat.Productivity" = "仕事効率化";
+"cat.Utilities" = "ユーティリティ";
+"cat.Travel" = "旅行";
+"cat.Navigation" = "ナビゲーション";
+"cat.News" = "ニュース";
+"cat.Sports" = "スポーツ";
+"cat.Education" = "教育";
+"cat.Finance" = "ファイナンス";
+"cat.Health & Fitness" = "ヘルスケア/フィットネス";
+"cat.Lifestyle" = "ライフスタイル";
+"cat.Business" = "ビジネス";
+"cat.Reference" = "リファレンス";
+"cat.Books" = "ブック";
+"cat.Weather" = "天気";
+"cat.Food & Drink" = "フード/ドリンク";
+"cat.Medical" = "メディカル";
+"cat.Shopping" = "ショッピング";
+"sub.Action" = "アクション";
+"sub.Adventure" = "アドベンチャー";
+"sub.Arcade" = "アーケード";
+"sub.Board" = "ボード";
+"sub.Card" = "カード";
+"sub.Casino" = "カジノ";
+"sub.Dice" = "サイコロ";
+"sub.Educational" = "教育";
+"sub.Family" = "ファミリー";
+"sub.Kids" = "キッズ";
+"sub.Music" = "ミュージック";
+"sub.Puzzle" = "パズル";
+"sub.Racing" = "レース";
+"sub.Role Playing" = "ロールプレイング";
+"sub.Simulation" = "シミュレーション";
+"sub.Sports" = "スポーツ";
+"sub.Strategy" = "ストラテジー";
+"sub.Trivia" = "トリビア";
+"sub.Word" = "ワード";
+"sub.Casual" = "カジュアル";
+
+/* v1.7 category home */
+"categories.welcome" = "AppDrop へようこそ";
+"categories.welcome_sub" = "%@ 件のクラシック iOS アプリ・ゲームを見る";
+"categories.napps" = "%@ 件";
+
+/* v1.7 support/donate */
+"settings.support_row" = "AppDrop を支援";
+"support.action" = "AppDrop を支援";
+"settings.support_footer" = "AppDrop は無料です。役に立ったら、PayPal での少額の支援が励みになります（任意）。";
+"settings.support_copied" = "リンクをコピーしました。新しい端末やパソコンで開いて PayPal で支援できます。";
+
+/* v1.7 version compatibility */
+"app.picked_compatible" = "お使いの iOS に対応した最新バージョンを表示しています（新しい版はより新しい iOS が必要）。";
+"versions.incompatible" = "✗ 新しい iOS が必要";
+
+/* v1.7 catalog download */
+"catalog.downloading" = "カタログをダウンロード中…";
+"catalog.downloading_pct" = "カタログをダウンロード中… %d%%";
+"catalog.decompressing" = "展開中…";
+
+/* v1.7 feedback */
+"feedback.title" = "フィードバック";
+"feedback.section" = "フィードバック";
+"feedback.section_footer" = "バグの報告や改善の提案を。開発者に直接届きます。";
+"feedback.row" = "💬 バグ報告・提案";
+"feedback.intro" = "バグや要望がありますか？下に記入してください。スクリーンショットも添付できます。";
+"feedback.placeholder" = "バグや改善内容を記入…";
+"feedback.add_photo" = "📷 写真を追加";
+"feedback.remove_photo" = "削除";
+"feedback.send" = "送信";
+"feedback.sent_title" = "ありがとうございます！";
+"feedback.sent" = "フィードバックを送信しました。AppDrop の改善にご協力ありがとうございます！";
+"feedback.error" = "送信に失敗 — 接続を確認してください";
+"feedback.empty" = "先にフィードバックを入力してください。";
+"feedback.not_configured" = "フィードバックはまだ設定されていません — 次回のアップデート後にお試しください。";
+
+"tab.home" = "ホーム";
+
+/* ===== Revival / Works today (issue #4) ===== */
+"categories.revival" = "今でも動く";
+"categories.revival_sub" = "今も動く修正版・復活版アプリ";
+"revival.title" = "今でも動くアプリ";
+"revival.intro" = "古いiOSで今も実際に動くアプリ（修正版・復活版・コミュニティ製）。フィードバックから提案できます。";
+"revival.empty" = "お使いの端末向けはまだありません — フィードバックから動くアプリを提案してください！";
+"revival.install" = "インストール";
+"revival.open" = "開く";
+"revival.install_started" = "インストールを開始しました — インストールタブを確認してください。";
+"revival.needs_server" = "サーバー必須";
+"revival.active" = "稼働中";
+"revival.beta" = "ベータ";
+"revival.discontinued" = "終了";
+"revival.update" = "v%@ に更新";

@@ -4,6 +4,14 @@
 #import "IOS6Theme.h"
 #import "Localization.h"
 
+// Sort rank for the jobs list: active downloads on top, then waiting, then finished/failed.
+static int JobSortRank(InstallJob *j) {
+    NSString *s = j.state;
+    if ([s isEqualToString:@"downloading"] || [s isEqualToString:@"installing"]) return 0;
+    if ([s isEqualToString:@"queued"]) return 1;
+    return 2;   // completed / failed / cancelled
+}
+
 @interface RootViewController () <UITableViewDataSource, UITableViewDelegate, UITextFieldDelegate>
 @property (nonatomic, strong) UITextField *urlField;
 @property (nonatomic, strong) UIButton *installButton;
@@ -113,7 +121,14 @@
 }
 
 - (void)refreshJobs {
-    self.jobs = [[InstallManager shared] jobs];
+    // Active downloads first, then waiting, then finished/failed — so it's clear at a glance
+    // what's downloading now vs what's lined up.
+    self.jobs = [[[InstallManager shared] jobs] sortedArrayUsingComparator:^NSComparisonResult(InstallJob *a, InstallJob *b) {
+        int ra = JobSortRank(a), rb = JobSortRank(b);
+        if (ra != rb) return ra < rb ? NSOrderedAscending : NSOrderedDescending;
+        NSDate *da = a.startedAt ?: [NSDate distantPast], *db = b.startedAt ?: [NSDate distantPast];
+        return [da compare:db];
+    }];
     [self.jobsTable reloadData];
     [self refreshLeftBarButton];
 }
@@ -242,6 +257,18 @@
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
+    // Live counter: "N downloading · M waiting" (only the non-zero parts). Falls back to the
+    // total count when nothing is active/waiting (all finished, or empty).
+    NSInteger active = 0, waiting = 0;
+    for (InstallJob *j in self.jobs) {
+        NSString *st = j.state;
+        if ([st isEqualToString:@"downloading"] || [st isEqualToString:@"installing"]) active++;
+        else if ([st isEqualToString:@"queued"]) waiting++;
+    }
+    NSMutableArray *parts = [NSMutableArray array];
+    if (active > 0)  [parts addObject:[NSString stringWithFormat:T(@"install.count_active"),  (long)active]];
+    if (waiting > 0) [parts addObject:[NSString stringWithFormat:T(@"install.count_waiting"), (long)waiting]];
+    if (parts.count) return [parts componentsJoinedByString:@"  ·  "];
     return [NSString stringWithFormat:T(@"install.installations"), (unsigned long)self.jobs.count];
 }
 

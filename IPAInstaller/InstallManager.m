@@ -319,18 +319,52 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     job.url = url;
     job.name = [self shortNameFromURL:url];
     job.state = @"queued";
-    job.message = T(@"install.state.preparing");
+    job.message = T(@"install.state.queued");   // "Waiting…" — pumpQueue flips it to connecting when a slot frees
     job.progress = 0;
     job.startedAt = [NSDate date];
     self.jobsById[jobId] = job;
-    [self postChanged];
-
     if (completion) completion(jobId, nil);
+    // Don't start it directly — pumpQueue (via postChanged) starts it only when a download slot
+    // is free (Settings → "Simultaneous downloads", 1–8). Otherwise it waits its turn as queued.
+    [self postChanged];
+}
 
-    // Run download + install on background queue
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        [self runAutonomousJob:job];
-    });
+// Max simultaneous autonomous app downloads. Settings-configurable (1–8); default 2.
++ (NSInteger)maxConcurrentDownloads {
+    NSInteger n = [[NSUserDefaults standardUserDefaults] integerForKey:@"IPAInstall.MaxConcurrentDownloads"];
+    if (n < 1) n = 2;   // unset (0) or invalid → default 2
+    if (n > 8) n = 8;
+    return n;
+}
+
+// Start queued installs up to the concurrency limit. Idempotent + reentrancy-safe: it claims a
+// slot by flipping the job to "downloading" synchronously (so a re-entrant pump counts it) and
+// never posts a change itself. Called from -postChanged (which fires on every state change,
+// including job completion → the next queued job starts) and when the limit changes in Settings.
+- (void)pumpQueue {
+    if (![NSThread isMainThread]) { dispatch_async(dispatch_get_main_queue(), ^{ [self pumpQueue]; }); return; }
+    NSInteger maxC = [InstallManager maxConcurrentDownloads];
+    NSInteger active = 0;
+    NSMutableArray *waiting = [NSMutableArray array];
+    for (InstallJob *j in [self.jobsById allValues]) {
+        if (![j.jobId hasPrefix:@"local-"]) continue;   // autonomous jobs only
+        if ([j.state isEqualToString:@"downloading"] || [j.state isEqualToString:@"installing"]) active++;
+        else if ([j.state isEqualToString:@"queued"]) [waiting addObject:j];
+    }
+    if (active >= maxC || waiting.count == 0) return;
+    [waiting sortUsingComparator:^NSComparisonResult(InstallJob *a, InstallJob *b) {
+        return [(a.startedAt ?: [NSDate distantPast]) compare:(b.startedAt ?: [NSDate distantPast])];
+    }];
+    for (InstallJob *j in waiting) {
+        if (active >= maxC) break;
+        active++;
+        j.state = @"downloading";                       // claim the slot before the async hop
+        j.message = T(@"install.state.connecting");
+        InstallJob *jb = j;
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            [self runAutonomousJob:jb];
+        });
+    }
 }
 
 // Returns the user-configured download folder (Settings → Download → Save
@@ -698,10 +732,11 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     }];
 }
 
-// Run ipainstaller <path>, capture output, return exit code.
-// Tries multiple known install paths in order. Returns -1 if no installer is found,
-// in which case outOutput contains a user-friendly explanation.
-- (int)runIpainstallerOnFile:(NSString *)path capturedOutput:(NSString **)outOutput {
+// Run the detected ipainstaller binary with the given string args (@[path] to install,
+// or @[@"-i", bid] to query an installed app), capturing stdout+stderr. Returns the process
+// exit code, or -1 if no installer binary is found (outOutput then holds a friendly message).
+// Synchronous (spawns + waits) — call OFF the main thread.
+- (int)runIpainstallerArgs:(NSArray *)args capturedOutput:(NSString **)outOutput {
     // Candidate installer paths, in priority order:
     //   - /usr/bin/ipainstaller        (legacy / iOS 5-9 jailbreaks: autopear's package)
     //   - /usr/bin/appinst             (newer alias used by some repos)
@@ -742,13 +777,20 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     posix_spawn_file_actions_adddup2(&fa, pipefd[1], 2);
     posix_spawn_file_actions_addclose(&fa, pipefd[1]);
 
-    const char *pathC = [path fileSystemRepresentation];
-    // Pass the basename matching the chosen exec as argv[0] so the binary's own usage/log
-    // messages stay coherent.
+    // Build argv = [ argv0, args..., NULL ]. argv[0] is the basename matching the chosen exec
+    // so the binary's own usage/log lines stay coherent. The fileSystemRepresentation buffers
+    // stay valid for this synchronous call because `args` is retained throughout it.
     const char *base = strrchr(exec, '/');
-    char *const argv[] = { (char *)(base ? base + 1 : exec), (char *)pathC, NULL };
+    NSUInteger argc = args.count;
+    const char **argv = (const char **)malloc(sizeof(char *) * (argc + 2));
+    argv[0] = base ? base + 1 : exec;
+    for (NSUInteger i = 0; i < argc; i++) {
+        argv[i + 1] = [[args[i] description] fileSystemRepresentation];
+    }
+    argv[argc + 1] = NULL;
     pid_t pid = 0;
-    int rc = posix_spawn(&pid, exec, &fa, NULL, argv, environ);
+    int rc = posix_spawn(&pid, exec, &fa, NULL, (char *const *)argv, environ);
+    free(argv);
     posix_spawn_file_actions_destroy(&fa);
     close(pipefd[1]);
 
@@ -760,7 +802,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         return -1;
     }
 
-    // Read output (up to ~10 KB; ipainstaller is concise)
+    // Read output (up to ~30 KB; ipainstaller is concise)
     NSMutableData *buf = [NSMutableData data];
     char chunk[1024];
     while (1) {
@@ -779,6 +821,31 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         *outOutput = [[NSString alloc] initWithData:buf encoding:NSUTF8StringEncoding] ?: @"";
     }
     return exitCode;
+}
+
+// Install an .ipa file. Thin wrapper over -runIpainstallerArgs:capturedOutput:.
+- (int)runIpainstallerOnFile:(NSString *)path capturedOutput:(NSString **)outOutput {
+    return [self runIpainstallerArgs:(path.length ? @[path] : @[]) capturedOutput:outOutput];
+}
+
+// Installed version of an app AppDrop installed via ipainstaller, parsed from the
+// "Version:" line of `ipainstaller -i <bid>`. nil if not installed / no installer.
+// ipainstaller -i only knows apps IT installed — system/dpkg apps return nil, which the
+// caller treats as "not installed" (button stays "Install"). Call OFF the main thread.
+- (NSString *)installedVersionForBundleId:(NSString *)bid {
+    if (!bid.length) return nil;
+    NSString *out = nil;
+    int rc = [self runIpainstallerArgs:@[@"-i", bid] capturedOutput:&out];
+    if (rc != 0 || !out.length) return nil;
+    for (NSString *raw in [out componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+        NSString *line = [raw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if ([line rangeOfString:@"Version:"].location == 0) {
+            NSString *v = [[line substringFromIndex:[@"Version:" length]]
+                              stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (v.length) return v;
+        }
+    }
+    return nil;
 }
 
 - (void)pollAllActiveJobs {
@@ -945,6 +1012,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 - (void)postChanged {
     [[NSNotificationCenter defaultCenter] postNotificationName:InstallManagerJobsChangedNotification
                                                         object:self];
+    [self pumpQueue];   // start the next queued install when a slot frees (or a new one is added)
 }
 
 // v1.3.1: fired once per save. AppDelegate observes globally and pops a

@@ -11,25 +11,31 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/screenshot-11.png" width="600" alt="AppDrop catalog grid on iPad">
+  <img src="screenshots/screenshot-home.png" width="600" alt="AppDrop home — browse 30,000+ vintage apps by category on iPad">
 </p>
 
 ---
 
 ## Compatibility
 
-- **iOS 5.0 – 10.x** (armv7 / 32-bit) — fully supported and tested on iPad 1 (iOS 5.1.1), iPad 4 (iOS 6.1.3), iPad mini 2 (iOS 10.3.3).
+- **iOS 5.0 – 10.x** (armv7 / 32-bit) — fully supported and tested on iPad 1 (iOS 5.1.1), iPhone 5 (iOS 6.1.4), iPad 4 (iOS 6.1.3), iPad mini 2 (iOS 10.3.3).
 - **iOS 11+** — not supported. The binary is 32-bit only and Apple dropped 32-bit app support in iOS 11.
 - Compatible devices: iPad 1, iPhone 3GS / 4 / 4S, iPad 2 / 3 / 4 / iPad mini, iPod touch 3 / 4 / 5 (and 64-bit devices like iPad Air / iPhone 5S running iOS 10.3.3 or lower).
 - Requires a **jailbreak** — that's it. Cydia handles the rest.
 
 ## Features
 
-- **157k vintage app catalog** bundled in the IPA — works offline once installed
+- **Huge vintage catalog** — tens of thousands of unique apps (157k archived IPAs across all versions), browsable **by category** right from the home screen
+- **Auto-updating catalog** — downloaded on first launch and refreshed automatically when new apps are added, so you never reinstall the app just for new content
+- **"Works today"** — a curated list of apps confirmed still running on old iOS, with one-tap install and update detection
 - **AI search** — describe an app in any language, the LLM finds it for you
-- **7 languages** — EN / FR / ES / DE / PT‑BR / JA / ZH‑Hans, auto-detected from your device
-- **Multi-select install** — queue up dozens of apps in one batch
-- **Cancellable downloads** with live progress
+- **Device-aware** — each app shows whether it'll run on *your* device, the catalog hides apps your iOS can't run, and AppDrop auto-picks the newest version you can actually install
+- **8 languages** — EN / FR / ES / DE / PT‑BR / JA / ZH‑Hans / TR, auto-detected from your device
+- **Localized app descriptions** — rich descriptions for thousands of apps, in all 8 languages
+- **Multi-select install** — queue up dozens of apps in one batch, with a configurable max of simultaneous downloads (1–8)
+- **Cancellable downloads** — live progress, a "N downloading · M waiting" counter, and active downloads sorted to the top
+- **In-app feedback** — report a bug or an idea (with screenshots) straight from the app
+- **DNS-over-HTTPS fallback** — installs keep working even where your ISP blocks archive.org at the DNS level
 - **Skeuomorphic iOS 6 UI** — fits naturally into your jailbroken device
 - **No backend, no account, no tracking** — talks directly to archive.org and pollinations.ai
 
@@ -95,7 +101,7 @@ Browse all 157,000 archived apps. Tap *Filters* to narrow by iOS version, device
 
 <img src="screenshots/screenshot-12.png" width="380" alt="AI chat finding racing games">
 
-Tap the *AI Chat* tab and describe an app in plain language — any of the 7 supported languages works. The LLM identifies vintage titles (Real Racing 3, Asphalt 6, NFS, etc.) and shows them as tappable install cards.
+Tap the *AI Chat* tab and describe an app in plain language — any of the 8 supported languages works. The LLM identifies vintage titles (Real Racing 3, Asphalt 6, NFS, etc.) and shows them as tappable install cards.
 
 ### Search
 
@@ -109,11 +115,17 @@ The **Search** tab lets you find apps by name in real time across all 157k entri
 
 Narrow the catalog by minimum / maximum iOS version, device class (iPhone, iPad, both), uniqueness (one row per bundle ID), and sort order. Tap a sort row again to flip ascending / descending.
 
+### Feedback
+
+<img src="screenshots/screenshot-15.png" width="380" alt="In-app feedback form">
+
+Hit a bug or have an idea? The **Feedback** button (top-left on the home screen) opens a simple form — type your message, optionally attach a few screenshots, and tap **Send**. It posts straight to the project's GitHub issues, no account needed.
+
 ## How it works
 
 ```
 Catalog metadata          : stuffed18.github.io/ipa-archive-updated
-   ↓ pre-built SQLite bundled in the IPA
+   ↓ pre-built SQLite (catalog.db.gz) downloaded on first launch, auto-refreshed
 AI search                 : text.pollinations.ai (anonymous, no key)
    ↓ returns app titles + keywords
 IPA download              : http://archive.org/download/X/Y.ipa
@@ -152,7 +164,7 @@ The build script needs `sshpass` (Homebrew: `brew install hudochenkov/sshpass/ss
 | Catalog DB | SQLite (system `libsqlite3`) |
 | AI | Pollinations.ai (GPT-OSS 20B) with a vintage-iOS expert system prompt |
 | Install | `posix_spawn` → `/usr/bin/ipainstaller` |
-| i18n | NSBundle `.lproj` × 7 langs |
+| i18n | NSBundle `.lproj` × 8 langs |
 | Build | Theos (clang armv7) |
 
 ## Privacy
@@ -170,6 +182,7 @@ AppDrop runs no analytics, has no account system, sends no telemetry. See [PRIVA
 - **Pollinations.ai** — free anonymous LLM endpoint
 - **mbedTLS** — Apache-2.0 TLS library that made HTTPS work on iOS 6
 - **autopear** — `ipainstaller`, the helper AppDrop delegates to
+- **Yusubera** (Reddit) — Turkish translation
 
 ## Disclaimer
 

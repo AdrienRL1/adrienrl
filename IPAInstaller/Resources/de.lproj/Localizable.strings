@@ -17,6 +17,7 @@
 "catalog.loading" = "Katalog wird geladen...";
 "catalog.loading_more" = "Lädt...";
 "catalog.network_error" = "Netzwerkfehler: %@";
+"catalog.tap_retry" = "Zum Wiederholen tippen";
 "catalog.server_invalid" = "Ungültige Serverantwort";
 "catalog.apps_count" = "%lu / %ld Apps%@";
 "catalog.end" = " — Ende";
@@ -46,6 +47,8 @@
 "install.url_placeholder" = "https://archive.org/.../app.ipa";
 "install.button" = "Installieren";
 "install.installations" = "Installationen (%lu)";
+"install.count_active" = "%ld aktiv";
+"install.count_waiting" = "%ld wartend";
 
 "settings.title" = "Einstellungen";
 "settings.section_diagnostics" = "Diagnose";
@@ -199,6 +202,7 @@
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Download";
 "settings.parallel_streams" = "Parallele Streams";
+"settings.max_downloads" = "Gleichzeitige Downloads";
 "settings.parallel_streams_footer" = "archive.org drosselt pro TCP-Verbindung. Wenn man einen Download in mehrere parallele Teile (mit je einer eigenen Verbindung) aufteilt, lässt sich die Geschwindigkeit oft um das 3-4-fache steigern. 4 ist der typische optimale Wert — höher hilft selten und kann dazu führen, dass alle Streams zusammen gedrosselt werden. 1 deaktiviert die Funktion.";
 "settings.streams_off" = "1 (einzelner Stream)";
 "settings.streams_n" = "%ld parallele Streams";
@@ -262,3 +266,111 @@
 "install.open_in_filza" = "In Filza öffnen";
 "install.no_filza_title" = "Filza nicht erkannt";
 "install.no_filza_msg" = "Der Pfad wurde in die Zwischenablage kopiert, sodass du ihn in deinem bevorzugten Dateimanager einfügen kannst.";
+
+/* v1.6 — AI description device verdict */
+"app.verdict.perfect" = "Mit deinem %@ kompatibel";
+"app.verdict.maybe" = "Läuft auf deinem %@ möglicherweise nicht ganz flüssig";
+"app.verdict.ram" = "Benötigt evtl. mehr Speicher als dein %@ hat — könnte instabil sein";
+"app.verdict.ios" = "Erfordert iOS %@ — dein Gerät hat iOS %@";
+"app.verdict.ipad_only" = "Für iPad entwickelt — läuft nicht auf deinem %@";
+"app.verdict.issues_label" = "Hinweis:";
+
+/* v1.7 category menu */
+"categories.title" = "Kategorien";
+"categories.all" = "Alle Apps";
+"catalog.browse_categories" = "Kategorien";
+"cat.Games" = "Spiele";
+"cat.Entertainment" = "Unterhaltung";
+"cat.Social Networking" = "Soziale Netzwerke";
+"cat.Photo & Video" = "Foto & Video";
+"cat.Music" = "Musik";
+"cat.Productivity" = "Produktivität";
+"cat.Utilities" = "Dienstprogramme";
+"cat.Travel" = "Reisen";
+"cat.Navigation" = "Navigation";
+"cat.News" = "Nachrichten";
+"cat.Sports" = "Sport";
+"cat.Education" = "Bildung";
+"cat.Finance" = "Finanzen";
+"cat.Health & Fitness" = "Gesundheit & Fitness";
+"cat.Lifestyle" = "Lifestyle";
+"cat.Business" = "Wirtschaft";
+"cat.Reference" = "Nachschlagewerke";
+"cat.Books" = "Bücher";
+"cat.Weather" = "Wetter";
+"cat.Food & Drink" = "Essen & Trinken";
+"cat.Medical" = "Medizin";
+"cat.Shopping" = "Einkaufen";
+"sub.Action" = "Action";
+"sub.Adventure" = "Abenteuer";
+"sub.Arcade" = "Arcade";
+"sub.Board" = "Brettspiele";
+"sub.Card" = "Karten";
+"sub.Casino" = "Casino";
+"sub.Dice" = "Würfel";
+"sub.Educational" = "Lernspiele";
+"sub.Family" = "Familie";
+"sub.Kids" = "Kinder";
+"sub.Music" = "Musik";
+"sub.Puzzle" = "Puzzle";
+"sub.Racing" = "Rennspiele";
+"sub.Role Playing" = "Rollenspiele";
+"sub.Simulation" = "Simulation";
+"sub.Sports" = "Sport";
+"sub.Strategy" = "Strategie";
+"sub.Trivia" = "Quizspiele";
+"sub.Word" = "Wortspiele";
+"sub.Casual" = "Gelegenheitsspiele";
+
+/* v1.7 category home */
+"categories.welcome" = "Willkommen bei AppDrop";
+"categories.welcome_sub" = "Durchsuche %@ klassische iOS-Apps & -Spiele";
+"categories.napps" = "%@ Apps";
+
+/* v1.7 support/donate */
+"settings.support_row" = "AppDrop unterstützen";
+"support.action" = "AppDrop unterstützen";
+"settings.support_footer" = "AppDrop ist kostenlos. Wenn es nützlich ist, freut sich der Entwickler über ein kleines Trinkgeld via PayPal — nie erforderlich.";
+"settings.support_copied" = "Link kopiert. Öffne ihn auf einem neueren Gerät oder Computer, um via PayPal zu spenden.";
+
+/* v1.7 version compatibility */
+"app.picked_compatible" = "Neueste mit deinem iOS kompatible Version — neuere Versionen brauchen ein neueres iOS.";
+"versions.incompatible" = "✗ braucht neueres iOS";
+
+/* v1.7 catalog download */
+"catalog.downloading" = "Katalog wird geladen…";
+"catalog.downloading_pct" = "Katalog wird geladen… %d%%";
+"catalog.decompressing" = "Entpacken…";
+
+/* v1.7 feedback */
+"feedback.title" = "Feedback";
+"feedback.section" = "Feedback";
+"feedback.section_footer" = "Melde einen Fehler oder schlage eine Verbesserung vor. Geht direkt an den Entwickler.";
+"feedback.row" = "💬 Fehler melden / Vorschlag";
+"feedback.intro" = "Ein Fehler oder eine Idee? Beschreibe es unten. Du kannst einen Screenshot anhängen.";
+"feedback.placeholder" = "Beschreibe den Fehler oder die Verbesserung…";
+"feedback.add_photo" = "📷 Foto hinzufügen";
+"feedback.remove_photo" = "Entfernen";
+"feedback.send" = "Senden";
+"feedback.sent_title" = "Danke!";
+"feedback.sent" = "Dein Feedback wurde gesendet. Danke, dass du AppDrop verbesserst!";
+"feedback.error" = "Senden fehlgeschlagen — prüfe deine Verbindung";
+"feedback.empty" = "Bitte schreibe zuerst dein Feedback.";
+"feedback.not_configured" = "Feedback ist noch nicht eingerichtet — versuche es nach dem nächsten Update.";
+
+"tab.home" = "Start";
+
+/* ===== Revival / Works today (issue #4) ===== */
+"categories.revival" = "Funktioniert heute";
+"categories.revival_sub" = "Gepatchte und wiederbelebte Apps, die noch laufen";
+"revival.title" = "Funktioniert heute";
+"revival.intro" = "Apps, die heute wirklich auf altem iOS laufen — gepatcht, wiederbelebt oder von der Community. Schlage weitere über Feedback vor.";
+"revival.empty" = "Noch nichts für dein Gerät — schlage über Feedback eine funktionierende App vor!";
+"revival.install" = "Installieren";
+"revival.open" = "Öffnen";
+"revival.install_started" = "Installation gestartet — siehe Tab Installieren.";
+"revival.needs_server" = "Server nötig";
+"revival.active" = "Aktiv";
+"revival.beta" = "Beta";
+"revival.discontinued" = "Eingestellt";
+"revival.update" = "Auf v%@ aktualisieren";

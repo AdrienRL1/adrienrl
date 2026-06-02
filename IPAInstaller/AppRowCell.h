@@ -18,6 +18,21 @@
 
 // Shared grid density: how many tiles fit across `w` points. iPhone always 1.
 // On iPad it reads the "IPAInstall.GridDensity" pref (0…1, set by the Settings
-// slider) so Catalogue and Recherche stay in sync. Default ≈ 175 pt tiles.
+// slider) so Catalogue, Recherche and Catégories stay in sync.
 + (NSInteger)tilesPerRowForWidth:(CGFloat)w;
+
+// The current density pref (0…1), clamped. iPad slider value.
++ (double)gridDensity;
+
+// Density-aware row height for the iPad tile grid (so tiles shrink in both
+// dimensions). iPhone returns the fixed list row height (76).
++ (CGFloat)gridRowHeight;
+
+// Toggle the row's flatten-to-bitmap rasterization. Keep it ON at rest (cheap static
+// compositing) but turn it OFF during active scrolling so recycled rows don't pay a
+// re-rasterization spike on every recycle — the main fling-jank source on the old A6X GPU.
+- (void)setContentRasterized:(BOOL)on;
+
+// Force every tile in this row to repaint (e.g. to bring text back after a fast fling).
+- (void)redrawTiles;
 @end

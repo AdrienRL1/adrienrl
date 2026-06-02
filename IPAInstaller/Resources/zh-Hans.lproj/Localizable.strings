@@ -17,6 +17,7 @@
 "catalog.loading" = "正在加载目录...";
 "catalog.loading_more" = "加载中...";
 "catalog.network_error" = "网络错误: %@";
+"catalog.tap_retry" = "点按重试";
 "catalog.server_invalid" = "服务器响应无效";
 "catalog.apps_count" = "%lu / %ld 个应用%@";
 "catalog.end" = " — 结束";
@@ -46,6 +47,8 @@
 "install.url_placeholder" = "https://archive.org/.../app.ipa";
 "install.button" = "安装";
 "install.installations" = "安装项 (%lu)";
+"install.count_active" = "%ld 个下载中";
+"install.count_waiting" = "%ld 个等待中";
 
 "settings.title" = "设置";
 "settings.section_diagnostics" = "诊断";
@@ -199,6 +202,7 @@
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "下载";
 "settings.parallel_streams" = "并行流";
+"settings.max_downloads" = "同时下载数";
 "settings.parallel_streams_footer" = "archive.org 按 TCP 连接限速。将下载分成多个并行块 (每块拥有自己的连接) 通常可获得 3-4× 的速度。4 是常见的最佳点 — 更高很少有帮助，反而可能让所有流一起被限速。设为 1 可禁用。";
 "settings.streams_off" = "1 (单流)";
 "settings.streams_n" = "%ld 个并行流";
@@ -262,3 +266,111 @@
 "install.open_in_filza" = "在 Filza 中打开";
 "install.no_filza_title" = "未检测到 Filza";
 "install.no_filza_msg" = "路径已复制到剪贴板,您可粘贴到任意文件管理器使用。";
+
+/* v1.6 — AI description device verdict */
+"app.verdict.perfect" = "与您的 %@ 兼容";
+"app.verdict.maybe" = "在您的%@上可能无法完全流畅运行";
+"app.verdict.ram" = "可能需要比您的%@更多的内存，可能不稳定";
+"app.verdict.ios" = "需要 iOS %@ — 您的设备运行的是 iOS %@";
+"app.verdict.ipad_only" = "专为 iPad 设计 — 无法在您的 %@ 上运行";
+"app.verdict.issues_label" = "注意：";
+
+/* v1.7 category menu */
+"categories.title" = "分类";
+"categories.all" = "全部应用";
+"catalog.browse_categories" = "分类";
+"cat.Games" = "游戏";
+"cat.Entertainment" = "娱乐";
+"cat.Social Networking" = "社交网络";
+"cat.Photo & Video" = "摄影与录像";
+"cat.Music" = "音乐";
+"cat.Productivity" = "效率";
+"cat.Utilities" = "工具";
+"cat.Travel" = "旅游";
+"cat.Navigation" = "导航";
+"cat.News" = "新闻";
+"cat.Sports" = "体育";
+"cat.Education" = "教育";
+"cat.Finance" = "财务";
+"cat.Health & Fitness" = "健康健美";
+"cat.Lifestyle" = "生活";
+"cat.Business" = "商务";
+"cat.Reference" = "参考";
+"cat.Books" = "图书";
+"cat.Weather" = "天气";
+"cat.Food & Drink" = "美食佳饮";
+"cat.Medical" = "医疗";
+"cat.Shopping" = "购物";
+"sub.Action" = "动作";
+"sub.Adventure" = "冒险";
+"sub.Arcade" = "街机";
+"sub.Board" = "桌面";
+"sub.Card" = "卡牌";
+"sub.Casino" = "博彩";
+"sub.Dice" = "骰子";
+"sub.Educational" = "教育";
+"sub.Family" = "家庭";
+"sub.Kids" = "儿童";
+"sub.Music" = "音乐";
+"sub.Puzzle" = "益智";
+"sub.Racing" = "竞速";
+"sub.Role Playing" = "角色扮演";
+"sub.Simulation" = "模拟";
+"sub.Sports" = "体育";
+"sub.Strategy" = "策略";
+"sub.Trivia" = "智力问答";
+"sub.Word" = "文字";
+"sub.Casual" = "休闲";
+
+/* v1.7 category home */
+"categories.welcome" = "欢迎使用 AppDrop";
+"categories.welcome_sub" = "浏览 %@ 款经典 iOS 应用和游戏";
+"categories.napps" = "%@ 款";
+
+/* v1.7 support/donate */
+"settings.support_row" = "支持 AppDrop";
+"support.action" = "支持 AppDrop";
+"settings.support_footer" = "AppDrop 是免费的。如果它对你有用，欢迎通过 PayPal 小额打赏（完全自愿）。";
+"settings.support_copied" = "链接已复制。请在较新的设备或电脑上打开，通过 PayPal 捐赠。";
+
+/* v1.7 version compatibility */
+"app.picked_compatible" = "显示与你的 iOS 兼容的最新版本——更新的版本需要更高的 iOS。";
+"versions.incompatible" = "✗ 需要更高 iOS";
+
+/* v1.7 catalog download */
+"catalog.downloading" = "正在下载目录…";
+"catalog.downloading_pct" = "正在下载目录… %d%%";
+"catalog.decompressing" = "正在解压…";
+
+/* v1.7 feedback */
+"feedback.title" = "反馈";
+"feedback.section" = "反馈";
+"feedback.section_footer" = "报告问题或提出改进建议，直接发送给开发者。";
+"feedback.row" = "💬 报告问题 / 建议";
+"feedback.intro" = "发现问题或有想法？请在下方描述。可以附上截图。";
+"feedback.placeholder" = "描述问题或改进…";
+"feedback.add_photo" = "📷 添加照片";
+"feedback.remove_photo" = "移除";
+"feedback.send" = "发送";
+"feedback.sent_title" = "谢谢！";
+"feedback.sent" = "你的反馈已发送。感谢帮助改进 AppDrop！";
+"feedback.error" = "发送失败——请检查网络连接";
+"feedback.empty" = "请先填写你的反馈。";
+"feedback.not_configured" = "反馈功能尚未配置——请在下次更新后再试。";
+
+"tab.home" = "主页";
+
+/* ===== Revival / Works today (issue #4) ===== */
+"categories.revival" = "现在仍可用";
+"categories.revival_sub" = "仍可运行的修补版和复活版应用";
+"revival.title" = "现在仍可用";
+"revival.intro" = "在旧版 iOS 上现在真正可用的应用——修补版、复活版或社区制作。可通过反馈推荐更多。";
+"revival.empty" = "暂时没有适合你设备的内容——通过反馈推荐一个可用的应用吧！";
+"revival.install" = "安装";
+"revival.open" = "打开";
+"revival.install_started" = "已开始安装——请查看安装标签页。";
+"revival.needs_server" = "需要服务器";
+"revival.active" = "活跃";
+"revival.beta" = "测试版";
+"revival.discontinued" = "已停止";
+"revival.update" = "更新到 v%@";

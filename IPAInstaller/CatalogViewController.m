@@ -6,6 +6,7 @@
 #import "AppDetailViewController.h"
 #import "IconLoader.h"
 #import "AppRowCell.h"
+#import "AppTileView.h"
 #import "IOS6Theme.h"
 #import "LocalCatalog.h"
 #import "CatalogAppCell.h"
@@ -30,6 +31,7 @@ static inline BOOL kIsIPad(void) {
 @property (nonatomic, assign) NSInteger pageOffset;
 @property (nonatomic, assign) BOOL loading;
 @property (nonatomic, assign) BOOL eof;
+@property (nonatomic, assign) BOOL pendingReload;   // page arrived mid-scroll; reload on stop
 @property (nonatomic, copy) NSString *currentQuery;
 
 // === Selection mode (multi-select install) ==========================
@@ -46,6 +48,9 @@ static inline BOOL kIsIPad(void) {
 // Pending batch when waiting for onboarding alert dismissal (so the user only
 // sees the alert once, not once per app, when bulk-installing).
 @property (nonatomic, strong) NSArray *pendingBatchInstall;
+// iPad grid: rotation-reload guard (last tiles-per-row) + active-scroll flag (rasterize off while scrolling).
+@property (nonatomic, assign) NSInteger lastTPR;
+@property (nonatomic, assign) BOOL gridScrolling;
 @end
 
 @implementation CatalogViewController
@@ -54,7 +59,8 @@ static inline BOOL kIsIPad(void) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = T(@"catalog.title");
+    // Keep a caller-set title (the category home pushes us as "All apps"); else default.
+    if (!self.title.length) self.title = T(@"catalog.title");
     self.view.backgroundColor = [IOS6Theme contentBackgroundColor];  // App Store white
 
     // v1.4: re-lay-out the tile grid when the Settings density slider changes.
@@ -83,7 +89,7 @@ static inline BOOL kIsIPad(void) {
     self.tableView.delegate = self;
     self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     // iPhone: 76 — 2-line subtitle (meta + filename).
-    self.tableView.rowHeight = kIsIPad() ? 170 : 76;
+    self.tableView.rowHeight = [AppRowCell gridRowHeight];
     self.tableView.separatorStyle = kIsIPad() ? UITableViewCellSeparatorStyleNone
                                               : UITableViewCellSeparatorStyleSingleLine;
     self.tableView.backgroundColor = [IOS6Theme contentBackgroundColor];
@@ -233,6 +239,8 @@ static inline BOOL kIsIPad(void) {
                                                 sort:self.filter.sort
                                           descending:self.filter.sortDescending
                                          deviceClass:self.filter.deviceClass
+                                         category:nil
+                                         subgenre:nil
                                               offset:self.pageOffset
                                                limit:30
                                           completion:^(NSDictionary *res) {
@@ -252,12 +260,18 @@ static inline BOOL kIsIPad(void) {
                 [self.results addObjectsFromArray:page];
                 self.pageOffset += page.count;
                 if (self.pageOffset >= total) self.eof = YES;
-                [UIView setAnimationsEnabled:NO];
-                [CATransaction begin];
-                [CATransaction setDisableActions:YES];
-                [self.tableView reloadData];
-                [CATransaction commit];
-                [UIView setAnimationsEnabled:YES];
+                // Defer the reload while the user is flinging — reloading mid-scroll
+                // re-lays-out every visible tile and stutters the dense grid.
+                if (self.tableView.dragging || self.tableView.decelerating) {
+                    self.pendingReload = YES;
+                } else {
+                    [UIView setAnimationsEnabled:NO];
+                    [CATransaction begin];
+                    [CATransaction setDisableActions:YES];
+                    [self.tableView reloadData];
+                    [CATransaction commit];
+                    [UIView setAnimationsEnabled:YES];
+                }
             }
             self.statusLabel.text = [NSString stringWithFormat:T(@"catalog.apps_count"),
                                       (unsigned long)self.results.count, (long)total,
@@ -394,7 +408,8 @@ static inline BOOL kIsIPad(void) {
 }
 
 - (void)gridDensityDidChange {
-    [self.tableView reloadData];   // new column count from the density pref
+    self.tableView.rowHeight = [AppRowCell gridRowHeight];
+    [self.tableView reloadData];   // new column count + row height from the density pref
 }
 
 - (void)dealloc {
@@ -426,6 +441,7 @@ static inline BOOL kIsIPad(void) {
         }
         NSInteger n = [self tilesPerRowForWidth:tv.bounds.size.width];
         row.tilesPerRow = n;
+        [row setContentRasterized:!self.gridScrolling];   // rasterize at rest, plain while scrolling
         __weak typeof(self) ws = self;
         row.selectionMode = self.selectionMode;
         // Selection lookup callback — runs for each tile during layout so the
@@ -519,15 +535,46 @@ static inline BOOL kIsIPad(void) {
 #pragma mark - UIScrollView (suspend icons while fast-scrolling)
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)sv {
-    [[IconLoader shared] suspend];
+    self.gridScrolling = YES;
+    // Don't suspend icon loads anymore — with off-main decode + visible-first ordering, icons
+    // load continuously AS you scroll (the currently-visible ones jump the queue).
+    [self setVisibleRowsRasterized:NO];   // composite directly while scrolling — no re-raster spikes
+    [AppTileView setSuppressTileText:NO];  // a finger-drag shows text; it's the FLING we skip it on
+}
+
+- (void)scrollViewWillBeginDecelerating:(UIScrollView *)sv {
+    if (kIsIPad()) [AppTileView setSuppressTileText:YES];   // fast fling → tiles draw card+icon only
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)sv willDecelerate:(BOOL)decel {
-    if (!decel) [[IconLoader shared] resume];
+    if (!decel) [self gridScrollDidStop];
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)sv {
-    [[IconLoader shared] resume];
+    [self gridScrollDidStop];
+}
+
+- (void)gridScrollDidStop {
+    self.gridScrolling = NO;
+    [AppTileView setSuppressTileText:NO];
+    for (UITableViewCell *c in [self.tableView visibleCells])
+        if ([c isKindOfClass:[AppRowCell class]]) [(AppRowCell *)c redrawTiles];   // bring text back
+    [self setVisibleRowsRasterized:YES];  // flatten each row to 1 cached bitmap at rest
+    [self flushPendingReload];
+}
+
+// Toggle row rasterization on the currently-visible iPad grid rows.
+- (void)setVisibleRowsRasterized:(BOOL)on {
+    if (!kIsIPad()) return;
+    for (UITableViewCell *c in [self.tableView visibleCells]) {
+        if ([c isKindOfClass:[AppRowCell class]]) [(AppRowCell *)c setContentRasterized:on];
+    }
+}
+
+- (void)flushPendingReload {
+    if (!self.pendingReload) return;
+    self.pendingReload = NO;
+    [self.tableView reloadData];
 }
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
@@ -545,9 +592,19 @@ static inline BOOL kIsIPad(void) {
     [self.navigationController pushViewController:vc animated:YES];
 }
 
-- (void)willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)o
-                                          duration:(NSTimeInterval)d {
-    if (kIsIPad()) [self.tableView reloadData];
+// Rotation / bounds-change fix: when the column count actually changes (at the FINAL width),
+// reload so EVERY visible row uses the new tilesPerRow + row height. The old willAnimateRotation
+// reload fired mid-animation at a transient width, leaving some rows with the old column count
+// and others (built on later scroll) with the new one — the "mixed rows per orientation" bug.
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    if (!kIsIPad()) return;
+    NSInteger n = [self tilesPerRowForWidth:self.tableView.bounds.size.width];
+    if (n != self.lastTPR) {
+        self.lastTPR = n;
+        self.tableView.rowHeight = [AppRowCell gridRowHeight];
+        [self.tableView reloadData];
+    }
 }
 
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)o { return YES; }

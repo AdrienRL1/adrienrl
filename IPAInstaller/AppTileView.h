@@ -14,4 +14,9 @@
 @property (nonatomic, assign) BOOL selectionMode;
 @property (nonatomic, assign) BOOL tileSelected;
 
+// During a FAST fling, tiles skip drawing their text (unreadable at that speed anyway) so the
+// main thread isn't laying out text on every recycled tile. Set NO + redraw when scrolling
+// settles. Icons (separate composited layer) keep showing throughout.
++ (void)setSuppressTileText:(BOOL)suppress;
+
 @end

@@ -103,10 +103,102 @@ static NSString *const kSelectPrompt =
     @"List:\n1. Doodle Jump (v1.8, iOS 4.0)\n2. Angry Birds (v2.0, iOS 4.0)\n"
     @"{\"matches\":[],\"found\":false,\"reply\":\"Je n'ai pas trouve cette app dans le catalogue — il ne contient que des apps de 2008-2014.\"}\n";
 
-// Core round-trip: POST system+user, strip code fences, extract the {...} JSON
-// object and return it PARSED. Callback hops to main. Reused by every LLM step
-// (query expansion, alternatives, and the v1.4 grounding pass) — each step then
-// reads whatever fields it needs out of the dictionary.
+// Pull the {...} JSON object out of a raw OpenAI-style response body. Handles the
+// OpenAI envelope (choices[0].message.content), a bare "content" field, or raw text,
+// then strips ``` fences and extracts the outermost JSON object. Returns nil if there
+// is no usable JSON (caller treats nil as a transient failure worth retrying).
+static NSDictionary *parseLLMResponse(NSData *resp) {
+    if (!resp.length) return nil;
+    NSDictionary *outer = [NSJSONSerialization JSONObjectWithData:resp options:0 error:nil];
+    NSString *content = nil;
+    if ([outer isKindOfClass:[NSDictionary class]]) {
+        NSArray *choices = outer[@"choices"];
+        if ([choices isKindOfClass:[NSArray class]] && choices.count) {
+            content = [[choices firstObject] valueForKeyPath:@"message.content"];
+        }
+        if (!content.length) content = outer[@"content"];
+    }
+    if (!content.length) content = [[NSString alloc] initWithData:resp encoding:NSUTF8StringEncoding];
+    if (!content.length) return nil;
+    NSString *clean = content;
+    NSRange fenceStart = [clean rangeOfString:@"```"];
+    if (fenceStart.location != NSNotFound) {
+        NSRange afterFence = NSMakeRange(NSMaxRange(fenceStart), clean.length - NSMaxRange(fenceStart));
+        NSRange newLine = [clean rangeOfString:@"\n" options:0 range:afterFence];
+        if (newLine.location != NSNotFound) clean = [clean substringFromIndex:NSMaxRange(newLine)];
+        NSRange fenceEnd = [clean rangeOfString:@"```" options:NSBackwardsSearch];
+        if (fenceEnd.location != NSNotFound) clean = [clean substringToIndex:fenceEnd.location];
+    }
+    NSRange jsonStart = [clean rangeOfString:@"{"];
+    NSRange jsonEnd = [clean rangeOfString:@"}" options:NSBackwardsSearch];
+    if (jsonStart.location == NSNotFound || jsonEnd.location == NSNotFound
+        || jsonEnd.location <= jsonStart.location) return nil;
+    NSString *jsonStr = [clean substringWithRange:
+        NSMakeRange(jsonStart.location, jsonEnd.location - jsonStart.location + 1)];
+    NSDictionary *parsed = [NSJSONSerialization JSONObjectWithData:
+        [jsonStr dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    return [parsed isKindOfClass:[NSDictionary class]] ? parsed : nil;
+}
+
+static NSString *const kModelPrimary  = @"openai-fast";  // GPT-OSS 20B (OVH), fastest free anon route
+static NSString *const kModelFallback = @"openai";       // alias — tried on the LAST attempt
+static const NSInteger kLLMMaxAttempts = 3;
+
+// One attempt of the round-trip, with retry-on-transient-failure. The free endpoint
+// is genuinely flaky (cold starts, 5xx, rate limits, occasional non-JSON), which is
+// why the chat "didn't work sometimes" — a single failed request killed the whole
+// interaction. We now retry up to kLLMMaxAttempts with short backoff, and switch to
+// the fallback model on the final try. Most failures are fast (5xx/empty), so retries
+// are cheap; the long first timeout only matters for a genuine cold start.
+static void llmAttempt(NSString *sysWithDevice, NSString *userMsg, float temperature,
+                       NSInteger attempt, void (^cb)(NSDictionary *, NSError *)) {
+    NSString *model = (attempt >= kLLMMaxAttempts) ? kModelFallback : kModelPrimary;
+    NSDictionary *payload = @{
+        @"model": model,
+        @"messages": @[ @{@"role": @"system", @"content": sysWithDevice},
+                        @{@"role": @"user",   @"content": userMsg} ],
+        @"private": @YES,
+        @"temperature": @(temperature),
+        @"max_tokens": @1024,
+    };
+    NSError *je = nil;
+    NSData *bodyData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&je];
+    if (je) { cb(nil, je); return; }
+    // First attempt gets a long timeout for cold starts; retries are short (warm now).
+    NSTimeInterval timeout = (attempt == 1) ? 50 : 30;
+    CPLog([NSString stringWithFormat:@"[LLM] POST attempt %ld/%ld model=%@ body=%lu temp=%.2f to=%.0fs",
+              (long)attempt, (long)kLLMMaxAttempts, model, (unsigned long)bodyData.length, temperature, timeout]);
+    NSDate *t0 = [NSDate date];
+    [HTTPSClient postURL:kEndpoint
+                  headers:@{@"Content-Type": @"application/json", @"Accept": @"application/json"}
+                     body:bodyData
+                  timeout:timeout
+               completion:^(NSData *resp, NSInteger code, NSError *err) {
+        NSTimeInterval dt = -[t0 timeIntervalSinceNow];
+        NSDictionary *parsed = (!err && code == 200) ? parseLLMResponse(resp) : nil;
+        CPLog([NSString stringWithFormat:@"[LLM] attempt %ld done %.1fs code=%ld bytes=%lu parsed=%@ err=%@",
+                  (long)attempt, dt, (long)code, (unsigned long)resp.length, parsed ? @"yes" : @"NO",
+                  err ? err.localizedDescription : @"(nil)"]);
+        BOOL transient = (err != nil) || (code == 0) || (code == 429) || (code >= 500)
+                         || (!resp.length) || (parsed == nil);
+        if (transient && attempt < kLLMMaxAttempts) {
+            double delay = 1.0 * (double)attempt;   // 1s, then 2s
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                           dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                llmAttempt(sysWithDevice, userMsg, temperature, attempt + 1, cb);
+            });
+            return;
+        }
+        if (parsed) { cb(parsed, nil); return; }
+        NSLog(@"[Pollinations] giving up after %ld attempts: code=%ld err=%@", (long)attempt, (long)code, err);
+        cb(nil, err ?: [NSError errorWithDomain:@"Pollinations" code:code
+                            userInfo:@{NSLocalizedDescriptionKey:
+                                       [NSString stringWithFormat:@"HTTP %ld / no JSON", (long)code]}]);
+    }];
+}
+
+// Core round-trip: POST system+user, retrying transient failures, and return the
+// extracted JSON dict PARSED. Callback hops to main. Reused by every LLM step.
 static void callLLMRaw(NSString *systemPrompt, NSString *userMsg, float temperature,
                        void (^completion)(NSDictionary *parsed, NSError *err)) {
     void (^cb)(NSDictionary *, NSError *) = ^(NSDictionary *p, NSError *e) {
@@ -118,100 +210,7 @@ static void callLLMRaw(NSString *systemPrompt, NSString *userMsg, float temperat
         @"\n\nCONTEXT — User's device: %@. When relevant, tailor your answer to this exact "
         @"hardware (model, chip, RAM, iOS); you may answer questions about the device or "
         @"whether an app is compatible with it.", [DeviceInfo aiSummary]];
-    NSDictionary *payload = @{
-        @"model": @"openai-fast",  // GPT-OSS 20B (OVH) — the only free anon model; the
-                                   // direct "openai-fast" id routes faster than the "openai" alias
-        @"messages": @[
-            @{@"role": @"system", @"content": sysWithDevice},
-            @{@"role": @"user",   @"content": userMsg},
-        ],
-        @"private": @YES,
-        @"temperature": @(temperature),
-        // Bound worst-case generation time. Generous enough for the model's hidden
-        // reasoning + our short JSON, but caps pathological runaways.
-        @"max_tokens": @1024,
-    };
-    NSError *je = nil;
-    NSData *bodyData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&je];
-    if (je) { cb(nil, je); return; }
-
-    CPLog([NSString stringWithFormat:@"[LLM] POST %@ body=%lu temp=%.2f",
-              kEndpoint, (unsigned long)bodyData.length, temperature]);
-    NSDate *t0 = [NSDate date];
-    [HTTPSClient postURL:kEndpoint
-                  headers:@{@"Content-Type": @"application/json",
-                            @"Accept": @"application/json"}
-                     body:bodyData
-                  timeout:60   // free endpoint cold-starts can take 20-50s; 35s was
-                               // killing slow-but-valid responses → "service unavailable"
-               completion:^(NSData *resp, NSInteger code, NSError *err) {
-        NSTimeInterval dt = -[t0 timeIntervalSinceNow];
-        CPLog([NSString stringWithFormat:@"[LLM] reply after %.1fs  code=%ld  bytes=%lu  err=%@",
-                  dt, (long)code, (unsigned long)resp.length,
-                  err ? [NSString stringWithFormat:@"%@ (%ld)", err.localizedDescription, (long)err.code]
-                      : @"(nil)"]);
-        if (err || code != 200 || !resp.length) {
-            NSLog(@"[Pollinations] error: code=%ld err=%@", (long)code, err);
-            cb(nil, err ?: [NSError errorWithDomain:@"Pollinations" code:code
-                                userInfo:@{NSLocalizedDescriptionKey:
-                                           [NSString stringWithFormat:@"HTTP %ld", (long)code]}]);
-            return;
-        }
-        // OpenAI-compatible payload
-        NSDictionary *outer = [NSJSONSerialization JSONObjectWithData:resp options:0 error:nil];
-        NSString *content = nil;
-        if ([outer isKindOfClass:[NSDictionary class]]) {
-            NSArray *choices = outer[@"choices"];
-            if ([choices isKindOfClass:[NSArray class]] && choices.count) {
-                content = [[choices firstObject] valueForKeyPath:@"message.content"];
-            }
-            if (!content.length) content = outer[@"content"];
-        }
-        if (!content.length) {
-            content = [[NSString alloc] initWithData:resp encoding:NSUTF8StringEncoding];
-        }
-        if (!content.length) {
-            cb(nil, [NSError errorWithDomain:@"Pollinations" code:2
-                          userInfo:@{NSLocalizedDescriptionKey: @"Empty content"}]);
-            return;
-        }
-        // Strip ``` code fences if present
-        NSString *clean = content;
-        NSRange fenceStart = [clean rangeOfString:@"```"];
-        if (fenceStart.location != NSNotFound) {
-            NSRange afterFence = NSMakeRange(NSMaxRange(fenceStart),
-                                              clean.length - NSMaxRange(fenceStart));
-            NSRange newLine = [clean rangeOfString:@"\n" options:0 range:afterFence];
-            if (newLine.location != NSNotFound) {
-                clean = [clean substringFromIndex:NSMaxRange(newLine)];
-            }
-            NSRange fenceEnd = [clean rangeOfString:@"```" options:NSBackwardsSearch];
-            if (fenceEnd.location != NSNotFound) {
-                clean = [clean substringToIndex:fenceEnd.location];
-            }
-        }
-        NSRange jsonStart = [clean rangeOfString:@"{"];
-        NSRange jsonEnd = [clean rangeOfString:@"}" options:NSBackwardsSearch];
-        if (jsonStart.location == NSNotFound || jsonEnd.location == NSNotFound
-            || jsonEnd.location <= jsonStart.location) {
-            NSLog(@"[Pollinations] no JSON in: %@", content);
-            cb(nil, [NSError errorWithDomain:@"Pollinations" code:3
-                          userInfo:@{NSLocalizedDescriptionKey: @"No JSON in response"}]);
-            return;
-        }
-        NSString *jsonStr = [clean substringWithRange:NSMakeRange(jsonStart.location,
-                                                                    jsonEnd.location - jsonStart.location + 1)];
-        NSDictionary *parsed = [NSJSONSerialization JSONObjectWithData:
-                                  [jsonStr dataUsingEncoding:NSUTF8StringEncoding]
-                                                                options:0 error:nil];
-        if (![parsed isKindOfClass:[NSDictionary class]]) {
-            cb(nil, [NSError errorWithDomain:@"Pollinations" code:4
-                          userInfo:@{NSLocalizedDescriptionKey:
-                                     [@"Bad JSON: " stringByAppendingString:jsonStr]}]);
-            return;
-        }
-        cb(parsed, nil);
-    }];
+    llmAttempt(sysWithDevice, userMsg, temperature, 1, cb);
 }
 
 // Thin wrapper for the expansion/alternatives steps: pulls titles + keywords +

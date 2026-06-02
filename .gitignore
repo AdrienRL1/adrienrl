@@ -33,3 +33,9 @@ IPA-Install-RAPPORT.md
 deps/mbedtls/
 !deps/build/
 !deps/build/*.a
+desc_work/
+
+# Catalog build artifacts — the catalog is downloaded at runtime (catalog.db.gz on
+# GitHub Pages), never committed to the source repo.
+IPAInstaller/catalog.db
+IPAInstaller/catalog-build/

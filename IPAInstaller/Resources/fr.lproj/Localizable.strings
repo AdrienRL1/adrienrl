@@ -19,6 +19,7 @@
 "catalog.loading" = "Chargement du catalogue...";
 "catalog.loading_more" = "Chargement...";
 "catalog.network_error" = "Erreur réseau : %@";
+"catalog.tap_retry" = "Touchez pour réessayer";
 "catalog.server_invalid" = "Réponse serveur invalide";
 "catalog.apps_count" = "%lu / %ld apps%@";
 "catalog.end" = " — fin";
@@ -51,6 +52,8 @@
 "install.url_placeholder" = "https://archive.org/.../app.ipa";
 "install.button" = "Installer";
 "install.installations" = "Installations (%lu)";
+"install.count_active" = "%ld en cours";
+"install.count_waiting" = "%ld en attente";
 
 /* ===== Settings screen ===== */
 "settings.title" = "Réglages";
@@ -207,6 +210,7 @@
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Téléchargement";
 "settings.parallel_streams" = "Streams parallèles";
+"settings.max_downloads" = "Téléchargements simultanés";
 "settings.parallel_streams_footer" = "archive.org limite la bande passante par connexion TCP. Découper un téléchargement en plusieurs chunks parallèles (chacun avec sa propre connexion) peut donner 3-4× la vitesse. 4 est le bon compromis — au-delà, archive.org peut limiter l'ensemble. Mettre à 1 pour désactiver.";
 "settings.streams_off" = "1 (un seul stream)";
 "settings.streams_n" = "%ld streams parallèles";
@@ -270,3 +274,111 @@
 "install.open_in_filza" = "Ouvrir dans Filza";
 "install.no_filza_title" = "Filza introuvable";
 "install.no_filza_msg" = "Le chemin a été copié dans le presse-papiers, vous pouvez le coller dans le gestionnaire de fichiers de votre choix.";
+
+/* v1.6 — AI description device verdict */
+"app.verdict.perfect" = "Compatible avec ton %@";
+"app.verdict.maybe" = "Peut manquer de fluidité sur ton %@";
+"app.verdict.ram" = "Pourrait manquer de mémoire sur ton %@ — risque d'instabilité";
+"app.verdict.ios" = "Nécessite iOS %@ — ton appareil est en iOS %@";
+"app.verdict.ipad_only" = "Conçue pour iPad — ne fonctionnera pas sur ton %@";
+"app.verdict.issues_label" = "Note :";
+
+/* v1.7 category menu */
+"categories.title" = "Catégories";
+"categories.all" = "Toutes les apps";
+"catalog.browse_categories" = "Catégories";
+"cat.Games" = "Jeux";
+"cat.Entertainment" = "Divertissement";
+"cat.Social Networking" = "Réseaux sociaux";
+"cat.Photo & Video" = "Photo et vidéo";
+"cat.Music" = "Musique";
+"cat.Productivity" = "Productivité";
+"cat.Utilities" = "Utilitaires";
+"cat.Travel" = "Voyages";
+"cat.Navigation" = "Navigation";
+"cat.News" = "Actualités";
+"cat.Sports" = "Sports";
+"cat.Education" = "Éducation";
+"cat.Finance" = "Finance";
+"cat.Health & Fitness" = "Santé et forme";
+"cat.Lifestyle" = "Style de vie";
+"cat.Business" = "Affaires";
+"cat.Reference" = "Référence";
+"cat.Books" = "Livres";
+"cat.Weather" = "Météo";
+"cat.Food & Drink" = "Cuisine et boissons";
+"cat.Medical" = "Médecine";
+"cat.Shopping" = "Achats";
+"sub.Action" = "Action";
+"sub.Adventure" = "Aventure";
+"sub.Arcade" = "Arcade";
+"sub.Board" = "Plateau";
+"sub.Card" = "Cartes";
+"sub.Casino" = "Casino";
+"sub.Dice" = "Dés";
+"sub.Educational" = "Éducatif";
+"sub.Family" = "Famille";
+"sub.Kids" = "Enfants";
+"sub.Music" = "Musique";
+"sub.Puzzle" = "Réflexion";
+"sub.Racing" = "Course";
+"sub.Role Playing" = "Jeu de rôle";
+"sub.Simulation" = "Simulation";
+"sub.Sports" = "Sport";
+"sub.Strategy" = "Stratégie";
+"sub.Trivia" = "Quiz";
+"sub.Word" = "Mots";
+"sub.Casual" = "Détente";
+
+/* v1.7 category home */
+"categories.welcome" = "Bienvenue sur AppDrop";
+"categories.welcome_sub" = "Parcourez %@ apps et jeux iOS d’époque";
+"categories.napps" = "%@ apps";
+
+/* v1.7 support/donate */
+"settings.support_row" = "Soutenir AppDrop";
+"support.action" = "Soutenir AppDrop";
+"settings.support_footer" = "AppDrop est gratuit. Si tu le trouves utile, un petit pourboire via PayPal fait plaisir — jamais obligatoire.";
+"settings.support_copied" = "Lien copié. Ouvre-le sur un appareil plus récent ou un ordinateur pour donner via PayPal.";
+
+/* v1.7 version compatibility */
+"app.picked_compatible" = "Version la plus récente compatible avec ton iOS — les versions plus récentes exigent un iOS plus récent.";
+"versions.incompatible" = "✗ exige un iOS plus récent";
+
+/* v1.7 catalog download */
+"catalog.downloading" = "Téléchargement du catalogue…";
+"catalog.downloading_pct" = "Téléchargement du catalogue… %d %%";
+"catalog.decompressing" = "Décompression…";
+
+/* v1.7 feedback */
+"feedback.title" = "Commentaires";
+"feedback.section" = "Commentaires";
+"feedback.section_footer" = "Signale un bug ou suggère une amélioration. Ça va directement au développeur.";
+"feedback.row" = "💬 Signaler un bug / suggérer";
+"feedback.intro" = "Un bug ou une idée ? Décris-le ci-dessous. Tu peux joindre une ou plusieurs captures d'écran.";
+"feedback.placeholder" = "Décris le bug ou l'amélioration…";
+"feedback.add_photo" = "📷 Ajouter une photo";
+"feedback.remove_photo" = "Retirer";
+"feedback.send" = "Envoyer";
+"feedback.sent_title" = "Merci !";
+"feedback.sent" = "Ton commentaire a été envoyé. Merci d'aider à améliorer AppDrop !";
+"feedback.error" = "Échec de l'envoi — vérifie ta connexion";
+"feedback.empty" = "Écris d'abord ton commentaire.";
+"feedback.not_configured" = "Le feedback n'est pas encore configuré — réessaie après la prochaine mise à jour.";
+
+"tab.home" = "Accueil";
+
+/* ===== Revival / Works today (issue #4) ===== */
+"categories.revival" = "Fonctionne aujourd'hui";
+"categories.revival_sub" = "Apps patchées et revivals qui marchent encore";
+"revival.title" = "Fonctionne aujourd'hui";
+"revival.intro" = "Des apps qui marchent vraiment sur vieux iOS aujourd'hui — patchées, revivals ou communautaires. Propose-en via le Feedback.";
+"revival.empty" = "Rien ici pour ton appareil pour l'instant — propose une app qui marche via le Feedback !";
+"revival.install" = "Installer";
+"revival.open" = "Ouvrir";
+"revival.install_started" = "Installation démarrée — voir l'onglet Installer.";
+"revival.needs_server" = "serveur requis";
+"revival.active" = "Actif";
+"revival.beta" = "Bêta";
+"revival.discontinued" = "Abandonné";
+"revival.update" = "Mettre à jour v%@";

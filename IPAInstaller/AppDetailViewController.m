@@ -4,6 +4,8 @@
 #import "VersionsViewController.h"
 #import "IOS6Theme.h"
 #import "Localization.h"
+#import "LocalCatalog.h"
+#import "DeviceInfo.h"
 
 @interface AppDetailViewController () <UIAlertViewDelegate>
 @property (nonatomic, strong) UIImageView *iconView;
@@ -17,12 +19,47 @@
 @property (nonatomic, strong) UIView *progressContainer;
 @property (nonatomic, strong) UIProgressView *progressBar;
 @property (nonatomic, strong) UILabel *progressLabel;
+// v1.7: YES if we auto-switched to an older version because the latest needs a newer iOS.
+@property (nonatomic, assign) BOOL pickedCompatibleVersion;
+// v1.6 "Works today" update detection: version ipainstaller reports installed (nil if not
+// installed) + whether the curated revival.json build is newer.
+@property (nonatomic, copy) NSString *installedVersion;
+@property (nonatomic, assign) BOOL hasUpdate;
 @end
+
+// Numeric version compare: -1 (a<b), 0 (a==b), 1 (a>b). e.g. "0.8.7" < "0.8.8".
+static int ADVerCmp(NSString *a, NSString *b) {
+    NSArray *ca = [(a ?: @"") componentsSeparatedByString:@"."];
+    NSArray *cb = [(b ?: @"") componentsSeparatedByString:@"."];
+    NSUInteger n = MAX(ca.count, cb.count);
+    for (NSUInteger i = 0; i < n; i++) {
+        NSInteger x = (i < ca.count) ? [ca[i] integerValue] : 0;
+        NSInteger y = (i < cb.count) ? [cb[i] integerValue] : 0;
+        if (x != y) return x < y ? -1 : 1;
+    }
+    return 0;
+}
 
 @implementation AppDetailViewController
 
 - (instancetype)initWithApp:(NSDictionary *)app {
+    return [self initWithApp:app allowVersionSwitch:YES];
+}
+
+- (instancetype)initWithApp:(NSDictionary *)app allowVersionSwitch:(BOOL)allow {
     if ((self = [super init])) {
+        // If the version we were handed can't run on THIS device (its min iOS is newer),
+        // switch to the latest version that CAN — so the whole screen + the Install
+        // button use a compatible build, not a too-recent one. Skipped when the user
+        // explicitly picked a version in the Versions menu (allow=NO).
+        if (allow) {
+            LocalCatalog *cat = [LocalCatalog shared];
+            NSString *bid = app[@"bundleId"];
+            if (bid.length && ![cat deviceCanRunMinIOS:app[@"minOS"]]) {
+                NSDictionary *compat = [cat latestCompatibleVersionForBundleId:bid];
+                if (compat) { app = compat; self.pickedCompatibleVersion = YES; }
+            }
+        }
         self.app = app;
     }
     return self;
@@ -70,6 +107,7 @@
 
     [self buildLayout];
     [self loadIcon];
+    [self checkRevivalUpdate];
 }
 
 - (void)versionsTapped {
@@ -170,9 +208,56 @@
 
     [self.view addSubview:header];
 
-    // Info text below (offset by banner height if shown)
-    CGFloat infoY = headerH;
-    self.infoView = [[UITextView alloc] initWithFrame:CGRectMake(0, infoY, w, b.size.height - infoY)];
+    // v1.7: STRICT compatibility verdict, computed locally from REAL per-version data
+    // (this EXACT IPA's real minimum iOS + platform bitmask). Shown on EVERY version —
+    // even the obscure long tail with no AI description. nil = no real signal -> no banner.
+    CGFloat contentY = headerH;
+
+    NSDictionary *verdict =
+        [DeviceInfo compatibilityVerdictForAppMinIOS:self.app[@"minOS"]
+                                            platform:[self.app[@"platform"] integerValue]];
+    if (verdict) {
+        NSInteger level = [verdict[@"level"] integerValue];   // 0 = compatible, 2 = won't run
+        UIColor *bg = (level == 0) ? [UIColor colorWithRed:0.84 green:0.93 blue:0.81 alpha:1.0]
+                                   : [UIColor colorWithRed:0.98 green:0.84 blue:0.82 alpha:1.0];
+        UIColor *fg = (level == 0) ? [UIColor colorWithRed:0.11 green:0.42 blue:0.13 alpha:1.0]
+                                   : [UIColor colorWithRed:0.62 green:0.11 blue:0.10 alpha:1.0];
+        NSString *prefix = (level == 0) ? @"✓  " : @"✗  ";
+
+        NSString *msg = [prefix stringByAppendingString:(verdict[@"message"] ?: @"")];
+        if (self.pickedCompatibleVersion) {
+            // We auto-selected an older build because the newest needs a higher iOS.
+            msg = [msg stringByAppendingFormat:@"\n%@", T(@"app.picked_compatible")];
+        }
+        CGFloat bh = self.pickedCompatibleVersion ? 58 : 40;
+        UIView *banner = [[UIView alloc] initWithFrame:CGRectMake(0, contentY, w, bh)];
+        banner.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        banner.backgroundColor = bg;
+        UILabel *bl = [[UILabel alloc] initWithFrame:CGRectMake(12, 0, w - 24, bh)];
+        bl.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        bl.numberOfLines = self.pickedCompatibleVersion ? 3 : 2;
+        bl.backgroundColor = [UIColor clearColor];
+        bl.font = [UIFont boldSystemFontOfSize:13];
+        bl.textColor = fg;
+        bl.text = msg;
+        [banner addSubview:bl];
+        [self.view addSubview:banner];
+        contentY += bh;
+    }
+
+    // AI description text — resolved by BUNDLE ID so it appears on every version.
+    // The old AI "known issues" note is intentionally NOT shown anymore: it was
+    // unreliable, templated boilerplate that just duplicated the verdict above.
+    NSString *descText = nil;
+    NSDictionary *desc = [[LocalCatalog shared] descriptionForBundleId:self.app[@"bundleId"]];
+    if (!desc) {
+        NSInteger pk = [self.app[@"id"] integerValue];
+        if (pk > 0) desc = [[LocalCatalog shared] descriptionForPK:pk];
+    }
+    if (desc) descText = [self cleanMarkdown:desc[@"text"]];
+
+    // Info text below (offset by verdict banner if shown)
+    self.infoView = [[UITextView alloc] initWithFrame:CGRectMake(0, contentY, w, b.size.height - contentY)];
     self.infoView.backgroundColor = [IOS6Theme contentBackgroundColor];
     self.infoView.font = [UIFont systemFontOfSize:13];
     self.infoView.editable = NO;
@@ -184,7 +269,7 @@
     NSURL *u = [NSURL URLWithString:self.app[@"url"] ?: @""];
     NSString *host = u.host ?: @"?";
 
-    NSString *info = [NSString stringWithFormat:
+    NSString *tech = [NSString stringWithFormat:
         @"%@ : %@\n%@ : %@\n%@ : %@\n%@ : %@\n%@ : %@\n\n%@ : %@\n%@ : %@\n\n%@ :\n%@",
         T(@"app.info_bundle_id"), self.app[@"bundleId"] ?: @"?",
         T(@"app.info_version"), self.app[@"version"] ?: @"?",
@@ -194,8 +279,25 @@
         T(@"app.info_file"), fname,
         T(@"app.info_mirror"), host,
         T(@"app.info_url"), self.app[@"url"] ?: @"?"];
-    self.infoView.text = info;
+
+    if (descText.length) {
+        // AI description on top, then a divider, then the technical details.
+        self.infoView.text = [NSString stringWithFormat:@"%@\n\n———————————\n\n%@", descText, tech];
+    } else {
+        self.infoView.text = tech;
+    }
     [self.view addSubview:self.infoView];
+}
+
+// Strip the light Markdown the AI emits (**bold**, *italic*, ## headings) so it
+// reads cleanly in a plain UITextView on iOS 5/6. Keeps "- " bullets + line breaks.
+- (NSString *)cleanMarkdown:(NSString *)s {
+    if (![s isKindOfClass:[NSString class]] || !s.length) return @"";
+    NSMutableString *m = [s mutableCopy];
+    [m replaceOccurrencesOfString:@"**" withString:@"" options:0 range:NSMakeRange(0, m.length)];
+    [m replaceOccurrencesOfString:@"## " withString:@"" options:0 range:NSMakeRange(0, m.length)];
+    [m replaceOccurrencesOfString:@"# "  withString:@"" options:0 range:NSMakeRange(0, m.length)];
+    return [m stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 }
 
 - (void)loadIcon {
@@ -210,6 +312,25 @@
                                completion:^(UIImage *img) {
         if (img) self.iconView.image = img;
     }];
+}
+
+// Revival apps support in-place updates: look up the version ipainstaller has on disk for
+// this bundle id (off the main thread) and, if the curated revival.json build is newer, turn
+// the big button into "Update to vX". Tapping it re-installs the .ipa over the old copy.
+// No-op for catalogue apps (they never carry isRevival).
+- (void)checkRevivalUpdate {
+    if (![self.app[@"isRevival"] boolValue]) return;
+    NSString *bid = self.app[@"bundleId"];
+    NSString *curated = self.app[@"version"];
+    if (!bid.length || !curated.length) return;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSString *inst = [[InstallManager shared] installedVersionForBundleId:bid];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.installedVersion = inst;
+            self.hasUpdate = (inst.length > 0 && ADVerCmp(inst, curated) < 0);
+            [self refreshInstallButtonTitle];
+        });
+    });
 }
 
 - (void)installTapped {
@@ -286,6 +407,15 @@
         title = T(@"app.btn.retry");
     } else {
         title = T(@"app.install");
+    }
+    // v1.6 "Works today": when the curated build is newer than the installed one, the idle
+    // button reads "Update to vX". A completed install means we're current again.
+    if ([state isEqualToString:@"completed"]) self.hasUpdate = NO;
+    BOOL liveJob = [state isEqualToString:@"downloading"]
+                || [state isEqualToString:@"installing"]
+                || [state isEqualToString:@"queued"];
+    if (self.hasUpdate && !liveJob) {
+        title = [NSString stringWithFormat:T(@"revival.update"), self.app[@"version"] ?: @"?"];
     }
     [self.installButton setTitle:title forState:UIControlStateNormal];
 

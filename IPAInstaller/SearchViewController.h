@@ -13,4 +13,11 @@
 // consistency with what's visible in the Catalog tab).
 @interface SearchViewController : UIViewController
     <UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate>
+
+// v1.7 — category browse mode. When set (by CategoryViewController), this screen
+// shows every app of that category/subgenre, the text box searches WITHIN it, and
+// all the usual Filters (iOS, device, sort) still apply. nil = normal Search tab.
+@property (nonatomic, copy) NSString *categoryFilter;   // top-level category, nil = none
+@property (nonatomic, copy) NSString *subgenreFilter;   // game subgenre, nil = none
+@property (nonatomic, copy) NSString *categoryTitle;    // localized nav-bar title in category mode
 @end

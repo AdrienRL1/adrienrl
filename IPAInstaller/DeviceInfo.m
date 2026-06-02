@@ -1,4 +1,5 @@
 #import "DeviceInfo.h"
+#import "Localization.h"
 #import <sys/sysctl.h>
 #import <UIKit/UIKit.h>
 
@@ -131,6 +132,79 @@
 
 + (NSString *)aiSummary {
     return [self aiSummaryWithIOSVersion:[[UIDevice currentDevice] systemVersion]];
+}
+
+#pragma mark - v1.6 compatibility verdict
+
++ (NSInteger)ramMB {
+    NSString *r = [self ram];           // "256 MB", "1 GB", "2 GB", "?"
+    if (![r isKindOfClass:[NSString class]] || r.length < 2) return 0;
+    NSScanner *sc = [NSScanner scannerWithString:r];
+    double n = 0;
+    if (![sc scanDouble:&n]) return 0;
+    if ([r rangeOfString:@"GB"].location != NSNotFound) return (NSInteger)(n * 1024.0);
+    if ([r rangeOfString:@"MB"].location != NSNotFound) return (NSInteger)n;
+    return 0;
+}
+
+// numeric compare of dotted versions: returns YES if a < b. Missing parts = 0.
+static BOOL versionLess(NSString *a, NSString *b) {
+    NSArray *pa = [a componentsSeparatedByString:@"."];
+    NSArray *pb = [b componentsSeparatedByString:@"."];
+    NSUInteger n = MAX(pa.count, pb.count);
+    for (NSUInteger i = 0; i < n; i++) {
+        NSInteger va = (i < pa.count) ? [pa[i] integerValue] : 0;
+        NSInteger vb = (i < pb.count) ? [pb[i] integerValue] : 0;
+        if (va < vb) return YES;
+        if (va > vb) return NO;
+    }
+    return NO;
+}
+
+// "6.0.0" -> "6.0", "4.0.0" -> "4.0", "5.1.1" -> "5.1.1" (drop a trailing .0 patch).
+static NSString *prettyVersion(NSString *v) {
+    if (!v.length) return @"";
+    NSArray *p = [v componentsSeparatedByString:@"."];
+    if (p.count == 3 && [p[2] integerValue] == 0)
+        return [NSString stringWithFormat:@"%@.%@", p[0], p[1]];
+    return v;
+}
+
+// STRICT verdict: only what the EXACT IPA's real metadata can prove.
+//   • real minimum iOS (extracted from the binary) vs the device's running iOS
+//   • real platform bitmask (iPad-only binaries can't install on an iPhone/iPod)
+// No AI-derived RAM / "demand" guesses, no invented "known issues".
++ (NSDictionary *)compatibilityVerdictForAppMinIOS:(NSString *)appMinIOS
+                                          platform:(NSInteger)platform {
+    NSString *dev    = [self modelName];
+    NSString *iosNow = [[UIDevice currentDevice] systemVersion] ?: @"";
+    BOOL deviceIsPad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+
+    // Real platform bitmask straight from the IPA: bit1 (2) = iPhone/iPod, bit2 (4) = iPad.
+    BOOL appOnIPhone = (platform & 2) != 0;
+    BOOL appOnIPad   = (platform & 4) != 0;
+
+    // 1) iPad-only binary on an iPhone/iPod -> cannot install -> red.
+    //    (iPhone apps DO run on iPad in compatibility mode, so that case stays green.)
+    if (appOnIPad && !appOnIPhone && !deviceIsPad) {
+        return @{@"level": @2,
+                 @"message": [NSString stringWithFormat:T(@"app.verdict.ipad_only"), dev]};
+    }
+
+    // 2) Real minimum iOS of THIS exact version. "0.0.0"/empty = unspecified in the IPA.
+    NSInteger major = [appMinIOS integerValue];   // "6.0.0" -> 6, "0.0.0" -> 0
+    if (major >= 1) {
+        if (versionLess(iosNow, appMinIOS)) {
+            return @{@"level": @2,
+                     @"message": [NSString stringWithFormat:T(@"app.verdict.ios"),
+                                  prettyVersion(appMinIOS), iosNow]};
+        }
+        return @{@"level": @0,
+                 @"message": [NSString stringWithFormat:T(@"app.verdict.perfect"), dev]};
+    }
+
+    // 3) No real iOS data and no platform conflict -> make no claim (no banner).
+    return nil;
 }
 
 @end

@@ -7,7 +7,10 @@
 #import "IconLoader.h"
 #import "IOS6Theme.h"
 #import "AppRowCell.h"
+#import "AppTileView.h"
 #import "FilterViewController.h"
+#import "CheckpointLog.h"
+#import "FeedbackViewController.h"
 
 static inline BOOL kSearchIsIPad(void) { return UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad; }
 
@@ -27,6 +30,14 @@ static const NSInteger kPageLimit = 50;
 // Monotonically-increasing token so out-of-order async responses from the
 // catalog don't clobber newer results. Bump on every new query.
 @property (nonatomic, assign) NSInteger queryToken;
+// Category browse defaults to showing the WHOLE category (matching the card count).
+// Set YES once the user explicitly applies Filters in category mode, so their
+// iOS/device narrowing then takes effect.
+@property (nonatomic, assign) BOOL categoryFilterApplied;
+@property (nonatomic, assign) BOOL pendingReload;   // a page arrived mid-scroll; reload on stop
+// iPad grid: rotation-reload guard (last tiles-per-row) + active-scroll flag (rasterize off while scrolling).
+@property (nonatomic, assign) NSInteger lastTPR;
+@property (nonatomic, assign) BOOL gridScrolling;
 @end
 
 @implementation SearchViewController
@@ -56,7 +67,11 @@ static const NSInteger kPageLimit = 50;
     self.tableView.delegate = self;
     self.tableView.tableHeaderView = self.searchBar;
     self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.tableView.rowHeight = kSearchIsIPad() ? 170 : 76;  // iPad: tile-grid rows like the Catalogue
+    self.tableView.rowHeight = [AppRowCell gridRowHeight];  // iPad: density-based tile rows
+    // iPad grid has no row separators (they'd draw weird lines between tile rows);
+    // iPhone keeps the normal single-line list separators.
+    self.tableView.separatorStyle = kSearchIsIPad()
+        ? UITableViewCellSeparatorStyleNone : UITableViewCellSeparatorStyleSingleLine;
     self.tableView.backgroundColor = [IOS6Theme contentBackgroundColor];
     [self.view addSubview:self.tableView];
 
@@ -72,12 +87,23 @@ static const NSInteger kPageLimit = 50;
         initWithTitle:T(@"catalog.filters")
                 style:UIBarButtonItemStyleBordered
                target:self action:@selector(filtersTapped)];
+    // Persistent Feedback button on the Search-tab root (left). Category-result screens
+    // are pushed and need their Back button there, so skip them.
+    if (self.categoryFilter.length == 0) [self installFeedbackBarButton];
+
+    // v1.7 — category browse mode: titled by the menu, and we load the whole
+    // category immediately (the search box then narrows WITHIN the category).
+    if (self.categoryFilter.length) {
+        self.title = self.categoryTitle.length ? self.categoryTitle : self.categoryFilter;
+        [self runQuery];
+    }
 }
 
 // Pop the keyboard as soon as the user lands on this tab — search-first UX.
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    if (self.currentQuery.length == 0) {
+    // Auto-focus the keyboard only on the real Search tab — not when browsing a category.
+    if (self.currentQuery.length == 0 && self.categoryFilter.length == 0) {
         [self.searchBar becomeFirstResponder];
     }
 }
@@ -131,7 +157,7 @@ static const NSInteger kPageLimit = 50;
     // queryToken check below.
     self.loading = NO;
     [self.tableView reloadData];
-    if (self.currentQuery.length == 0) {
+    if (self.currentQuery.length == 0 && self.categoryFilter.length == 0) {
         self.statusLabel.text = T(@"search.hint_empty");
         return;
     }
@@ -139,18 +165,36 @@ static const NSInteger kPageLimit = 50;
 }
 
 - (void)loadMore {
-    if (self.loading || self.eof || self.currentQuery.length == 0) return;
+    if (self.loading || self.eof ||
+        (self.currentQuery.length == 0 && self.categoryFilter.length == 0)) return;
     self.loading = YES;
     self.statusLabel.text = T(@"search.searching");
     NSInteger token = self.queryToken;
     CatalogFilter *cf = [CatalogFilter load_];
+    BOOL catMode = self.categoryFilter.length > 0;
+    // Category browse needs the deduped table (entries_unique holds the category column).
+    BOOL uniq = catMode ? YES : cf.uniqueOnly;
+    // By default a category shows ALL its apps (so the list matches the count on the
+    // category card). Only once the user explicitly opens Filters in this view do we
+    // apply their iOS/device narrowing.
+    NSString *useMin = cf.minIOS, *useMax = cf.maxIOS, *useDev = cf.deviceClass;
+    if (catMode && !self.categoryFilterApplied) {
+        // Default category browse: show the whole category EXCEPT apps no version of
+        // which can run on this device. So drop the user's narrow min-iOS/device
+        // bounds, but keep a max-iOS ceiling at the device's iOS (uses min_minos in
+        // unique mode → "has a runnable version"). Hides iOS 11+-only apps.
+        useMin = nil; useDev = @"all";
+        useMax = [[UIDevice currentDevice] systemVersion];
+    }
     [[LocalCatalog shared] searchAsyncWithQuery:self.currentQuery
-                                          minIOS:cf.minIOS
-                                          maxIOS:cf.maxIOS
-                                          unique:cf.uniqueOnly
+                                          minIOS:useMin
+                                          maxIOS:useMax
+                                          unique:uniq
                                             sort:cf.sort
                                       descending:cf.sortDescending
-                                     deviceClass:cf.deviceClass
+                                     deviceClass:useDev
+                                        category:self.categoryFilter
+                                        subgenre:self.subgenreFilter
                                           offset:self.pageOffset
                                            limit:kPageLimit
                                       completion:^(NSDictionary *res) {
@@ -174,7 +218,26 @@ static const NSInteger kPageLimit = 50;
             self.statusLabel.text = [NSString stringWithFormat:T(@"search.results_count"),
                                        (unsigned long)self.results.count, (long)total];
         }
-        [self.tableView reloadData];
+        // Reloading mid-fling re-lays-out every visible tile → a visible hitch on the
+        // dense grid. Defer the reload to when scrolling stops (flushed in the
+        // scroll-end delegates); the data is already appended so nothing is lost.
+        BOOL scrolling = self.tableView.dragging || self.tableView.decelerating;
+        if (scrolling) {
+            self.pendingReload = YES;
+        } else {
+            [self.tableView reloadData];
+            // Auto-fill (only when stationary): if a page didn't fill the screen, keep
+            // loading so the user can scroll to reach the rest of the category.
+            if (!self.eof) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!self.loading && !self.eof &&
+                        !self.tableView.dragging && !self.tableView.decelerating &&
+                        self.tableView.contentSize.height <= self.tableView.bounds.size.height + 80) {
+                        [self loadMore];
+                    }
+                });
+            }
+        }
     }];
 }
 
@@ -202,6 +265,7 @@ static const NSInteger kPageLimit = 50;
                                           reuseIdentifier:rowId];
         NSInteger n = [AppRowCell tilesPerRowForWidth:tv.bounds.size.width];
         row.tilesPerRow = n;
+        [row setContentRasterized:!self.gridScrolling];   // rasterize at rest, plain while scrolling
         row.selectionMode = NO;
         __weak typeof(self) ws = self;
         row.onTileTap = ^(NSDictionary *app) {
@@ -275,17 +339,59 @@ static const NSInteger kPageLimit = 50;
     [self.navigationController pushViewController:vc animated:YES];
 }
 
+- (void)scrollViewDidScroll:(UIScrollView *)sv {
+    // Robust infinite scroll: load the next page well before the bottom, regardless
+    // of the per-cell prefetch heuristic (which can miss on the iPad grid). Guarded
+    // by loading/eof so it never double-loads.
+    if (self.loading || self.eof) return;
+    if (self.currentQuery.length == 0 && self.categoryFilter.length == 0) return;
+    CGFloat remaining = sv.contentSize.height - (sv.contentOffset.y + sv.bounds.size.height);
+    if (remaining < 800) [self loadMore];
+}
+
 - (void)scrollViewWillBeginDragging:(UIScrollView *)sv {
-    [[IconLoader shared] suspend];
+    self.gridScrolling = YES;
+    // Don't suspend icon loads anymore — off-main decode + visible-first ordering means icons
+    // load continuously AS you scroll (currently-visible ones jump the queue).
+    [self setVisibleRowsRasterized:NO];   // composite directly while scrolling — no re-raster spikes
+    [AppTileView setSuppressTileText:NO];  // a finger-drag shows text; it's the FLING we skip it on
     if ([self.searchBar isFirstResponder]) [self.searchBar resignFirstResponder];
 }
 
+- (void)scrollViewWillBeginDecelerating:(UIScrollView *)sv {
+    if (kSearchIsIPad()) [AppTileView setSuppressTileText:YES];   // fast fling → tiles draw card+icon only
+}
+
 - (void)scrollViewDidEndDragging:(UIScrollView *)sv willDecelerate:(BOOL)decel {
-    if (!decel) [[IconLoader shared] resume];
+    if (!decel) [self gridScrollDidStop];
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)sv {
-    [[IconLoader shared] resume];
+    [self gridScrollDidStop];
+}
+
+- (void)gridScrollDidStop {
+    self.gridScrolling = NO;
+    [AppTileView setSuppressTileText:NO];
+    for (UITableViewCell *c in [self.tableView visibleCells])
+        if ([c isKindOfClass:[AppRowCell class]]) [(AppRowCell *)c redrawTiles];   // bring text back
+    [self setVisibleRowsRasterized:YES];  // flatten each row to 1 cached bitmap at rest
+    [self flushPendingReload];
+}
+
+// Toggle row rasterization on the currently-visible iPad grid rows.
+- (void)setVisibleRowsRasterized:(BOOL)on {
+    if (!kSearchIsIPad()) return;
+    for (UITableViewCell *c in [self.tableView visibleCells]) {
+        if ([c isKindOfClass:[AppRowCell class]]) [(AppRowCell *)c setContentRasterized:on];
+    }
+}
+
+// Apply a reload that was deferred because a page arrived while the user was scrolling.
+- (void)flushPendingReload {
+    if (!self.pendingReload) return;
+    self.pendingReload = NO;
+    [self.tableView reloadData];
 }
 
 #pragma mark - Filters
@@ -302,7 +408,12 @@ static const NSInteger kPageLimit = 50;
     // FilterViewController already persisted it; re-run the current query so the new
     // min/max iOS, device class, unique & sort apply to the search results.
     [self dismissViewControllerAnimated:YES completion:nil];
-    if (self.currentQuery.length) [self runQuery];
+    if (self.categoryFilter.length) {
+        self.categoryFilterApplied = YES;  // user opted into filtering this category
+        [self runQuery];
+    } else if (self.currentQuery.length) {
+        [self runQuery];
+    }
 }
 
 - (void)filterViewControllerDidCancel:(FilterViewController *)vc {
@@ -310,7 +421,22 @@ static const NSInteger kPageLimit = 50;
 }
 
 - (void)gridDensityDidChange {
-    [self.tableView reloadData];   // new column count from the density pref
+    self.tableView.rowHeight = [AppRowCell gridRowHeight];
+    [self.tableView reloadData];   // new column count + row height from the density pref
+}
+
+// Rotation / bounds-change fix: reload when the column count actually changes (at the FINAL
+// width) so all rows use the new tilesPerRow + row height — otherwise some rows keep the old
+// column count while later-built ones use the new one (mixed rows after rotating the iPad).
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    if (!kSearchIsIPad()) return;
+    NSInteger n = [AppRowCell tilesPerRowForWidth:self.tableView.bounds.size.width];
+    if (n != self.lastTPR) {
+        self.lastTPR = n;
+        self.tableView.rowHeight = [AppRowCell gridRowHeight];
+        [self.tableView reloadData];
+    }
 }
 
 - (void)dealloc {

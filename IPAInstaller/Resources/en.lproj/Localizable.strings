@@ -19,6 +19,7 @@
 "catalog.loading" = "Loading catalog...";
 "catalog.loading_more" = "Loading...";
 "catalog.network_error" = "Network error: %@";
+"catalog.tap_retry" = "Tap to retry";
 "catalog.server_invalid" = "Invalid server response";
 "catalog.apps_count" = "%lu / %ld apps%@";
 "catalog.end" = " — end";
@@ -51,6 +52,8 @@
 "install.url_placeholder" = "https://archive.org/.../app.ipa";
 "install.button" = "Install";
 "install.installations" = "Installations (%lu)";
+"install.count_active" = "%ld downloading";
+"install.count_waiting" = "%ld waiting";
 
 /* ===== Settings screen ===== */
 "settings.title" = "Settings";
@@ -207,6 +210,7 @@
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Download";
 "settings.parallel_streams" = "Parallel streams";
+"settings.max_downloads" = "Simultaneous downloads";
 "settings.parallel_streams_footer" = "archive.org throttles per TCP connection. Splitting a download into multiple parallel chunks (each with its own connection) can yield 3-4× the speed. 4 is the typical sweet spot — going higher rarely helps and may get all streams throttled together. Set to 1 to disable.";
 "settings.streams_off" = "1 (single stream)";
 "settings.streams_n" = "%ld parallel streams";
@@ -270,3 +274,111 @@
 "install.open_in_filza" = "Open in Filza";
 "install.no_filza_title" = "Filza not detected";
 "install.no_filza_msg" = "The save path has been copied to your clipboard so you can paste it into whichever file manager you use.";
+
+/* v1.6 — AI description device verdict */
+"app.verdict.perfect" = "Compatible with your %@";
+"app.verdict.maybe" = "May not run perfectly smoothly on your %@";
+"app.verdict.ram" = "May need more memory than your %@ has — could be unstable";
+"app.verdict.ios" = "Requires iOS %@ — your device runs iOS %@";
+"app.verdict.ipad_only" = "Made for iPad — won't run on your %@";
+"app.verdict.issues_label" = "Note:";
+
+/* v1.7 category menu */
+"categories.title" = "Categories";
+"categories.all" = "All apps";
+"catalog.browse_categories" = "Categories";
+"cat.Games" = "Games";
+"cat.Entertainment" = "Entertainment";
+"cat.Social Networking" = "Social Networking";
+"cat.Photo & Video" = "Photo & Video";
+"cat.Music" = "Music";
+"cat.Productivity" = "Productivity";
+"cat.Utilities" = "Utilities";
+"cat.Travel" = "Travel";
+"cat.Navigation" = "Navigation";
+"cat.News" = "News";
+"cat.Sports" = "Sports";
+"cat.Education" = "Education";
+"cat.Finance" = "Finance";
+"cat.Health & Fitness" = "Health & Fitness";
+"cat.Lifestyle" = "Lifestyle";
+"cat.Business" = "Business";
+"cat.Reference" = "Reference";
+"cat.Books" = "Books";
+"cat.Weather" = "Weather";
+"cat.Food & Drink" = "Food & Drink";
+"cat.Medical" = "Medical";
+"cat.Shopping" = "Shopping";
+"sub.Action" = "Action";
+"sub.Adventure" = "Adventure";
+"sub.Arcade" = "Arcade";
+"sub.Board" = "Board";
+"sub.Card" = "Card";
+"sub.Casino" = "Casino";
+"sub.Dice" = "Dice";
+"sub.Educational" = "Educational";
+"sub.Family" = "Family";
+"sub.Kids" = "Kids";
+"sub.Music" = "Music";
+"sub.Puzzle" = "Puzzle";
+"sub.Racing" = "Racing";
+"sub.Role Playing" = "Role Playing";
+"sub.Simulation" = "Simulation";
+"sub.Sports" = "Sports";
+"sub.Strategy" = "Strategy";
+"sub.Trivia" = "Trivia";
+"sub.Word" = "Word";
+"sub.Casual" = "Casual";
+
+/* v1.7 category home */
+"categories.welcome" = "Welcome to AppDrop";
+"categories.welcome_sub" = "Browse %@ vintage iOS apps & games";
+"categories.napps" = "%@ apps";
+
+/* v1.7 support/donate */
+"settings.support_row" = "Support AppDrop";
+"support.action" = "Support AppDrop";
+"settings.support_footer" = "AppDrop is free. If it's useful to you, a small tip via PayPal is appreciated — never required.";
+"settings.support_copied" = "Link copied. Open it on a more recent device or a computer to donate via PayPal.";
+
+/* v1.7 version compatibility */
+"app.picked_compatible" = "Showing the latest version compatible with your iOS — newer versions need a more recent iOS.";
+"versions.incompatible" = "✗ needs a newer iOS";
+
+/* v1.7 catalog download */
+"catalog.downloading" = "Downloading catalog…";
+"catalog.downloading_pct" = "Downloading catalog… %d%%";
+"catalog.decompressing" = "Decompressing…";
+
+/* v1.7 feedback */
+"feedback.title" = "Feedback";
+"feedback.section" = "Feedback";
+"feedback.section_footer" = "Report a bug or suggest an improvement. It goes straight to the developer.";
+"feedback.row" = "💬 Report a bug / suggest";
+"feedback.intro" = "Found a bug or have an idea? Describe it below. You can attach one or more screenshots.";
+"feedback.placeholder" = "Describe the bug or improvement…";
+"feedback.add_photo" = "📷 Add a photo";
+"feedback.remove_photo" = "Remove";
+"feedback.send" = "Send";
+"feedback.sent_title" = "Thank you!";
+"feedback.sent" = "Your feedback was sent. Thanks for helping improve AppDrop!";
+"feedback.error" = "Send failed — check your connection";
+"feedback.empty" = "Please write your feedback first.";
+"feedback.not_configured" = "Feedback isn't set up yet — try again after the next update.";
+
+"tab.home" = "Home";
+
+/* ===== Revival / Works today (issue #4) ===== */
+"categories.revival" = "Works today";
+"categories.revival_sub" = "Patched & revived apps that still work";
+"revival.title" = "Works Today";
+"revival.intro" = "Apps that actually work on old iOS today — patched, revived, or community-made. Suggest more via Feedback.";
+"revival.empty" = "Nothing here yet for your device — suggest a working app via Feedback!";
+"revival.install" = "Install";
+"revival.open" = "Open";
+"revival.install_started" = "Installation started — see the Install tab.";
+"revival.needs_server" = "needs a server";
+"revival.active" = "Active";
+"revival.beta" = "Beta";
+"revival.discontinued" = "Discontinued";
+"revival.update" = "Update to v%@";

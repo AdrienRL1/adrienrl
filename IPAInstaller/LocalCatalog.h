@@ -1,5 +1,9 @@
 #import <Foundation/Foundation.h>
 
+// Posted on the main thread after a background freshness check downloaded a newer catalogue
+// and hot-swapped it in place. Observers should rebuild any catalogue-derived UI.
+extern NSString *const LocalCatalogDidUpdateNotification;
+
 // On-device catalog: downloads ipa.json + urls.json from stuffed18.github.io
 // (GitHub Pages public CDN — no private backend involved) once, caches locally, then
 // provides search/filter without any backend round-trip.
@@ -16,6 +20,14 @@
 - (void)loadWithProgress:(void (^)(NSString *status))progressBlock
               completion:(void (^)(BOOL ok, NSError *err))completion;
 
+// v2.0: cheap background freshness check. Compares the remote catalog.db.gz size (via HEAD)
+// against the size stored at last download; if it changed, downloads + hot-swaps the DB
+// (serialized, race-free) and posts LocalCatalogDidUpdateNotification. No-op if the catalogue
+// isn't loaded yet or a check/update is already in flight. Safe to call on every launch /
+// foreground — the HEAD probe is a few hundred bytes; the full 27 MB download happens only
+// when the published catalogue actually changed.
+- (void)checkForCatalogUpdate;
+
 // Filtered search. Returns NSArray of NSDictionary entries matching the same shape as backend.
 // SYNCHRONOUS — call only from background queue, or use searchAsyncWithQuery:... below.
 // `deviceClass`: nil/@"all" = no filter, @"iphone" = apps with iPhone support (plat & 2),
@@ -28,6 +40,8 @@
                                sort:(NSString *)sortKey   // "recent"/"name"/"size"/"minos"
                         descending:(BOOL)descending
                        deviceClass:(NSString *)deviceClass
+                          category:(NSString *)category   // v1.7: nil/@"" = no filter (browse menu)
+                          subgenre:(NSString *)subgenre   // game subgenre, nil/@"" = no filter
                              offset:(NSInteger)offset
                               limit:(NSInteger)limit;
 
@@ -39,11 +53,56 @@
                           sort:(NSString *)sortKey
                    descending:(BOOL)descending
                   deviceClass:(NSString *)deviceClass
+                     category:(NSString *)category
+                     subgenre:(NSString *)subgenre
                         offset:(NSInteger)offset
                          limit:(NSInteger)limit
                     completion:(void (^)(NSDictionary *result))completion;
 
-// All entries for a given bundle id.
+// v1.7: category browse menu — counts per top-level category (only non-empty).
+// Returns NSArray of @{ @"category": NSString, @"count": NSNumber }, sorted by count desc.
+- (NSArray *)categoryCounts;
+
+// v1.7: subgenres within a category (e.g. Games), with counts.
+// Returns NSArray of @{ @"subgenre": NSString, @"count": NSNumber }, sorted by count desc.
+- (NSArray *)subgenreCountsForCategory:(NSString *)category;
+
+// v1.7: total number of unique apps in the catalogue (for the "All apps" row / header).
+- (NSInteger)uniqueAppCount;
+
+// v1.7: pool of representative icon URLs (the ~16 biggest apps with an icon) for a
+// category / subgenre, precomputed in cat_icon_pool. The category home picks one at
+// random per card so the icons vary on each visit. Returns [] if unavailable.
+- (NSArray *)iconPoolForCategory:(NSString *)category;
+- (NSArray *)iconPoolForCategory:(NSString *)category subgenre:(NSString *)subgenre;
+
+// All entries for a given bundle id (newest version first).
 - (NSArray *)versionsForBundleId:(NSString *)bundleId;
+
+// v1.7: the latest version of an app that this device can actually run (min iOS <=
+// device iOS). Returns nil if no version is compatible. Used so "Install" grabs the
+// newest COMPATIBLE build instead of a too-recent one.
+- (NSDictionary *)latestCompatibleVersionForBundleId:(NSString *)bundleId;
+
+// YES if this device's iOS is >= the given app/version minimum iOS string ("6.0").
+// Unknown/empty min → YES (optimistic, jailbreak-friendly).
+- (BOOL)deviceCanRunMinIOS:(NSString *)minOSStr;
+
+// v1.6: AI-generated description + compatibility profile for a catalog entry (by pk).
+// Returns nil if the app has no generated description (the ~38k obscure apps).
+// Keys when present:
+//   @"text"      NSString  — rich App Store style description in the CURRENT app language
+//                            (falls back to English if that language is empty)
+//   @"demand"    NSString  — "light" | "moderate" | "heavy" | "very_heavy"
+//   @"minIOS"    NSString  — "4.3" etc. (may be empty)
+//   @"minRAMMB"  NSNumber  — recommended RAM in MB (0 if unknown)
+//   @"ipadOnly"  NSNumber  — bool
+//   @"issues"    NSString  — (legacy, no longer displayed) AI "known issues" note
+- (NSDictionary *)descriptionForPK:(NSInteger)pk;
+
+// v1.7: same description, but resolved by BUNDLE ID instead of pk — so it shows on
+// EVERY version of an app (the long-tail per-version rows live in `entries`, whose
+// pks have no description; only the one `entries_unique` row per app does).
+- (NSDictionary *)descriptionForBundleId:(NSString *)bundleId;
 
 @end

@@ -8,6 +8,8 @@
 #import "UpdateChecker.h"
 #import "UpdateNotesViewController.h"
 #import "DeviceInfo.h"
+#import "AppRowCell.h"
+#import "FeedbackViewController.h"
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -25,6 +27,8 @@ typedef NS_ENUM(NSInteger, SettingsSection) {
     SectionDiag     = 5,  // HTTPS test + ipainstaller spawn test
     SectionCache    = 6,
     SectionAbout    = 7,
+    SectionFeedback = 8,  // send a bug report / idea (→ GitHub issue via Worker)
+    SectionSupport  = 9,  // discreet "support the dev" PayPal link (last)
     SectionsCount
 };
 
@@ -53,6 +57,9 @@ NSString * const kAppDropGridDensityChangedNotification = @"AppDropGridDensityCh
 static NSString * const kPrefArchiveEmail     = @"IPAInstall.ArchiveEmail";
 static NSString * const kPrefArchiveAccessKey = @"IPAInstall.ArchiveAccessKey";
 static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
+
+// Optional "support the dev" link — last section, discreet. Empty = hide the section.
+static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
 
 @interface SettingsViewController () <UIActionSheetDelegate, UIAlertViewDelegate>
 @property (nonatomic, strong) UITableView *table;
@@ -116,11 +123,13 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
     if (s == SectionLanguage) return 1;
     if (s == SectionDisplay) return kSetIsIPad() ? 1 : 0;  // density slider — iPad only
     if (s == SectionUpdates) return 2;   // installed version + latest release
-    if (s == SectionDownload) return 3;  // parallel streams + folder + keep-ipa
+    if (s == SectionDownload) return 4;  // simultaneous downloads + parallel streams + folder + keep-ipa
     if (s == SectionArchive) return 3;   // email + access key + secret key
     if (s == SectionDiag) return 2;
     if (s == SectionCache) return 1;
     if (s == SectionAbout) return 8;  // + exact model, chip, RAM
+    if (s == SectionFeedback) return 1;
+    if (s == SectionSupport) return kSupportURL.length ? 1 : 0;  // hidden if no link
     return 0;
 }
 
@@ -133,6 +142,7 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
     if (s == SectionDiag) return T(@"settings.section_diagnostics");
     if (s == SectionCache) return T(@"settings.section_cache");
     if (s == SectionAbout) return T(@"settings.section_about");
+    if (s == SectionFeedback) return T(@"feedback.section");
     return nil;
 }
 
@@ -142,10 +152,31 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
     if (s == SectionDownload) return T(@"settings.section_download_footer");
     if (s == SectionArchive) return T(@"settings.section_archive_footer");
     if (s == SectionDiag) return T(@"settings.section_diagnostics_footer");
+    if (s == SectionFeedback) return T(@"feedback.section_footer");
+    if (s == SectionSupport) return kSupportURL.length ? T(@"settings.support_footer") : nil;
     return nil;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    // Support row uses a Subtitle cell so the FULL PayPal URL is visible on its own
+    // line (not a tappable shortcut — those fail on old iOS; the user copies the text
+    // and opens it on a newer device).
+    if (ip.section == SectionSupport) {
+        static NSString *scid = @"supportCell";
+        UITableViewCell *sc = [tv dequeueReusableCellWithIdentifier:scid];
+        if (!sc) sc = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle
+                                             reuseIdentifier:scid];
+        sc.textLabel.text = T(@"settings.support_row");
+        sc.textLabel.font = [UIFont systemFontOfSize:15];
+        sc.textLabel.textColor = [IOS6Theme primaryBlue];
+        sc.detailTextLabel.text = kSupportURL;     // full link, always visible
+        sc.detailTextLabel.font = [UIFont systemFontOfSize:13];
+        sc.detailTextLabel.textColor = [UIColor grayColor];
+        sc.detailTextLabel.numberOfLines = 1;
+        sc.selectionStyle = UITableViewCellSelectionStyleBlue;
+        sc.accessoryType = UITableViewCellAccessoryNone;
+        return sc;
+    }
     static NSString *cid = @"setCell";
     UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:cid];
     if (!cell) {
@@ -157,6 +188,12 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
     cell.detailTextLabel.text = nil;
     cell.detailTextLabel.font = [UIFont systemFontOfSize:13];
     cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+    // v1.7: uniform label font/colour for EVERY row. Previously the Cache + About
+    // rows never set a font, so they inherited the cell default (~17 pt) and looked
+    // bigger than the 14 pt rows. Branches that want bold/blue override this after.
+    cell.textLabel.font = [UIFont systemFontOfSize:14];
+    cell.textLabel.textColor = [UIColor blackColor];
+    cell.textLabel.numberOfLines = 1;
 
     if (ip.section == SectionLanguage) {
         cell.textLabel.text = T(@"settings.language");
@@ -176,18 +213,30 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
         // = more (smaller) tiles. Drives
         // +[AppRowCell tilesPerRowForWidth:] for both Catalogue and Recherche.
         cell.textLabel.text = T(@"settings.grid_density");
-        cell.textLabel.textColor = [UIColor blackColor];
-        cell.textLabel.font = [UIFont systemFontOfSize:14];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        UISlider *sl = [[UISlider alloc] initWithFrame:CGRectMake(0, 0, 220, 30)];
+        NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
+        float dens = ([def objectForKey:kPrefGridDensity] != nil)
+            ? [def floatForKey:kPrefGridDensity] : 0.55f;
+        // Accessory = [live count][slider]. The count updates in real time as the
+        // user drags, so they see how many apps per row the setting produces.
+        UIView *acc = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 256, 32)];
+        acc.backgroundColor = [UIColor clearColor];
+        UILabel *cnt = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 42, 32)];
+        cnt.tag = 555;
+        cnt.font = [UIFont boldSystemFontOfSize:16];
+        cnt.textColor = [IOS6Theme primaryBlue];
+        cnt.textAlignment = NSTextAlignmentCenter;
+        cnt.backgroundColor = [UIColor clearColor];
+        cnt.text = [NSString stringWithFormat:@"%ld", (long)[self currentTilesPerRow]];
+        UISlider *sl = [[UISlider alloc] initWithFrame:CGRectMake(46, 1, 210, 30)];
         sl.minimumValue = 0.0;
         sl.maximumValue = 1.0;
-        NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
-        sl.value = ([def objectForKey:kPrefGridDensity] != nil)
-            ? [def floatForKey:kPrefGridDensity] : 0.55f;
+        sl.value = dens;
         [sl addTarget:self action:@selector(gridDensityChanged:)
             forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = sl;
+        [acc addSubview:cnt];
+        [acc addSubview:sl];
+        cell.accessoryView = acc;
     } else if (ip.section == SectionUpdates) {
         cell.textLabel.textColor = [UIColor blackColor];
         cell.textLabel.font = [UIFont systemFontOfSize:14];
@@ -233,6 +282,11 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
         cell.textLabel.textColor = [UIColor blackColor];
         cell.textLabel.font = [UIFont systemFontOfSize:14];
         if (ip.row == 0) {
+            // v2.0: max simultaneous app downloads (1–8, default 2).
+            cell.textLabel.text = T(@"settings.max_downloads");
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld", (long)[InstallManager maxConcurrentDownloads]];
+        } else if (ip.row == 1) {
             cell.textLabel.text = T(@"settings.parallel_streams");
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
             NSInteger streams = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefParallelStreams];
@@ -240,7 +294,7 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
             cell.detailTextLabel.text = (streams == 1)
                 ? T(@"settings.streams_off")
                 : [NSString stringWithFormat:T(@"settings.streams_n"), (long)streams];
-        } else if (ip.row == 1) {
+        } else if (ip.row == 2) {
             // Download folder — shows the active path. Default value shows
             // a short "Default" label so it's distinct from a custom path.
             cell.textLabel.text = T(@"settings.download_folder");
@@ -298,6 +352,10 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
         else cell.textLabel.text = T(@"settings.test_ipainstaller");
     } else if (ip.section == SectionCache) {
         cell.textLabel.text = T(@"settings.clear_icons");
+    } else if (ip.section == SectionFeedback) {
+        cell.textLabel.text = T(@"feedback.row");
+        cell.textLabel.textColor = [IOS6Theme primaryBlue];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if (ip.section == SectionAbout) {
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         NSBundle *b = [NSBundle mainBundle];
@@ -358,9 +416,10 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
         return;
     }
     if (ip.section == SectionDownload) {
-        if (ip.row == 0) [self showParallelStreamsPicker];
-        else if (ip.row == 1) [self showDownloadFolderPicker];
-        // row 2 (keep-ipa toggle) is handled by the UISwitch directly.
+        if (ip.row == 0) [self showMaxDownloadsPicker];
+        else if (ip.row == 1) [self showParallelStreamsPicker];
+        else if (ip.row == 2) [self showDownloadFolderPicker];
+        // row 3 (keep-ipa toggle) is handled by the UISwitch directly.
         return;
     }
     if (ip.section == SectionArchive) {
@@ -378,6 +437,18 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
                                           cancelButtonTitle:T(@"common.ok")
                                           otherButtonTitles:nil];
         [a show];
+    } else if (ip.section == SectionFeedback) {
+        [self.navigationController pushViewController:[[FeedbackViewController alloc] init] animated:YES];
+    } else if (ip.section == SectionSupport) {
+        if (kSupportURL.length) {
+            // Copy the full link — on old iOS the URL won't open in a browser/PayPal,
+            // so the user pastes it on a newer device/computer.
+            [[UIPasteboard generalPasteboard] setString:kSupportURL];
+            UIAlertView *a = [[UIAlertView alloc] initWithTitle:T(@"settings.support_row")
+                message:[NSString stringWithFormat:@"%@\n\n%@", kSupportURL, T(@"settings.support_copied")]
+                delegate:nil cancelButtonTitle:T(@"common.ok") otherButtonTitles:nil];
+            [a show];
+        }
     }
 }
 
@@ -697,8 +768,38 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
 - (void)gridDensityChanged:(UISlider *)sl {
     [[NSUserDefaults standardUserDefaults] setFloat:sl.value forKey:kPrefGridDensity];
     [[NSUserDefaults standardUserDefaults] synchronize];
+    // Live update the count label sitting next to the slider.
+    UILabel *cnt = (UILabel *)[sl.superview viewWithTag:555];
+    if (cnt) cnt.text = [NSString stringWithFormat:@"%ld", (long)[self currentTilesPerRow]];
     [[NSNotificationCenter defaultCenter]
         postNotificationName:kAppDropGridDensityChangedNotification object:nil];
+}
+
+// Apps-per-row the current density produces at this screen width (for the live label).
+- (NSInteger)currentTilesPerRow {
+    CGFloat w = self.view.bounds.size.width;
+    if (w < 1) w = [UIScreen mainScreen].bounds.size.width;
+    return [AppRowCell tilesPerRowForWidth:w];
+}
+
+#pragma mark - Simultaneous-downloads picker (v2.0)
+
+- (void)showMaxDownloadsPicker {
+    UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:T(@"settings.max_downloads")
+                                                       delegate:self
+                                              cancelButtonTitle:nil
+                                         destructiveButtonTitle:nil
+                                              otherButtonTitles:nil];
+    sheet.tag = 96;
+    NSInteger current = [InstallManager maxConcurrentDownloads];
+    for (NSInteger n = 1; n <= 8; n++) {
+        NSString *title = [NSString stringWithFormat:@"%ld", (long)n];
+        if (n == current) title = [title stringByAppendingString:@" ✓"];
+        [sheet addButtonWithTitle:title];
+    }
+    [sheet addButtonWithTitle:T(@"common.cancel")];
+    sheet.cancelButtonIndex = 8;
+    [sheet showInView:self.view];
 }
 
 #pragma mark - Parallel-streams picker (v1.2 build 9)
@@ -784,6 +885,18 @@ static NSString * const kPrefArchiveSecretKey = @"IPAInstall.ArchiveSecretKey";
             tf.spellCheckingType = UITextSpellCheckingTypeNo;
             tf.keyboardType = UIKeyboardTypeASCIICapable;
             [a show];
+        }
+        return;
+    }
+    if (sheet.tag == 96) {
+        // Simultaneous-downloads picker (buttons 0…7 → 1…8 downloads).
+        if (idx == sheet.cancelButtonIndex) return;
+        if (idx >= 0 && idx < 8) {
+            [[NSUserDefaults standardUserDefaults] setInteger:(idx + 1) forKey:@"IPAInstall.MaxConcurrentDownloads"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            [[InstallManager shared] pumpQueue];   // apply now: if raised, start more queued installs
+            [self.table reloadSections:[NSIndexSet indexSetWithIndex:SectionDownload]
+                       withRowAnimation:UITableViewRowAnimationNone];
         }
         return;
     }

@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "_comment": "Apps qui fonctionnent (ou peuvent fonctionner) aujourd'hui sur vieux iOS — installables DIRECTEMENT (URL .ipa). bid = bundle id d'origine (icône depuis le catalogue + lien croisé). size = octets (affiché avant install). NON GARANTI : projets communautaires qui peuvent casser/fermer. Curé à la main + suggestions via Feedback. (Roblox/Novarin retirés : les anciens clients ne se connectent pas au Roblox officiel.)",
+  "apps": [
+    {
+      "name": "Discord Classic",
+      "bid": "com.hammerandchisel.discord",
+      "min_ios": "5.0",
+      "version": "0.8.8",
+      "status": "active",
+      "login_works": "partial",
+      "needs_server": false,
+      "size": 10961448,
+      "ipa": "https://github.com/TorutheRedFox/iOS-Discord-Classic/releases/download/0.8.8-prerelease-8-fix/Discord.ipa",
+      "link": "https://github.com/TorutheRedFox/iOS-Discord-Classic",
+      "notes": "Client Discord maintenu par la communauté pour iOS 5–6. Lecture et envoi de messages fonctionnent. Peut casser si Discord change son API."
+    }
+  ]
+}

@@ -23,4 +23,18 @@
 // Same, but reads the running iOS version itself (convenience).
 + (NSString *)aiSummary;
 
+// RAM of THIS device in MB (parsed from the table, e.g. "1 GB" -> 1024). 0 if unknown.
++ (NSInteger)ramMB;
+
+// v1.7: STRICT compatibility verdict for THIS exact device, computed locally
+// (instant, offline) from REAL per-version data only — never AI guesses.
+//   appMinIOS : the exact IPA's real minimum iOS, decoded ("6.0.0"; "0.0.0"/empty = unspecified)
+//   platform  : the entry's real plat bitmask (bit1=iPhone/iPod, bit2=iPad)
+// Returns: @{ @"level": @(0 = compatible / 2 = won't run),
+//             @"message": localized one-line verdict for the current language }
+//   or nil when there is no reliable signal (unspecified min iOS + no platform conflict),
+//   so the app never asserts a compatibility it cannot back with real data.
++ (NSDictionary *)compatibilityVerdictForAppMinIOS:(NSString *)appMinIOS
+                                          platform:(NSInteger)platform;
+
 @end

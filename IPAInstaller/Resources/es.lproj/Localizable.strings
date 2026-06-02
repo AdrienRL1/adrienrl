@@ -17,6 +17,7 @@
 "catalog.loading" = "Cargando catálogo...";
 "catalog.loading_more" = "Cargando...";
 "catalog.network_error" = "Error de red: %@";
+"catalog.tap_retry" = "Toca para reintentar";
 "catalog.server_invalid" = "Respuesta del servidor inválida";
 "catalog.apps_count" = "%lu / %ld apps%@";
 "catalog.end" = " — fin";
@@ -46,6 +47,8 @@
 "install.url_placeholder" = "https://archive.org/.../app.ipa";
 "install.button" = "Instalar";
 "install.installations" = "Instalaciones (%lu)";
+"install.count_active" = "%ld en curso";
+"install.count_waiting" = "%ld en espera";
 
 "settings.title" = "Ajustes";
 "settings.section_diagnostics" = "Diagnósticos";
@@ -199,6 +202,7 @@
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Descarga";
 "settings.parallel_streams" = "Streams paralelos";
+"settings.max_downloads" = "Descargas simultáneas";
 "settings.parallel_streams_footer" = "archive.org limita la velocidad por conexión TCP. Dividir una descarga en varios fragmentos paralelos (cada uno con su propia conexión) puede dar 3-4× la velocidad. 4 es el punto óptimo habitual — más allá rara vez ayuda y puede provocar que todo se ralentice. Pon 1 para desactivarlo.";
 "settings.streams_off" = "1 (un solo stream)";
 "settings.streams_n" = "%ld streams paralelos";
@@ -262,3 +266,111 @@
 "install.open_in_filza" = "Abrir en Filza";
 "install.no_filza_title" = "Filza no detectado";
 "install.no_filza_msg" = "La ruta se copió al portapapeles para que la pegues en tu gestor de archivos preferido.";
+
+/* v1.6 — AI description device verdict */
+"app.verdict.perfect" = "Compatible con tu %@";
+"app.verdict.maybe" = "Puede que no funcione con total fluidez en tu %@";
+"app.verdict.ram" = "Puede necesitar más memoria de la que tiene tu %@ — podría ser inestable";
+"app.verdict.ios" = "Requiere iOS %@ — tu dispositivo tiene iOS %@";
+"app.verdict.ipad_only" = "Diseñada para iPad — no funcionará en tu %@";
+"app.verdict.issues_label" = "Nota:";
+
+/* v1.7 category menu */
+"categories.title" = "Categorías";
+"categories.all" = "Todas las apps";
+"catalog.browse_categories" = "Categorías";
+"cat.Games" = "Juegos";
+"cat.Entertainment" = "Entretenimiento";
+"cat.Social Networking" = "Redes sociales";
+"cat.Photo & Video" = "Foto y vídeo";
+"cat.Music" = "Música";
+"cat.Productivity" = "Productividad";
+"cat.Utilities" = "Utilidades";
+"cat.Travel" = "Viajes";
+"cat.Navigation" = "Navegación";
+"cat.News" = "Noticias";
+"cat.Sports" = "Deportes";
+"cat.Education" = "Educación";
+"cat.Finance" = "Finanzas";
+"cat.Health & Fitness" = "Salud y forma física";
+"cat.Lifestyle" = "Estilo de vida";
+"cat.Business" = "Negocios";
+"cat.Reference" = "Referencia";
+"cat.Books" = "Libros";
+"cat.Weather" = "Tiempo";
+"cat.Food & Drink" = "Comida y bebida";
+"cat.Medical" = "Medicina";
+"cat.Shopping" = "Compras";
+"sub.Action" = "Acción";
+"sub.Adventure" = "Aventura";
+"sub.Arcade" = "Arcade";
+"sub.Board" = "Mesa";
+"sub.Card" = "Cartas";
+"sub.Casino" = "Casino";
+"sub.Dice" = "Dados";
+"sub.Educational" = "Educativo";
+"sub.Family" = "Familia";
+"sub.Kids" = "Niños";
+"sub.Music" = "Música";
+"sub.Puzzle" = "Rompecabezas";
+"sub.Racing" = "Carreras";
+"sub.Role Playing" = "Rol";
+"sub.Simulation" = "Simulación";
+"sub.Sports" = "Deportes";
+"sub.Strategy" = "Estrategia";
+"sub.Trivia" = "Trivia";
+"sub.Word" = "Palabras";
+"sub.Casual" = "Casual";
+
+/* v1.7 category home */
+"categories.welcome" = "Te damos la bienvenida a AppDrop";
+"categories.welcome_sub" = "Explora %@ apps y juegos clásicos de iOS";
+"categories.napps" = "%@ apps";
+
+/* v1.7 support/donate */
+"settings.support_row" = "Apoyar AppDrop";
+"support.action" = "Apoyar AppDrop";
+"settings.support_footer" = "AppDrop es gratis. Si te resulta útil, una pequeña propina vía PayPal se agradece — nunca obligatoria.";
+"settings.support_copied" = "Enlace copiado. Ábrelo en un dispositivo más reciente o un ordenador para donar por PayPal.";
+
+/* v1.7 version compatibility */
+"app.picked_compatible" = "Mostrando la última versión compatible con tu iOS — las más nuevas requieren un iOS más reciente.";
+"versions.incompatible" = "✗ requiere un iOS más nuevo";
+
+/* v1.7 catalog download */
+"catalog.downloading" = "Descargando el catálogo…";
+"catalog.downloading_pct" = "Descargando el catálogo… %d%%";
+"catalog.decompressing" = "Descomprimiendo…";
+
+/* v1.7 feedback */
+"feedback.title" = "Comentarios";
+"feedback.section" = "Comentarios";
+"feedback.section_footer" = "Informa de un error o sugiere una mejora. Va directo al desarrollador.";
+"feedback.row" = "💬 Informar de un error / sugerir";
+"feedback.intro" = "¿Un error o una idea? Descríbelo abajo. Puedes adjuntar una captura.";
+"feedback.placeholder" = "Describe el error o la mejora…";
+"feedback.add_photo" = "📷 Añadir una foto";
+"feedback.remove_photo" = "Quitar";
+"feedback.send" = "Enviar";
+"feedback.sent_title" = "¡Gracias!";
+"feedback.sent" = "Tu comentario se envió. ¡Gracias por ayudar a mejorar AppDrop!";
+"feedback.error" = "Error al enviar — revisa tu conexión";
+"feedback.empty" = "Escribe primero tu comentario.";
+"feedback.not_configured" = "Los comentarios aún no están configurados — inténtalo tras la próxima actualización.";
+
+"tab.home" = "Inicio";
+
+/* ===== Revival / Works today (issue #4) ===== */
+"categories.revival" = "Funciona hoy";
+"categories.revival_sub" = "Apps parcheadas y revividas que aún funcionan";
+"revival.title" = "Funciona hoy";
+"revival.intro" = "Apps que de verdad funcionan hoy en iOS antiguo: parcheadas, revividas o comunitarias. Sugiere más vía Comentarios.";
+"revival.empty" = "Nada aquí todavía para tu dispositivo: ¡sugiere una app que funcione vía Comentarios!";
+"revival.install" = "Instalar";
+"revival.open" = "Abrir";
+"revival.install_started" = "Instalación iniciada: mira la pestaña Instalar.";
+"revival.needs_server" = "requiere servidor";
+"revival.active" = "Activo";
+"revival.beta" = "Beta";
+"revival.discontinued" = "Descontinuado";
+"revival.update" = "Actualizar a v%@";

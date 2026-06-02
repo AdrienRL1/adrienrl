@@ -64,4 +64,15 @@ extern NSString *const InstallManagerJobSavedNotification;
 + (NSString *)configuredDownloadFolder;
 + (NSString *)defaultDownloadFolder;
 
+// v1.6: installed version of an app AppDrop installed via ipainstaller (parsed from
+// `ipainstaller -i <bid>` → the "Version:" line), or nil if not installed / unavailable.
+// Used by the "Works today" detail screen to offer "Update to vX" when the curated build
+// is newer. Spawns a process + waits — call OFF the main thread.
+- (NSString *)installedVersionForBundleId:(NSString *)bid;
+
+// v2.0: max simultaneous autonomous app downloads (Settings, 1–8; default 2).
++ (NSInteger)maxConcurrentDownloads;
+// Start queued installs up to that limit. Call after the limit changes in Settings.
+- (void)pumpQueue;
+
 @end

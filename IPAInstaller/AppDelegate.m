@@ -3,12 +3,33 @@
 #import "IOS6Theme.h"
 #import "InstallManager.h"
 #import "CatalogViewController.h"
+#import "CategoryViewController.h"
 #import "SearchViewController.h"
 #import "ChatViewController.h"
 #import "SettingsViewController.h"
 #import "Localization.h"
 #import "UpdateChecker.h"
 #import "CheckpointLog.h"
+
+// v1.7: a "house" glyph for the Accueil (home) tab. Returns an alpha mask that iOS
+// tints exactly like the other tab icons — no PNG to bundle, crisp at any scale.
+static UIImage *AppDropHomeTabIcon(void) {
+    CGSize s = CGSizeMake(30, 30);
+    UIGraphicsBeginImageContextWithOptions(s, NO, [UIScreen mainScreen].scale);
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    [[UIColor blackColor] setFill];
+    UIBezierPath *roof = [UIBezierPath bezierPath];   // wide-eave roof
+    [roof moveToPoint:CGPointMake(15, 4)];
+    [roof addLineToPoint:CGPointMake(27, 15.5)];
+    [roof addLineToPoint:CGPointMake(3, 15.5)];
+    [roof closePath];
+    [roof fill];
+    [[UIBezierPath bezierPathWithRect:CGRectMake(6.5, 14, 17, 12)] fill];   // body
+    CGContextClearRect(c, CGRectMake(12, 19, 6, 7));                         // door cutout
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return img;
+}
 
 // v1.3.1: alert delegate so the AppDelegate can react to the Filza-launch
 // confirmation. The dismissed-path is stored on the alert itself (via tag
@@ -39,10 +60,12 @@
         // Build the 4 tabs: Catalogue (default), IA, Installer, Réglages.
         // Each tab has its own UINavigationController stack so push/pop works inside.
         CPLog(@"alloc CatalogVC");
-        CatalogViewController *catalog = [[CatalogViewController alloc] init];
+        // v1.7: the Catalogue tab opens on the category menu (with a "All apps" row
+        // at the top that pushes the full filtered list — the classic CatalogViewController).
+        CategoryViewController *catalog = [[CategoryViewController alloc] init];
         UINavigationController *catalogNav = [[UINavigationController alloc] initWithRootViewController:catalog];
-        catalogNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.catalog")
-                                                                image:[UIImage imageNamed:@"tab-catalog"]
+        catalogNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.home")
+                                                                image:AppDropHomeTabIcon()
                                                                   tag:0];
 
         CPLog(@"alloc SearchVC");

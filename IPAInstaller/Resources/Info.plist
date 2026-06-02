@@ -70,13 +70,14 @@
 		<string>pt-BR</string>
 		<string>ja</string>
 		<string>zh-Hans</string>
+		<string>tr</string>
 	</array>
 	<key>CFBundleName</key>
 	<string>AppDrop</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.5</string>
+	<string>2.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleURLTypes</key>

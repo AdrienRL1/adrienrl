@@ -16,6 +16,15 @@
 // Returns the bundle currently in use (one of the .lproj inside the app bundle).
 + (NSBundle *)currentBundle;
 
+// The English (en.lproj) bundle — used as a last-resort fallback so a key missing in
+// the active language shows readable English instead of the raw dotted key.
++ (NSBundle *)englishBundle;
+
+// Loads <code>.lproj/Localizable.strings DIRECTLY into a dictionary (cached per code).
+// Bypasses NSBundle's localization resolution, which mis-fires when the chosen
+// language differs from the device language (that was the "Turkish → English" bug).
++ (NSDictionary *)stringsForCode:(NSString *)code;
+
 // 2-letter code currently active (e.g. "fr", "en", "ja").
 + (NSString *)currentLanguageCode;
 

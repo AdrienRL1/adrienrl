@@ -8,6 +8,7 @@
 #import "IconLoader.h"
 #import "ChatBubbleView.h"
 #import "Localization.h"
+#import "FeedbackViewController.h"
 #import "PollinationsLLM.h"
 #import <objc/runtime.h>
 #import "DeviceInfo.h"   // exact device model + chip + RAM for the AI
@@ -111,6 +112,7 @@
     // (no longer auto-triggered after each reply).
     self.navigationItem.rightBarButtonItem =
         [[UIBarButtonItem alloc] initWithCustomView:self.spinner];
+    [self installFeedbackBarButton];   // persistent Feedback button (left) on the AI root
 
     // Keyboard handling for input field
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -223,6 +225,8 @@
                                                                     sort:@"recent"
                                                               descending:YES
                                                              deviceClass:cf.deviceClass
+                                                             category:nil
+                                                             subgenre:nil
                                                                   offset:0
                                                                    limit:10];
             for (NSDictionary *app in res[@"results"] ?: @[]) {
@@ -243,6 +247,8 @@
                                                                     sort:@"recent"
                                                               descending:YES
                                                              deviceClass:cf.deviceClass
+                                                             category:nil
+                                                             subgenre:nil
                                                                   offset:0
                                                                    limit:15];
             for (NSDictionary *app in res[@"results"] ?: @[]) {
@@ -373,6 +379,8 @@
                                                                       unique:YES sort:@"recent"
                                                                   descending:YES
                                                                  deviceClass:cf.deviceClass
+                                                                 category:nil
+                                                                 subgenre:nil
                                                                       offset:0 limit:10];
                 for (NSDictionary *app in res[@"results"] ?: @[]) {
                     NSString *bid = app[@"bundleId"];
@@ -388,6 +396,8 @@
                                                                       unique:YES sort:@"recent"
                                                                   descending:YES
                                                                  deviceClass:cf.deviceClass
+                                                                 category:nil
+                                                                 subgenre:nil
                                                                       offset:0 limit:15];
                 for (NSDictionary *app in res[@"results"] ?: @[]) {
                     NSString *bid = app[@"bundleId"];

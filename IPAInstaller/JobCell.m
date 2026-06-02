@@ -54,6 +54,17 @@
 - (void)configureWithJob:(InstallJob *)job {
     self.nameLabel.text = job.name;
 
+    // "Queued" = waiting its turn (past the simultaneous-download limit). Make it OBVIOUS it's
+    // waiting on purpose, not stalled: NO progress bar (a 0% bar reads as "stuck"), a muted grey
+    // label, and no "%". Downloading jobs (below) keep the blue bar + live % + ETA.
+    if ([job.state isEqualToString:@"queued"]) {
+        self.messageLabel.text = job.message ?: @"";
+        self.messageLabel.textColor = [UIColor grayColor];
+        self.progressBar.hidden = YES;
+        return;
+    }
+    self.progressBar.hidden = NO;
+
     NSString *etaStr = @"";
     if (job.bytesPerSec > 0 && job.totalBytes > 0 && job.currentBytes < job.totalBytes &&
         [job.state isEqualToString:@"downloading"]) {
