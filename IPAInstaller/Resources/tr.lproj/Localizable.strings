@@ -270,7 +270,7 @@
 "install.no_filza_title" = "Filza algılanmadı";
 "install.no_filza_msg" = "Kayıt yolu panoya kopyalandı, böylece kullandığınız herhangi bir dosya yöneticisine yapıştırabilirsiniz.";
 
-/* ===== Tamamlandı (Claude) — sağlanan dosyadan sonra eklenen anahtarlar ===== */
+/* ===== Tamamlandı — sağlanan dosyadan sonra eklenen anahtarlar ===== */
 "tab.home" = "Ana Sayfa";
 "catalog.browse_categories" = "Kategoriler";
 "catalog.downloading" = "Katalog indiriliyor…";
