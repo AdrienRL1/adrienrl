@@ -1,6 +1,6 @@
 # AppDrop
 
-> Browse 157,000 archived iOS apps from 2008–2014 and install them on your jailbroken device, with built-in AI search.
+> Browse 43,000+ vintage iOS apps (2008–2014) — every archived version included — and install them on your jailbroken device, with built-in AI search.
 
 <p align="center">
   <img src="screenshots/appdrop-icon.png" width="120" height="120" alt="AppDrop icon">
@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/screenshot-home.png" width="600" alt="AppDrop home — browse 30,000+ vintage apps by category on iPad">
+  <img src="screenshots/screenshot-home.png" width="600" alt="AppDrop home — browse vintage apps by category on iPad">
 </p>
 
 ---
@@ -25,7 +25,7 @@
 
 ## Features
 
-- **Huge vintage catalog** — tens of thousands of unique apps (157k archived IPAs across all versions), browsable **by category** right from the home screen
+- **43,000+ vintage apps** — browsable **by category** right from the home screen, with every archived version of each app available (≈157k IPA files in total)
 - **Auto-updating catalog** — downloaded on first launch and refreshed automatically when new apps are added, so you never reinstall the app just for new content
 - **"Works today"** — a section for apps confirmed still running on old iOS, with one-tap install and update detection (one app for now; the category is there to grow over time)
 - **AI search** — describe an app in any language, the LLM finds it for you
@@ -95,7 +95,7 @@ AppDrop's in-app updater checks GitHub Releases hourly and, when a new version i
 
 <img src="screenshots/screenshot-11.png" width="500" alt="Catalog grid">
 
-Browse all 157,000 archived apps. Tap *Filters* to narrow by iOS version, device, or sort order. Tap *Select* to enter multi-pick mode for batch installs.
+Browse 43,000+ unique apps (every archived version is available too). Tap *Filters* to narrow by iOS version, device, or sort order. Tap *Select* to enter multi-pick mode for batch installs.
 
 ### AI search
 
@@ -107,7 +107,7 @@ Tap the *AI Chat* tab and describe an app in plain language — any of the 8 sup
 
 <img src="screenshots/screenshot-13.png" width="400" alt="Search tab finding Real Racing 1/2/3">
 
-The **Search** tab lets you find apps by name in real time across all 157k entries — debounce is 150 ms so results stream in as you type. Each row shows the version, minimum iOS, file size and the actual `.ipa` filename so you can pick the right mirror. Tap a row to open the detail screen and install.
+The **Search** tab lets you find apps by name in real time across all 43,000+ apps (every version included) — debounce is 150 ms so results stream in as you type. Each row shows the version, minimum iOS, file size and the actual `.ipa` filename so you can pick the right mirror. Tap a row to open the detail screen and install.
 
 ### Filters
 
