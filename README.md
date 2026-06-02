@@ -27,7 +27,7 @@
 
 - **Huge vintage catalog** — tens of thousands of unique apps (157k archived IPAs across all versions), browsable **by category** right from the home screen
 - **Auto-updating catalog** — downloaded on first launch and refreshed automatically when new apps are added, so you never reinstall the app just for new content
-- **"Works today"** — a curated list of apps confirmed still running on old iOS, with one-tap install and update detection
+- **"Works today"** — a section for apps confirmed still running on old iOS, with one-tap install and update detection (one app for now; the category is there to grow over time)
 - **AI search** — describe an app in any language, the LLM finds it for you
 - **Device-aware** — each app shows whether it'll run on *your* device, the catalog hides apps your iOS can't run, and AppDrop auto-picks the newest version you can actually install
 - **8 languages** — EN / FR / ES / DE / PT‑BR / JA / ZH‑Hans / TR, auto-detected from your device

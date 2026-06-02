@@ -19,7 +19,7 @@ Then **AdrienRL → AppDrop → Install** (or **Upgrade** if you already have it
 ### Major new features
 
 - **Browse by category** — the home screen is now a clean category grid (Games, Utilities, Entertainment, …) with live app counts, plus quick rows for "All apps" and "Works today". Tap a category to drill in.
-- **"Works today"** — a curated, regularly-updated list of apps confirmed to still install and run on old iOS, with one-tap install and **automatic update detection** ("Update to vX" when a newer build is available).
+- **"Works today"** — a section for apps confirmed to still install and run on old iOS, with one-tap install and **automatic update detection** ("Update to vX" when a newer build is available). For now it holds a single app — the section is there to grow as more get added over time.
 - **Self-updating catalog** — the catalog is downloaded on first launch and then **refreshed automatically** whenever new apps are added. You never have to reinstall the app just to get new content. Startup stays instant (the cached catalog loads first, the check runs in the background).
 - **In-app feedback** — found a bug or have an idea? The **Feedback** button (top-left of the home screen) lets you write a message and attach screenshots, sent straight to the project — no account needed.
 - **Localized app descriptions** — thousands of apps now have rich descriptions, written in all 8 languages.
