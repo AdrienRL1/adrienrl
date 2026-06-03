@@ -312,7 +312,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 - (void)startAutonomousInstallWithURL:(NSString *)url
                             completion:(void (^)(NSString *, NSError *))completion {
     NSString *jobId = [NSString stringWithFormat:@"local-%@",
-                         [[NSUUID UUID] UUIDString] ?: [NSString stringWithFormat:@"%lu", (unsigned long)[NSDate date].timeIntervalSince1970]];
+                         [[NSUUID UUID] UUIDString] ?: [NSString stringWithFormat:@"%lu", (unsigned long)[[NSDate date] timeIntervalSince1970]]];
 
     InstallJob *job = [[InstallJob alloc] init];
     job.jobId = jobId;

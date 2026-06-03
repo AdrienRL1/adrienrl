@@ -1,0 +1,283 @@
+// gcd_shim.c — minimal libdispatch (GCD) implementation for iOS 3.x, which
+// ships no libdispatch at all. Backed by pthreads + a CFRunLoop hop for the
+// main queue. Covers exactly the GCD surface AppDrop uses:
+//   dispatch_async / dispatch_after
+//   dispatch_get_global_queue / dispatch_queue_create / dispatch_get_main_queue
+//   dispatch_once
+//   dispatch_group_{create,enter,leave,notify,async}
+//   dispatch_semaphore_{create,signal,wait}
+//   dispatch_time / dispatch_walltime
+//
+// NOTE: this is intentionally small. Queues created with dispatch_queue_create
+// are treated as concurrent (each async spawns a detached pthread). If AppDrop
+// relies anywhere on a *serial* queue for ordering, that queue needs a real
+// FIFO+worker; see README open items.
+#include <dispatch/dispatch.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <time.h>
+#include <sys/time.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include "blocks/Block.h"
+
+#undef dispatch_once
+#undef dispatch_once_f
+
+// ---------------------------------------------------------------------------
+// Queues
+// ---------------------------------------------------------------------------
+static char _global_q_storage[64];
+
+dispatch_queue_t dispatch_get_global_queue(long pri, unsigned long flags) {
+    (void)pri; (void)flags;
+    return (dispatch_queue_t)_global_q_storage;
+}
+
+dispatch_queue_t dispatch_queue_create(const char *label, dispatch_queue_attr_t attr) {
+    (void)label; (void)attr;
+    return (dispatch_queue_t)calloc(1, 64);
+}
+
+static void *trampoline(void *ctx) {
+    dispatch_block_t b = (dispatch_block_t)ctx;
+    b();
+    Block_release(b);
+    return NULL;
+}
+
+static void run_on_main(dispatch_block_t b) {
+    CFRunLoopRef rl = CFRunLoopGetMain();
+    CFRunLoopPerformBlock(rl, kCFRunLoopCommonModes, ^{ b(); Block_release(b); });
+    CFRunLoopWakeUp(rl);
+}
+
+static void run_detached(dispatch_block_t b) {
+    pthread_t t;
+    pthread_attr_t at;
+    pthread_attr_init(&at);
+    pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&t, &at, trampoline, b) != 0) { b(); Block_release(b); }
+    pthread_attr_destroy(&at);
+}
+
+void dispatch_async(dispatch_queue_t q, dispatch_block_t block) {
+    dispatch_block_t b = Block_copy(block);
+    if (q == dispatch_get_main_queue()) run_on_main(b);
+    else run_detached(b);
+}
+
+void dispatch_sync(dispatch_queue_t q, dispatch_block_t block) {
+    (void)q;
+    block();  // executes inline on the calling thread
+}
+
+// ---------------------------------------------------------------------------
+// dispatch_once
+// ---------------------------------------------------------------------------
+void dispatch_once(dispatch_once_t *pred, dispatch_block_t block) {
+    static pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&m);
+    if (*pred != ~0l) { block(); *pred = ~0l; }
+    pthread_mutex_unlock(&m);
+}
+
+// ---------------------------------------------------------------------------
+// Time
+// ---------------------------------------------------------------------------
+dispatch_time_t dispatch_time(dispatch_time_t when, int64_t delta) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    uint64_t now = (uint64_t)tv.tv_sec * 1000000000ull + (uint64_t)tv.tv_usec * 1000ull;
+    if (when == DISPATCH_TIME_NOW) when = now;
+    int64_t r = (int64_t)when + delta;
+    return (dispatch_time_t)(r < 0 ? 0 : r);
+}
+
+dispatch_time_t dispatch_walltime(const struct timespec *w, int64_t delta) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    uint64_t base = w ? ((uint64_t)w->tv_sec * 1000000000ull + (uint64_t)w->tv_nsec)
+                      : ((uint64_t)tv.tv_sec * 1000000000ull + (uint64_t)tv.tv_usec * 1000ull);
+    int64_t r = (int64_t)base + delta;
+    return (dispatch_time_t)(r < 0 ? 0 : r);
+}
+
+typedef struct { dispatch_time_t when; dispatch_block_t b; } after_ctx;
+static void *after_thread(void *p) {
+    after_ctx *c = (after_ctx *)p;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    uint64_t now = (uint64_t)tv.tv_sec * 1000000000ull + (uint64_t)tv.tv_usec * 1000ull;
+    if (c->when > now) {
+        uint64_t ns = c->when - now;
+        struct timespec ts;
+        ts.tv_sec = (time_t)(ns / 1000000000ull);
+        ts.tv_nsec = (long)(ns % 1000000000ull);
+        nanosleep(&ts, NULL);
+    }
+    c->b();
+    Block_release(c->b);
+    free(c);
+    return NULL;
+}
+
+void dispatch_after(dispatch_time_t when, dispatch_queue_t q, dispatch_block_t block) {
+    dispatch_block_t b = Block_copy(block);
+    int is_main = (q == dispatch_get_main_queue());
+    after_ctx *c = (after_ctx *)malloc(sizeof(after_ctx));
+    c->when = when;
+    if (is_main) {
+        // hop the final call back to the main runloop
+        dispatch_block_t mb = b;
+        c->b = Block_copy(^{ run_on_main(Block_copy(mb)); Block_release(mb); });
+        Block_release(b);
+    } else {
+        c->b = b;
+    }
+    pthread_t t; pthread_attr_t at; pthread_attr_init(&at);
+    pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&t, &at, after_thread, c) != 0) { c->b(); Block_release(c->b); free(c); }
+    pthread_attr_destroy(&at);
+}
+
+// ---------------------------------------------------------------------------
+// Groups (counter + condvar)
+// ---------------------------------------------------------------------------
+typedef struct {
+    pthread_mutex_t m;
+    pthread_cond_t  cv;
+    long count;
+} grp_t;
+
+dispatch_group_t dispatch_group_create(void) {
+    grp_t *g = (grp_t *)calloc(1, sizeof(grp_t));
+    pthread_mutex_init(&g->m, NULL);
+    pthread_cond_init(&g->cv, NULL);
+    g->count = 0;
+    return (dispatch_group_t)g;
+}
+
+void dispatch_group_enter(dispatch_group_t group) {
+    grp_t *g = (grp_t *)group;
+    pthread_mutex_lock(&g->m);
+    g->count++;
+    pthread_mutex_unlock(&g->m);
+}
+
+void dispatch_group_leave(dispatch_group_t group) {
+    grp_t *g = (grp_t *)group;
+    pthread_mutex_lock(&g->m);
+    if (--g->count <= 0) pthread_cond_broadcast(&g->cv);
+    pthread_mutex_unlock(&g->m);
+}
+
+long dispatch_group_wait(dispatch_group_t group, dispatch_time_t timeout) {
+    grp_t *g = (grp_t *)group;
+    pthread_mutex_lock(&g->m);
+    while (g->count > 0) {
+        if (timeout == DISPATCH_TIME_FOREVER) {
+            pthread_cond_wait(&g->cv, &g->m);
+        } else {
+            struct timespec ts;
+            ts.tv_sec = (time_t)(timeout / 1000000000ull);
+            ts.tv_nsec = (long)(timeout % 1000000000ull);
+            if (pthread_cond_timedwait(&g->cv, &g->m, &ts) != 0) break;
+        }
+    }
+    long r = g->count;
+    pthread_mutex_unlock(&g->m);
+    return r;  // 0 = all done, non-zero = timed out
+}
+
+typedef struct { grp_t *g; dispatch_queue_t q; dispatch_block_t b; int is_main; } gasync_ctx;
+static void *group_async_thread(void *p) {
+    gasync_ctx *c = (gasync_ctx *)p;
+    c->b();
+    Block_release(c->b);
+    dispatch_group_leave((dispatch_group_t)c->g);
+    free(c);
+    return NULL;
+}
+
+void dispatch_group_async(dispatch_group_t group, dispatch_queue_t q, dispatch_block_t block) {
+    dispatch_group_enter(group);
+    gasync_ctx *c = (gasync_ctx *)malloc(sizeof(gasync_ctx));
+    c->g = (grp_t *)group; c->q = q; c->b = Block_copy(block);
+    pthread_t t; pthread_attr_t at; pthread_attr_init(&at);
+    pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&t, &at, group_async_thread, c) != 0) {
+        c->b(); Block_release(c->b); dispatch_group_leave(group); free(c);
+    }
+    pthread_attr_destroy(&at);
+}
+
+typedef struct { grp_t *g; dispatch_block_t b; int is_main; } gnotify_ctx;
+static void *group_notify_thread(void *p) {
+    gnotify_ctx *c = (gnotify_ctx *)p;
+    dispatch_group_wait((dispatch_group_t)c->g, DISPATCH_TIME_FOREVER);
+    if (c->is_main) run_on_main(c->b);
+    else { c->b(); Block_release(c->b); }
+    free(c);
+    return NULL;
+}
+
+void dispatch_group_notify(dispatch_group_t group, dispatch_queue_t q, dispatch_block_t block) {
+    gnotify_ctx *c = (gnotify_ctx *)malloc(sizeof(gnotify_ctx));
+    c->g = (grp_t *)group; c->b = Block_copy(block);
+    c->is_main = (q == dispatch_get_main_queue());
+    pthread_t t; pthread_attr_t at; pthread_attr_init(&at);
+    pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&t, &at, group_notify_thread, c) != 0) {
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+        c->b(); Block_release(c->b); free(c);
+    }
+    pthread_attr_destroy(&at);
+}
+
+// ---------------------------------------------------------------------------
+// Semaphores
+// ---------------------------------------------------------------------------
+typedef struct {
+    pthread_mutex_t m;
+    pthread_cond_t  cv;
+    long value;
+} sem_t_shim;
+
+dispatch_semaphore_t dispatch_semaphore_create(long value) {
+    sem_t_shim *s = (sem_t_shim *)calloc(1, sizeof(sem_t_shim));
+    pthread_mutex_init(&s->m, NULL);
+    pthread_cond_init(&s->cv, NULL);
+    s->value = value;
+    return (dispatch_semaphore_t)s;
+}
+
+long dispatch_semaphore_signal(dispatch_semaphore_t dsema) {
+    sem_t_shim *s = (sem_t_shim *)dsema;
+    pthread_mutex_lock(&s->m);
+    s->value++;
+    pthread_cond_signal(&s->cv);
+    pthread_mutex_unlock(&s->m);
+    return 0;
+}
+
+long dispatch_semaphore_wait(dispatch_semaphore_t dsema, dispatch_time_t timeout) {
+    sem_t_shim *s = (sem_t_shim *)dsema;
+    pthread_mutex_lock(&s->m);
+    while (s->value <= 0) {
+        if (timeout == DISPATCH_TIME_FOREVER) {
+            pthread_cond_wait(&s->cv, &s->m);
+        } else {
+            struct timespec ts;
+            ts.tv_sec  = (time_t)(timeout / 1000000000ull);
+            ts.tv_nsec = (long)(timeout % 1000000000ull);
+            if (pthread_cond_timedwait(&s->cv, &s->m, &ts) != 0) {
+                pthread_mutex_unlock(&s->m);
+                return ~0l;  // timed out
+            }
+        }
+    }
+    s->value--;
+    pthread_mutex_unlock(&s->m);
+    return 0;
+}

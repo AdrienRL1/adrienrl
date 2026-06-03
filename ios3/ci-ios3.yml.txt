@@ -1,0 +1,45 @@
+name: Build AppDrop iOS 3 (armv6)
+
+on:
+  push:
+    branches: [ iOS3iThink ]
+  workflow_dispatch:
+
+jobs:
+  ios3-armv6:
+    name: Cross-compile armv6 / iOS 3 (iOS 5.1 SDK)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache toolchain + SDK + mbedTLS
+        uses: actions/cache@v4
+        with:
+          path: ios3/build/work
+          key: appdrop-ios3-toolchain-v1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            clang lld llvm llvm-dev \
+            cmake make git wget zip dpkg \
+            libplist-dev libplist-utils libssl-dev python3
+
+      - name: Build IPA + DEB
+        run: |
+          chmod +x ios3/build-ios3.sh
+          ./ios3/build-ios3.sh
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDrop-iOS3-armv6-ipa
+          path: ios3/build/AppDrop.ipa
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDrop-iOS3-armv6-deb
+          path: ios3/build/AppDrop.deb

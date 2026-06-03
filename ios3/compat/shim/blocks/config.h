@@ -1,0 +1,2 @@
+#define HAVE_OBJC 1
+#define HAVE_LIBDISPATCH 0
