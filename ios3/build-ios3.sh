@@ -155,13 +155,32 @@ MRC="-target $TRIPLE -isysroot $sdk -fno-objc-arc -fobjc-abi-version=2 -Wno-ever
 # 5. Link
 # ---------------------------------------------------------------------------
 printf '\n==> Linking...\n'
-"$CLANG" -target "$TRIPLE" -isysroot "$sdk" -fobjc-arc -fobjc-runtime=ios-5.0 \
-    -fuse-ld=ld64 -mlinker-version=762 -L"$arcstub" -larclite_iphoneos \
-    -framework UIKit -framework Foundation -framework CoreGraphics \
-    -framework QuartzCore -framework ImageIO \
-    -lsqlite3 -lz \
-    "$obj"/*.o "$mbedlib" \
-    -o "$out/$APP_NAME"
+do_link() {
+    "$CLANG" -target "$TRIPLE" -isysroot "$sdk" -fobjc-arc -fobjc-runtime=ios-5.0 \
+        -fuse-ld=ld64 -mlinker-version=762 -L"$arcstub" -larclite_iphoneos \
+        -framework UIKit -framework Foundation -framework CoreGraphics \
+        -framework QuartzCore -framework ImageIO \
+        -lsqlite3 -lz \
+        "$obj"/*.o "$mbedlib" \
+        -o "$out/$APP_NAME" 2> "$work/link.err"
+}
+if ! do_link; then
+    cat "$work/link.err" >&2
+    # clang's driver injects libarclite by an absolute path inside its own
+    # install tree (e.g. /usr/lib/llvm-18/lib/arc/libarclite_iphoneos.a) BEFORE
+    # link time, ignoring -L. We ship our own ARC runtime, so drop an empty
+    # stub at exactly the path the driver names, then retry once.
+    want="$(grep -oE "/[^ '\"]*/lib/arc/libarclite_iphoneos\.a" "$work/link.err" | head -1)"
+    if [ -n "$want" ]; then
+        printf '\n==> clang wants libarclite at %s — installing empty stub there...\n' "$want"
+        dir="$(dirname "$want")"
+        if mkdir -p "$dir" 2>/dev/null; then :; else sudo mkdir -p "$dir"; fi
+        if cp "$arcstub/libarclite_iphoneos.a" "$want" 2>/dev/null; then :; else sudo cp "$arcstub/libarclite_iphoneos.a" "$want"; fi
+        do_link || { cat "$work/link.err" >&2; exit 1; }
+    else
+        exit 1
+    fi
+fi
 file "$out/$APP_NAME"
 
 # Fail loudly if any ARC/blocks/GCD symbol leaked in as an unresolved import
