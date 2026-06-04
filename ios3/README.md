@@ -189,12 +189,8 @@ and mbedTLS (~10 min). Subsequent runs are cached. Output:
   call site nil-guards the result, so it won't crash — it just silently fails to
   match (install-success parsing, MB progress, update-note formatting). Backfill
   later if those features matter on 3.x.
-- ⚠️ **Run on real hardware (iPod touch, iOS 3.1.3, armv6).** It now gets past
-  the earlier bundle-exec mismatch and the `imp_implementationWithBlock`
-  missing-symbol crash. Link-clean ≠ bug-free — keep testing, and watch for
-  over-/under-release on the `weak`→`assign` delegate (`FilterViewController`)
-  and bar-button (`CollectionViewController`) if those ever outlive their owner.
-  Test on a 3G/3GS first.
+- ✅+-⚠️ **Runs on real hardware (iPod touch, iOS 3.1.3, armv6).** Now the 
+application starts, but after about 2 seconds it crashes.
 - ⚠️ The GCD shim is a small pthread implementation (serial **and** concurrent
   queues, `dispatch_once`, `after`, groups, semaphores). The serial path is now
   correct, but the whole thing may still need hardening under heavy load.
