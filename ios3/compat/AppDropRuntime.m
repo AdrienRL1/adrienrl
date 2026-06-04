@@ -25,10 +25,17 @@
 //   * NSUUID                            (iOS 6 class; CFUUID-backed)
 //   * NSJSONSerialization               (iOS 5 class; cJSON-backed) — see
 //                                        AppDropJSON.m, installed the same way.
+//   * UIScreen -scale                   (iOS 4.0; armv6 devices are all 1x)
+//   * CALayer -contentsScale/-set…      (iOS 4.0; 1x no-op on iOS 3)
+//   * UIGraphicsBeginImageContextWithOptions
+//                                       (iOS 4.0 C function; RTLD_NEXT to the
+//                                        real UIKit impl on 4+, 1x fallback on 3)
 
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <CoreFoundation/CoreFoundation.h>
+#include <dlfcn.h>
 
 #pragma mark - Attribute key constants (weak: real ones win on iOS 6+)
 
@@ -183,3 +190,79 @@ static UIImage *AppDropImageWithDataScale(id cls, SEL _cmd, NSData *data, CGFloa
     return r;
 }
 @end
+
+#pragma mark - UIScreen -scale  (iOS 4.0)
+// The launch path (AppDelegate's tab-icon builders) reads
+// [UIScreen mainScreen].scale before anything is on screen. -[UIScreen scale]
+// first shipped in iOS 4.0; on iOS 3.1.3 it is an unrecognized selector, which
+// throws an uncaught NSException at launch (objc_exception_throw → terminate →
+// SIGABRT). Every armv6 device (original iPhone, 3G, iPod touch 1/2g) is a
+// non-Retina 1x display, so backfilling a constant 1.0 is exact. No-op on
+// iOS 4+ where UIScreen already answers -scale.
+
+static CGFloat AppDropScreenScale(id self, SEL _cmd) {
+    return 1.0f;
+}
+
+@implementation UIScreen (AppDropScaleImpl)
++ (void)load {
+    if ([UIScreen instancesRespondToSelector:@selector(scale)]) return;
+    class_addMethod([UIScreen class], @selector(scale), (IMP)AppDropScreenScale, "f@:");
+}
+@end
+
+#pragma mark - CALayer -contentsScale / -setContentsScale:  (iOS 4.0)
+// AppTileView sets self.layer.contentsScale during -initWithFrame: (the catalog
+// grid builds these as soon as the first tab loads). CALayer gained
+// -contentsScale in iOS 4.0; on iOS 3 -setContentsScale: is an unrecognized
+// selector. On a 1x display the setter is a no-op and the getter is 1.0.
+
+static CGFloat AppDropLayerContentsScale(id self, SEL _cmd) {
+    return 1.0f;
+}
+static void AppDropLayerSetContentsScale(id self, SEL _cmd, CGFloat scale) {
+    (void)scale; // 1x display: nothing to store
+}
+
+@implementation CALayer (AppDropContentsScaleImpl)
++ (void)load {
+    if (![CALayer instancesRespondToSelector:@selector(contentsScale)]) {
+        class_addMethod([CALayer class], @selector(contentsScale),
+                        (IMP)AppDropLayerContentsScale, "f@:");
+    }
+    if (![CALayer instancesRespondToSelector:@selector(setContentsScale:)]) {
+        class_addMethod([CALayer class], @selector(setContentsScale:),
+                        (IMP)AppDropLayerSetContentsScale, "v@:f");
+    }
+}
+@end
+
+#pragma mark - UIGraphicsBeginImageContextWithOptions  (iOS 4.0 C function)
+// This C function (not a selector) is called in ~26 places, all in drawing
+// paths reachable seconds after launch. It first shipped in iOS 4.0's UIKit;
+// on iOS 3 the symbol is absent. We provide our OWN definition so the static
+// linker binds every call site to this — no undefined UIKit import that would
+// abort dyld on iOS 3. At runtime we look up the REAL UIKit implementation with
+// RTLD_NEXT (skipping ourselves): on iOS 4+ it's found and forwarded to, so
+// Retina rendering is unchanged; on iOS 3 it's NULL and we fall back to the
+// iOS-2-era UIGraphicsBeginImageContext (1x is the only option on armv6).
+//
+// NOTE: must use RTLD_NEXT, not RTLD_DEFAULT — RTLD_DEFAULT would resolve to
+// THIS function (it's a global symbol in the main executable) and recurse.
+
+typedef void (*AppDropUBICWO)(CGSize, BOOL, CGFloat);
+
+void UIGraphicsBeginImageContextWithOptions(CGSize size, BOOL opaque, CGFloat scale) {
+    static AppDropUBICWO real = NULL;
+    static int resolved = 0;
+    if (!resolved) {
+        real = (AppDropUBICWO)dlsym(RTLD_NEXT, "UIGraphicsBeginImageContextWithOptions");
+        resolved = 1;
+    }
+    if (real) {
+        real(size, opaque, scale);
+        return;
+    }
+    // iOS 3 fallback: 1x bitmap context (all armv6 devices are non-Retina).
+    UIGraphicsBeginImageContext(size);
+}
