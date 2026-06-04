@@ -27,7 +27,34 @@
 // ---------------------------------------------------------------------------
 // Queues
 // ---------------------------------------------------------------------------
+// Three kinds of queue exist in this shim:
+//   * the main queue        -> work hops onto the main CFRunLoop (UIKit-safe)
+//   * the global queue      -> concurrent: every async spawns a detached thread
+//   * dispatch_queue_create -> a REAL FIFO serial queue (single worker thread),
+//                              unless created DISPATCH_QUEUE_CONCURRENT.
+// The serial path matters: LocalCatalog.m relies on its _searchQueue
+// serializing every SQLite query on one db handle (no locking otherwise). The
+// old shim ran those as concurrent detached threads, which would race the
+// single sqlite3* — corrupting results or crashing on a real iOS 3 device.
+
 static char _global_q_storage[64];
+
+#define AD_QUEUE_MAGIC 0x51444551u  // 'QDEQ'
+
+typedef struct ad_node {
+    dispatch_block_t b;       // already Block_copy'd
+    struct ad_node *next;
+} ad_node;
+
+typedef struct {
+    unsigned int   magic;     // AD_QUEUE_MAGIC sentinel
+    int            concurrent;// 1 = concurrent, 0 = serial FIFO
+    pthread_mutex_t m;
+    pthread_cond_t  cv;
+    ad_node        *head, *tail;
+    int            started;   // worker thread launched?
+    pthread_t      worker;
+} ad_queue;
 
 dispatch_queue_t dispatch_get_global_queue(long pri, unsigned long flags) {
     (void)pri; (void)flags;
@@ -35,8 +62,15 @@ dispatch_queue_t dispatch_get_global_queue(long pri, unsigned long flags) {
 }
 
 dispatch_queue_t dispatch_queue_create(const char *label, dispatch_queue_attr_t attr) {
-    (void)label; (void)attr;
-    return (dispatch_queue_t)calloc(1, 64);
+    (void)label;
+    ad_queue *q = (ad_queue *)calloc(1, sizeof(ad_queue));
+    q->magic = AD_QUEUE_MAGIC;
+    // libdispatch: DISPATCH_QUEUE_SERIAL is NULL; anything else (e.g.
+    // DISPATCH_QUEUE_CONCURRENT) means concurrent. AppDrop only asks for SERIAL.
+    q->concurrent = (attr != NULL) ? 1 : 0;
+    pthread_mutex_init(&q->m, NULL);
+    pthread_cond_init(&q->cv, NULL);
+    return (dispatch_queue_t)q;
 }
 
 static void *trampoline(void *ctx) {
@@ -61,15 +95,69 @@ static void run_detached(dispatch_block_t b) {
     pthread_attr_destroy(&at);
 }
 
+// Is this pointer a queue made by dispatch_queue_create (vs main/global storage)?
+static ad_queue *as_created_queue(dispatch_queue_t q) {
+    if (!q) return NULL;
+    if (q == dispatch_get_main_queue()) return NULL;
+    if (q == (dispatch_queue_t)_global_q_storage) return NULL;
+    ad_queue *aq = (ad_queue *)q;
+    return (aq->magic == AD_QUEUE_MAGIC) ? aq : NULL;
+}
+
+// Serial worker: drains the FIFO in order, one block at a time, forever.
+static void *serial_worker(void *ctx) {
+    ad_queue *q = (ad_queue *)ctx;
+    for (;;) {
+        pthread_mutex_lock(&q->m);
+        while (q->head == NULL) pthread_cond_wait(&q->cv, &q->m);
+        ad_node *n = q->head;
+        q->head = n->next;
+        if (q->head == NULL) q->tail = NULL;
+        pthread_mutex_unlock(&q->m);
+
+        n->b();
+        Block_release(n->b);
+        free(n);
+    }
+    return NULL;
+}
+
+// Enqueue onto a created queue: concurrent -> detached thread; serial -> FIFO.
+static void queue_enqueue(ad_queue *q, dispatch_block_t b /* owned */) {
+    if (q->concurrent) { run_detached(b); return; }
+    ad_node *n = (ad_node *)malloc(sizeof(ad_node));
+    n->b = b;
+    n->next = NULL;
+    pthread_mutex_lock(&q->m);
+    if (q->tail) q->tail->next = n; else q->head = n;
+    q->tail = n;
+    if (!q->started) {
+        q->started = 1;
+        if (pthread_create(&q->worker, NULL, serial_worker, q) != 0) {
+            // Couldn't spawn worker — drain inline as a last resort.
+            q->started = 0;
+            ad_node *cur = q->head; q->head = q->tail = NULL;
+            pthread_mutex_unlock(&q->m);
+            while (cur) { ad_node *nx = cur->next; cur->b(); Block_release(cur->b); free(cur); cur = nx; }
+            return;
+        }
+    }
+    pthread_cond_signal(&q->cv);
+    pthread_mutex_unlock(&q->m);
+}
+
 void dispatch_async(dispatch_queue_t q, dispatch_block_t block) {
     dispatch_block_t b = Block_copy(block);
-    if (q == dispatch_get_main_queue()) run_on_main(b);
-    else run_detached(b);
+    if (q == dispatch_get_main_queue()) { run_on_main(b); return; }
+    ad_queue *aq = as_created_queue(q);
+    if (aq) { queue_enqueue(aq, b); return; }
+    run_detached(b);  // global / unknown -> concurrent
 }
 
 void dispatch_sync(dispatch_queue_t q, dispatch_block_t block) {
     (void)q;
-    block();  // executes inline on the calling thread
+    block();  // executes inline on the calling thread (FIFO ordering preserved
+              // because the caller blocks; AppDrop does not use dispatch_sync)
 }
 
 // ---------------------------------------------------------------------------

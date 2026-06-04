@@ -126,19 +126,26 @@ and mbedTLS (~10 min). Subsequent runs are cached. Output:
   (`NOUNDEFS`), self-contained blocks/GCD, native `retain`/`release`, no
   `libarclite`.
 - ✅ Packages `.ipa` + Cydia `.deb`, localizations converted to JSON.
+- ✅ **Info.plist lowered for iOS 3.** `MinimumOSVersion` is now `3.0` (was
+  `5.0`) and the `UIRequiredDeviceCapabilities` `armv7` entry was removed, so an
+  armv6 / iOS 3 device no longer rejects the bundle at install time.
+- ✅ **GCD serial queues are real now.** `dispatch_queue_create` returns a true
+  FIFO serial queue (single worker thread draining an in-order list); only the
+  global queue and `DISPATCH_QUEUE_CONCURRENT` stay concurrent. This is what
+  `LocalCatalog`'s `_searchQueue` needs — every SQLite query runs in order on
+  one `sqlite3*` handle, so there is no race on the shared db handle. The main
+  queue already hops onto the main `CFRunLoop` (`CFRunLoopPerformBlock` +
+  `CFRunLoopWakeUp`), so UIKit work from `dispatch_get_main_queue` stays on the
+  main thread.
 - ⚠️ **Not yet run on real hardware / simulator.** Link-clean ≠ bug-free.
   Memory management is now native MRC, but the conversion was mechanical — watch
   for over-/under-release on the `weak`→`assign` delegate (`FilterViewController`)
   and bar-button (`CollectionViewController`) if those ever outlive their owner.
   Test on a 3G/3GS first.
-- ⚠️ The GCD shim is a minimal pthread implementation (serial/concurrent queues,
-  `dispatch_once`, `after`, groups, semaphores) and may need hardening under
-  load.
+- ⚠️ The GCD shim is a small pthread implementation (serial **and** concurrent
+  queues, `dispatch_once`, `after`, groups, semaphores). The serial path is now
+  correct, but the whole thing may still need hardening under heavy load.
 - ⚠️ The `.deb` `control` still declares `firmware (>= 5.0)` and AppSync
   dependencies that are iOS 5+ names. For an iOS 3 install, lower the
   `firmware` floor and adjust the AppSync/installipa dependency names to the
   3.x-era packages.
-- ⚠️ The GCD shim runs `dispatch_get_main_queue` work on a background thread by
-  default. UIKit calls must stay on the main thread — if you see UI from a
-  block misbehave, route main-queue dispatches through a CFRunLoop source on
-  the main thread (noted inline in `gcd_shim.c`).
