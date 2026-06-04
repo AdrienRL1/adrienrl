@@ -108,6 +108,15 @@ Every version of every app, with icons, names and sizes. Use *Filters* to narrow
 
 Each app shows a localized description, version, size and a green/orange banner telling you whether it runs on *your* device. Install it, save it for ⭐ favorites, queue it for later, or browse **every archived version** from the *Versions* button.
 
+### Safe installs — FairPlay detection
+
+<p>
+  <img src="screenshots/v3-fairplay-detail.png" width="380" alt="App detail flagging a FairPlay-encrypted version before download, pointing to a clean one">
+  <img src="screenshots/v3-fairplay-versions.png" width="380" alt="Versions list marking which mirrors are FairPlay-encrypted">
+</p>
+
+Some archived IPAs are still **FairPlay-encrypted** (tied to the original buyer's Apple ID) and just won't launch on a jailbreak. *Before* you download, AppDrop probes the build over a tiny HTTP range request — no full download — and, if it's encrypted, shows a banner and **points you to a clean, decrypted version** when one exists. The *Versions* list flags each encrypted mirror too, so you never waste a 485 MB download on something that can't install.
+
 ### Works Today
 
 <img src="screenshots/v3-works-today.png" width="500" alt="Works Today — apps that still run on old iOS">
