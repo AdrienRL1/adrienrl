@@ -333,3 +333,76 @@ void UIGraphicsBeginImageContextWithOptions(CGSize size, BOOL opaque, CGFloat sc
     // iOS 3 fallback: 1x bitmap context (all armv6 devices are non-Retina).
     UIGraphicsBeginImageContext(size);
 }
+
+#pragma mark - NSArray/NSMutableArray block-based sorting  (iOS 4.0)
+// -[NSMutableArray sortUsingComparator:] and -[NSArray sortedArrayUsingComparator:]
+// take an NSComparator block and first shipped in iOS 4.0. On iOS 3.1.3 they are
+// unrecognized selectors (the launch path hits sortUsingComparator: while building
+// the Catalogue category list). We bridge them to the iOS-2-era
+// sortUsingFunction:context: / sortedArrayUsingFunction:context: APIs, passing the
+// block through as the context and invoking it from a C trampoline. No-op on iOS 4+
+// where the OS already provides the block-based variants.
+
+typedef NSComparisonResult (^AppDropComparatorBlock)(id, id);
+
+static NSInteger AppDropComparatorTrampoline(id a, id b, void *ctx) {
+    AppDropComparatorBlock cmp = (__bridge AppDropComparatorBlock)ctx;
+    return (NSInteger)cmp(a, b);
+}
+
+static void AppDropSortUsingComparator(id self, SEL _cmd, id cmp) {
+    [self sortUsingFunction:AppDropComparatorTrampoline context:(void *)cmp];
+}
+
+static id AppDropSortedArrayUsingComparator(id self, SEL _cmd, id cmp) {
+    return [self sortedArrayUsingFunction:AppDropComparatorTrampoline context:(void *)cmp];
+}
+
+@implementation NSArray (AppDropComparatorSortImpl)
++ (void)load {
+    if (![NSArray instancesRespondToSelector:@selector(sortedArrayUsingComparator:)]) {
+        class_addMethod([NSArray class], @selector(sortedArrayUsingComparator:),
+                        (IMP)AppDropSortedArrayUsingComparator, "@@:@?");
+    }
+    if (![NSMutableArray instancesRespondToSelector:@selector(sortUsingComparator:)]) {
+        class_addMethod([NSMutableArray class], @selector(sortUsingComparator:),
+                        (IMP)AppDropSortUsingComparator, "v@:@?");
+    }
+}
+@end
+
+#pragma mark - UIWindow -rootViewController / -setRootViewController:  (iOS 4.0)
+// UIWindow gained rootViewController in iOS 4.0; on iOS 3.1.3 AppDelegate's
+// @catch fallback (and the normal path) send setRootViewController: which is an
+// unrecognized selector. We back it with an associated object (available since
+// iOS 3.1.0) and reproduce the iOS 4 behaviour: install the controller's view
+// as the window's content subview, removing the previous one. No-op on iOS 4+.
+
+static char kAppDropRootVCKey;
+
+static id AppDropWindowGetRootVC(id self, SEL _cmd) {
+    return objc_getAssociatedObject(self, &kAppDropRootVCKey);
+}
+
+static void AppDropWindowSetRootVC(id self, SEL _cmd, id vc) {
+    UIViewController *old = objc_getAssociatedObject(self, &kAppDropRootVCKey);
+    if (old && old.isViewLoaded && old.view.superview == self) {
+        [old.view removeFromSuperview];
+    }
+    objc_setAssociatedObject(self, &kAppDropRootVCKey, vc, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (vc) {
+        UIViewController *newVC = (UIViewController *)vc;
+        newVC.view.frame = [(UIWindow *)self bounds];
+        [(UIWindow *)self addSubview:newVC.view];
+    }
+}
+
+@implementation UIWindow (AppDropRootVCImpl)
++ (void)load {
+    if ([UIWindow instancesRespondToSelector:@selector(setRootViewController:)]) return;
+    class_addMethod([UIWindow class], @selector(rootViewController),
+                    (IMP)AppDropWindowGetRootVC, "@@:");
+    class_addMethod([UIWindow class], @selector(setRootViewController:),
+                    (IMP)AppDropWindowSetRootVC, "v@:@");
+}
+@end
