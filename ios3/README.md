@@ -91,6 +91,8 @@ ios3/
 │   ├── AppDropRuntime.m     # +load backfills (firstObject, base64, NSUUID, …)
 │   ├── AppDropJSON.m        # NSJSONSerialization via cJSON
 │   ├── cJSON.[ch]           # public-domain JSON (v1.7.18)
+│   ├── AppDropBezier.m      # self-contained ADBezierPath (UIBezierPath is iOS 3.2+)
+│   ├── AppDropGestures.m    # self-contained AD*GestureRecognizer + dispatch engine (gestures are iOS 3.2+)
 │   └── shim/
 │       ├── blocks/          # blocks runtime (libclosure)
 │       ├── gcd_shim.c        # GCD on pthreads
@@ -150,6 +152,24 @@ and mbedTLS (~10 min). Subsequent runs are cached. Output:
   SpringBoard finds the executable inside `AppDrop.app` (an earlier mismatch —
   exec `IPAInstaller` vs plist `AppDrop` — caused a "does not have an executable
   path" launch rejection). The source folder stays `IPAInstaller/`.
+- ✅ **Launch crash fixed (`-[UILongPressGestureRecognizer setMinimumPressDuration:]:
+  unrecognized selector`).** The entire `UIGestureRecognizer` family —
+  `UITap`/`UILongPress`/`UIPanGestureRecognizer`, their property setters, and
+  `-[UIView addGestureRecognizer:]` — is **iOS 3.2+**. On 3.1.3 the class symbols
+  exist enough to `alloc`/`init` (so the object is live), but the methods are dead
+  stubs, so the first setter call (`setMinimumPressDuration:` in
+  `CategoryViewController`) threw `NSInvalidArgumentException` → `SIGABRT` right
+  after `makeKeyAndVisible`. Fixed the same way as `UIBezierPath`: a
+  self-contained backport in `compat/AppDropGestures.m` — real
+  `AD{,Tap,LongPress,Pan}GestureRecognizer` classes plus a tiny dispatch engine
+  (a `UIWindow -sendEvent:` swizzle that walks the hit-view superview chain and
+  feeds touches to the attached recognizers) — macro-rewritten over the UIKit
+  class names in `AppDropCompat.h`. This both removes the crash **and** keeps the
+  app usable: every tile tap, banner tap, edit-mode long-press and resize-pan
+  rides on these recognizers, so a bare guard would have stopped the crash but
+  frozen the UI. Uses only iOS-2.0-era primitives (`locationInView:`,
+  `CACurrentMediaTime`, associated objects — already proven at launch by the
+  rootVC backfill).
 - ⚠️ **Run on real hardware (iPod touch, iOS 3.1.3, armv6).** It now gets past
   the earlier bundle-exec mismatch and the `imp_implementationWithBlock`
   missing-symbol crash. Link-clean ≠ bug-free — keep testing, and watch for

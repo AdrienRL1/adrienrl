@@ -99,6 +99,77 @@
 #define UIBezierPath ADBezierPath
 #endif
 
+// ---- UIGestureRecognizer family: present but NON-FUNCTIONAL on iOS 3.1 ----
+//      The whole gesture-recognizer subsystem (UIGestureRecognizer + the
+//      UITap/UILongPress/UIPan subclasses, -[UIView addGestureRecognizer:],
+//      and the touch-routing engine that drives them) debuts in iOS 3.2. On
+//      3.1.3 the class symbols exist enough to alloc/init a hollow object, but
+//      the property setters and the dispatch engine are dead stubs, so the
+//      first launch-path call throws:
+//          *** -[UILongPressGestureRecognizer setMinimumPressDuration:]:
+//              unrecognized selector  →  uncaught NSException  →  SIGABRT
+//      (CategoryViewController -viewDidLoad sets minimumPressDuration while
+//      building the Home tab — crash before any UI is shown). Verified against
+//      Apple's docs: minimumPressDuration is marked "iOS 3.2+".
+//
+//      AppDropGestures.m provides complete, self-contained AD* replacements
+//      built only on iOS-2-era touch APIs (-[UIView touchesBegan:…],
+//      -[UIWindow sendEvent:], UITouch/UIEvent) plus a UIWindow dispatch
+//      swizzle. The macros below rewrite every UIKit gesture token in the
+//      AppDrop sources to the AD* class, so there are zero call-site edits and
+//      identical behaviour on iOS 3.1 through 10 — exactly the ADBezierPath /
+//      AppDropJSON strategy. AppDropGestures.m #undefs these so its
+//      @implementation keeps the real AD* names.
+@class ADGestureRecognizer, ADTapGestureRecognizer,
+       ADLongPressGestureRecognizer, ADPanGestureRecognizer;
+@protocol UIGestureRecognizerDelegate;   // (declared in the 5.1 SDK headers)
+
+@interface ADGestureRecognizer : NSObject {
+@protected
+    UIGestureRecognizerState _state;
+    UIView         *_view;          // non-retained (UIKit: view owns recognizer)
+    id              _delegate;      // non-retained
+    BOOL            _enabled;
+    NSMutableArray *_targets;       // [target(unsafe), NSValue(SEL)] pairs
+    UITouch        *_trackedTouch;  // single touch this recognizer follows (non-retained)
+}
+- (id)initWithTarget:(id)target action:(SEL)action;
+- (void)addTarget:(id)target action:(SEL)action;
+@property (nonatomic, readonly) UIGestureRecognizerState state;
+@property (nonatomic, assign)   id delegate;
+@property (nonatomic, assign)   BOOL enabled;
+@property (nonatomic, readonly) UIView *view;
+- (CGPoint)locationInView:(UIView *)view;
+- (NSUInteger)numberOfTouches;
+@end
+
+@interface ADTapGestureRecognizer : ADGestureRecognizer
+@property (nonatomic) NSUInteger numberOfTapsRequired;
+@property (nonatomic) NSUInteger numberOfTouchesRequired;
+@end
+
+@interface ADLongPressGestureRecognizer : ADGestureRecognizer
+@property (nonatomic) CFTimeInterval minimumPressDuration;
+@property (nonatomic) CGFloat allowableMovement;
+@property (nonatomic) NSUInteger numberOfTapsRequired;
+@property (nonatomic) NSUInteger numberOfTouchesRequired;
+@end
+
+@interface ADPanGestureRecognizer : ADGestureRecognizer
+@property (nonatomic) NSUInteger minimumNumberOfTouches;
+@property (nonatomic) NSUInteger maximumNumberOfTouches;
+- (CGPoint)translationInView:(UIView *)view;
+- (void)setTranslation:(CGPoint)t inView:(UIView *)view;
+- (CGPoint)velocityInView:(UIView *)view;
+@end
+
+#ifndef UIGestureRecognizer
+#define UIGestureRecognizer          ADGestureRecognizer
+#define UITapGestureRecognizer       ADTapGestureRecognizer
+#define UILongPressGestureRecognizer ADLongPressGestureRecognizer
+#define UIPanGestureRecognizer       ADPanGestureRecognizer
+#endif
+
 // ---- UIInterfaceOrientationMask: iOS 6 NS_OPTIONS ----
 #ifndef UIInterfaceOrientationMaskPortrait
 typedef NSUInteger UIInterfaceOrientationMask;
