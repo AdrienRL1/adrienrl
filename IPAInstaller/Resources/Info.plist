@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>AppDrop</string>
 	<key>CFBundleExecutable</key>
-	<string>IPAInstaller</string>
+	<string>AppDrop</string>
 	<key>CFBundleIconFile</key>
 	<string>Icon-72.png</string>
 	<key>CFBundleIconFiles</key>

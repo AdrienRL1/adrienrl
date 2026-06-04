@@ -137,9 +137,23 @@ and mbedTLS (~10 min). Subsequent runs are cached. Output:
   queue already hops onto the main `CFRunLoop` (`CFRunLoopPerformBlock` +
   `CFRunLoopWakeUp`), so UIKit work from `dispatch_get_main_queue` stays on the
   main thread.
-- ⚠️ **Not yet run on real hardware / simulator.** Link-clean ≠ bug-free.
-  Memory management is now native MRC, but the conversion was mechanical — watch
-  for over-/under-release on the `weak`→`assign` delegate (`FilterViewController`)
+- ✅ **Launch crash fixed (`Symbol not found: _imp_implementationWithBlock`).**
+  `AppDropRuntime.m` used to install its backfilled IMPs via
+  `imp_implementationWithBlock()`, which only exists in iOS 4.3+ `libobjc`; on
+  iOS 3.1.3 dyld aborted the process at launch. Every IMP is now a plain static
+  C function `(id self, SEL _cmd, …)` passed straight to `class_addMethod()`
+  with the same type encodings — no block trampoline, no missing runtime
+  symbol. `build-ios3.sh`'s leaked-symbol guard now also fails the build if
+  `imp_implementationWithBlock` / `imp_removeBlock` ever reappear.
+- ✅ **Binary + `.app` are named `AppDrop`.** `APP_NAME="AppDrop"` in
+  `build-ios3.sh`, matching `CFBundleExecutable=AppDrop` in `Info.plist`, so
+  SpringBoard finds the executable inside `AppDrop.app` (an earlier mismatch —
+  exec `IPAInstaller` vs plist `AppDrop` — caused a "does not have an executable
+  path" launch rejection). The source folder stays `IPAInstaller/`.
+- ⚠️ **Run on real hardware (iPod touch, iOS 3.1.3, armv6).** It now gets past
+  the earlier bundle-exec mismatch and the `imp_implementationWithBlock`
+  missing-symbol crash. Link-clean ≠ bug-free — keep testing, and watch for
+  over-/under-release on the `weak`→`assign` delegate (`FilterViewController`)
   and bar-button (`CollectionViewController`) if those ever outlive their owner.
   Test on a 3G/3GS first.
 - ⚠️ The GCD shim is a small pthread implementation (serial **and** concurrent

@@ -26,7 +26,7 @@ set -e
 scriptroot="$(cd "$(dirname "$0")" && pwd)"
 cd "$scriptroot"
 
-APP_NAME="IPAInstaller"          # binary + .app name (matches the Theos project)
+APP_NAME="AppDrop"          # binary + .app name (user-facing brand)
 ARCH="armv6"
 DEPLOY_TARGET="${DEPLOY_TARGET:-3.1}"
 TRIPLE="${ARCH}-apple-ios${DEPLOY_TARGET}"
@@ -165,9 +165,9 @@ file "$out/$APP_NAME"
 # Fail loudly if any ARC/blocks/GCD symbol leaked in as an unresolved import
 # (would crash on a real iOS 3 device). ARC C-functions must NOT appear at all
 # now that the app is MRC — if they do, something is still compiled ARC.
-leaked="$(llvm-nm -mu "$out/$APP_NAME" 2>/dev/null | grep -iE '(_objc_(retain|release|storeStrong|storeWeak|loadWeak|autorelease)|dispatch_async|dispatch_once|Block_copy|retainBlock)' || true)"
+leaked="$(llvm-nm -mu "$out/$APP_NAME" 2>/dev/null | grep -iE '(_objc_(retain|release|storeStrong|storeWeak|loadWeak|autorelease)|dispatch_async|dispatch_once|Block_copy|retainBlock|imp_implementationWithBlock|imp_removeBlock)' || true)"
 if [ -n "$leaked" ]; then
-    echo "ERROR: unresolved ARC/blocks/GCD imports remain:" >&2; echo "$leaked" >&2; exit 1
+    echo "ERROR: unresolved ARC/blocks/GCD/objc-runtime imports remain (would crash on real iOS 3):" >&2; echo "$leaked" >&2; exit 1
 fi
 echo "OK: blocks/GCD resolved internally, MRC retain/release native — binary is iOS 3 self-contained."
 
