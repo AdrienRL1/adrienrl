@@ -5,12 +5,14 @@
 // (NS_ENUM, modern subscripting, @YES/@NO boxing, renamed UIKit constants,
 // NSUUID, base64, attributed string drawing, …). This header is force-
 // included (clang -include) into every translation unit and declares the
-// missing pieces so the existing ARC source compiles unchanged. Runtime
-// behaviour for the methods declared here is supplied by AppDropRuntime.m.
+// missing pieces so the MRC source compiles. Runtime behaviour for the
+// methods declared here is supplied by AppDropRuntime.m.
 //
-// Pair this with the static runtime shims (arc_runtime.m, blocks/, gcd_shim.c)
-// so the ARC / blocks / GCD entry points resolve on a device whose libobjc /
-// libSystem never shipped them (true iOS 3.x hardware).
+// The app is compiled with -fno-objc-arc: memory management uses native
+// retain/release message sends (present since iOS 2), so no ARC runtime shim
+// or libarclite is needed. Pair this header only with the static blocks/ and
+// gcd_shim.c runtimes, which iOS 3's libSystem never shipped (true 3.x
+// hardware has no blocks runtime and no libdispatch).
 
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
