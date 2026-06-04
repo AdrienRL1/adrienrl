@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <b>📱 Fully optimized for iPad</b> — a true iPad interface (multi-column grids, large tiles, full landscape), <b>not a blown-up iPhone app</b>. Just as native on iPhone.
+  <b>📱 Runs natively on iPhone, iPod touch & iPad</b> — a clean list or grid on iPhone/iPod, and on iPad a <b>true iPad interface</b> (multi-column grids, large tiles, landscape), not a blown-up phone layout.
 </p>
 
 ---
@@ -30,16 +30,16 @@
 ## Features
 
 - **43,000+ vintage apps** — browsable **by category** right from the home screen, with every archived version of each app available
-- **Built for iPad — and iPhone** — a real iPad interface with multi-column grids, large tiles and full landscape support (not a stretched-up iPhone app); on iPhone it falls back to a clean, native list or grid
+- **Native on iPhone, iPod touch & iPad** — a clean list or grid on the phone / iPod, and a true multi-column iPad interface (large tiles, landscape) on iPad — never a stretched-up phone app
 - **Auto-updating catalog** — downloaded on first launch and refreshed automatically when new apps are added, so you never reinstall the app just for new content
 - **"Works Today"** — a section for apps confirmed still running on old iOS (patched, revived, or community-made), with one-tap install and update detection
 - **Modded apps** — a brand-new section for patched / unlocked / modded builds for legacy iOS, starting fresh and growing over time (it updates on its own, no app release needed)
 - **17 themes + full dark mode** — recolour the whole app instantly: 8 light colours and 9 dark variants, applied live with no restart
 - **Your own layout** — switch any grid between **list and icons** and pick how many apps/tiles per row with a native iOS-6 wheel
-- **Widget-style home** — drag to reorder the home tiles, resize them (1×1 / 2×1 / 2×2), pin your favourites on top, or hit Reset to start over
+- **Widget-style home** — press and hold any tile until it jiggles, then drag to reorder and drag a tile's bottom-right corner to resize it (1×1 / 2×1 / 2×2); pin your favourites on top, tap Done when you're happy, or hit Reset to start over
 - **Favorites & folders** — ⭐ star any app, and organise apps into your own named collections right on the home screen
 - **Download later** — queue apps to a "later" list and grab them when you're ready
-- **Share an app** — contribute an app you have the right to share (your own, homebrew, open-source, freeware, public domain) through a moderated upload
+- **Share an app** — contribute an app you have the right to share (your own, homebrew, open-source, freeware, public domain) through a moderated upload — into either the Modded section or the "Works Today" list
 - **Device-aware** — each app shows whether it'll run on *your* device, the catalog hides apps your iOS can't run, and AppDrop auto-picks the newest version you can actually install
 - **FairPlay-aware** — detects DRM-encrypted builds before installing and steers you to a clean, installable version
 - **8 languages** — EN / FR / ES / DE / PT‑BR / JA / ZH‑Hans / TR, auto-detected from your device
