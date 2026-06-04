@@ -173,6 +173,16 @@ if [ -n "$leaked" ]; then
 fi
 echo "OK: blocks/GCD resolved internally, MRC retain/release native — binary is iOS 3 self-contained."
 
+# Second guard: symbols that DO resolve against the 5.1 SDK at build time but do
+# NOT exist on iOS 3.1.3 CoreFoundation (149/4xx), so dyld aborts at launch with
+# "Symbol not found". CFRunLoopPerformBlock is iOS 4.0. Keep this list growing as
+# we discover more 4.0+ APIs that slip through.
+toonew="$(llvm-nm -u "$out/$APP_NAME" 2>/dev/null | grep -oE '_(CFRunLoopPerformBlock)' | sort -u || true)"
+if [ -n "$toonew" ]; then
+    echo "ERROR: iOS 4.0+ symbols present as imports (resolve vs 5.1 SDK but missing on iOS 3.1.3 — dyld will abort at launch):" >&2; echo "$toonew" >&2; exit 1
+fi
+echo "OK: no known iOS 4.0+ CoreFoundation symbols imported."
+
 # ---------------------------------------------------------------------------
 # 6. Bundle .app, fake-sign, package .ipa  (+ Cydia .deb when possible)
 # ---------------------------------------------------------------------------

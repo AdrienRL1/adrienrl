@@ -80,9 +80,32 @@ static void *trampoline(void *ctx) {
     return NULL;
 }
 
+// run_on_main: schedule `b` (already Block_copy'd; we own it) to run on the
+// main thread's run loop. iOS 3.1.3 has NO CFRunLoopPerformBlock (that symbol
+// first appears in iOS 4.0 / CoreFoundation 550), so using it makes dyld abort
+// the process with "Symbol not found: _CFRunLoopPerformBlock" at first call.
+// Instead we use a one-shot CFRunLoopTimer (available since iOS 2.0) with an
+// immediate fire date: CF retains the timer while it's scheduled, fires it on
+// the next main-loop pass, we run+release the block, then invalidate.
+static void ad_main_timer_cb(CFRunLoopTimerRef timer, void *info) {
+    dispatch_block_t b = (dispatch_block_t)info;
+    if (b) { b(); Block_release(b); }
+    CFRunLoopTimerInvalidate(timer);
+}
+
 static void run_on_main(dispatch_block_t b) {
     CFRunLoopRef rl = CFRunLoopGetMain();
-    CFRunLoopPerformBlock(rl, kCFRunLoopCommonModes, ^{ b(); Block_release(b); });
+    CFRunLoopTimerContext ctx = { 0, (void *)b, NULL, NULL, NULL };
+    CFRunLoopTimerRef t = CFRunLoopTimerCreate(
+        kCFAllocatorDefault,
+        CFAbsoluteTimeGetCurrent(),  // fire immediately on next loop pass
+        0,                            // non-repeating
+        0, 0,
+        ad_main_timer_cb,
+        &ctx);
+    if (!t) { if (b) { b(); Block_release(b); } return; }  // fallback: run inline
+    CFRunLoopAddTimer(rl, t, kCFRunLoopCommonModes);
+    CFRelease(t);                     // run loop keeps it alive until it fires
     CFRunLoopWakeUp(rl);
 }
 

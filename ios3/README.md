@@ -170,6 +170,25 @@ and mbedTLS (~10 min). Subsequent runs are cached. Output:
   frozen the UI. Uses only iOS-2.0-era primitives (`locationInView:`,
   `CACurrentMediaTime`, associated objects — already proven at launch by the
   rootVC backfill).
+- ✅ **Launch crash fixed (`dyld: Symbol not found: _CFRunLoopPerformBlock`).**
+  The GCD shim's `run_on_main()` (in `compat/shim/gcd_shim.c`) hopped main-queue
+  work onto the main run loop via `CFRunLoopPerformBlock`, which **first ships in
+  iOS 4.0** (CoreFoundation 550). On 3.1.3 dyld's lazy bind couldn't resolve it
+  and aborted with `SIGTRAP` right after `makeKeyAndVisible` (the first
+  `dispatch_async(dispatch_get_main_queue(), …)` triggers it). Replaced with a
+  one-shot `CFRunLoopTimer` (available since iOS 2.0) fired immediately on the
+  main run loop in `kCFRunLoopCommonModes`: the copied block rides in the timer
+  context, the callback runs + `Block_release`es it, then invalidates the timer.
+  `build-ios3.sh` gained a second symbol guard that fails the build if any
+  iOS-4.0+ CoreFoundation symbol (`CFRunLoopPerformBlock`, `CFRunLoopWakeUpV2`,
+  …) appears as an undefined import, so this can't silently regress (the older
+  guard only catches *unresolved* imports, but CF 4.0 symbols resolve against
+  the 5.1 SDK at build time and only fail at runtime on 3.x).
+- ⚠️ **`NSRegularExpression` is iOS 4.0** and is not yet backfilled. It's only
+  used at install time (`InstallManager`, `UpdateNotesViewController`) and every
+  call site nil-guards the result, so it won't crash — it just silently fails to
+  match (install-success parsing, MB progress, update-note formatting). Backfill
+  later if those features matter on 3.x.
 - ⚠️ **Run on real hardware (iPod touch, iOS 3.1.3, armv6).** It now gets past
   the earlier bundle-exec mismatch and the `imp_implementationWithBlock`
   missing-symbol crash. Link-clean ≠ bug-free — keep testing, and watch for
