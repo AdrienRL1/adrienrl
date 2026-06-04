@@ -521,7 +521,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     if (streams <= 0) streams = 4;
     if (streams > 8) streams = 8;
 
-    __weak InstallJob *weakJob = job;
+    AD_WEAK InstallJob *weakJob = job;
     [ParallelDownloader downloadURL:job.url
                               toFile:localPath
                          streamCount:streams

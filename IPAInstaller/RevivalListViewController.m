@@ -221,7 +221,7 @@ static NSString *RevHumanSize(long long bytes) {
     AppRowCell *c = [tv dequeueReusableCellWithIdentifier:rid];
     if (!c) c = [[AppRowCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:rid];
     c.tilesPerRow = self.tpr;
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     c.onTileTap = ^(NSDictionary *app) {
         if (!app) return;
         AppDetailViewController *d = [[AppDetailViewController alloc] initWithApp:app allowVersionSwitch:NO];

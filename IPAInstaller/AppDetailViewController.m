@@ -387,12 +387,12 @@ static UIImage *ADCancelGlyph(void) {
     self.encryptionProbed = YES;
     NSString *url = self.app[@"url"];
     if (url.length == 0) return;
-    __weak AppDetailViewController *weakSelf = self;
+    AD_WEAK AppDetailViewController *weakSelf = self;
     [MachOInspector inspectURL:url completion:^(MachOInspectionResult r) {
         AppDetailViewController *s = weakSelf;
         if (!s) return;
         if (r != MachOInspectionResultEncrypted) return;   // decrypted/unknown → nothing to do
-        __weak AppDetailViewController *ws = s;
+        AD_WEAK AppDetailViewController *ws = s;
         if (s.allowVersionSwitch) {
             // Auto path (catalog/search): resolve SILENTLY — no transient 🔒 banner. Switch to a
             // clean build in place if one exists; otherwise say there's none.
@@ -437,7 +437,7 @@ static UIImage *ADCancelGlyph(void) {
 - (void)probeCandidates:(NSArray *)candidates index:(NSUInteger)i then:(void (^)(NSDictionary *))done {
     if (i >= candidates.count) { if (done) done(nil); return; }
     NSDictionary *v = [candidates objectAtIndex:i];
-    __weak AppDetailViewController *weakSelf = self;
+    AD_WEAK AppDetailViewController *weakSelf = self;
     [MachOInspector inspectURL:v[@"url"] completion:^(MachOInspectionResult r) {
         AppDetailViewController *s = weakSelf;
         if (!s) return;

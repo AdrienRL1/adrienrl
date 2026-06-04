@@ -15,6 +15,19 @@
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
 
+// ---- AD_WEAK: weak-reference qualifier for the iOS 3 MRC target ----
+// True zeroing __weak needs the iOS 5+ ObjC runtime (objc_loadWeak /
+// objc_storeWeak with side tables), which iOS 3/4 devices do not have. Under
+// MRC we use __unsafe_unretained — a non-zeroing weak ref that breaks retain
+// cycles without retaining. This matches the behaviour the old ARC shim
+// already provided (its objc_storeWeak was a plain assign), but compiles
+// cleanly and carries no phantom runtime dependency. Every former __weak /
+// weak-property site routes through this one macro so a real zeroing-weak
+// implementation can be swapped in centrally if one is ever back-ported.
+#ifndef AD_WEAK
+#define AD_WEAK __unsafe_unretained
+#endif
+
 // ---- NS_ENUM / NS_OPTIONS: iOS 6 SDK macros, absent from the 5.1 SDK ----
 #ifndef NS_ENUM
 #define NS_ENUM(_type, _name) _type _name; enum

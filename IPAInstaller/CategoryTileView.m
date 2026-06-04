@@ -313,7 +313,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     } else {
         self.iconView.image = nil;   // placeholder applied in layoutSubviews
         [self setNeedsLayout];
-        __weak typeof(self) weakSelf = self;
+        AD_WEAK typeof(self) weakSelf = self;
         [[IconLoader shared] loadImageForURL:iconURL targetSize:sz via:nil
                                   completion:^(UIImage *img) {
             __strong typeof(self) s = weakSelf;
@@ -331,7 +331,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     UIImage *cached = [[IconLoader shared] cachedImageForURL:iconURL targetSize:sz];
     if (cached) { self.iconView.image = cached; return; }
     // Keep the current image visible (no placeholder flash) until the new one loads.
-    __weak typeof(self) weakSelf = self;
+    AD_WEAK typeof(self) weakSelf = self;
     [[IconLoader shared] loadImageForURL:iconURL targetSize:sz via:nil
                               completion:^(UIImage *img) {
         __strong typeof(self) s = weakSelf;
@@ -395,7 +395,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
 - (void)loadMosaicSlots {
     CGSize sz = CGSizeMake(64, 64);
     NSInteger gen = self.mosaicGen;
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     for (NSUInteger i = 0; i < self.mosaicSlots.count; i++) {
         if ([self.mosaicImgs[i] isKindOfClass:[UIImage class]]) continue;
         id slotURL = self.mosaicSlots[i];
@@ -428,7 +428,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     CGSize sz = CGSizeMake(64, 64);
     UIImage *c = [[IconLoader shared] cachedImageForURL:next targetSize:sz];
     if (c) { self.mosaicImgs[slot] = c; [self compositeMosaic]; return; }
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [[IconLoader shared] loadImageForURL:next targetSize:sz via:nil completion:^(UIImage *img) {
         __strong typeof(self) s = ws; if (!s || s.mosaicGen != gen) return;
         if (img) { s.mosaicImgs[slot] = img; [s compositeMosaic]; }

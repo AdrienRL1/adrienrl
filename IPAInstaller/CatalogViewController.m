@@ -450,7 +450,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
 - (void)addSelectedToFolder {
     NSArray *batch = [self.selectedAppsByPk.allValues copy];
     if (!batch.count) return;
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [FolderPicker presentAddToFolderFrom:self completion:^(NSString *cid) {
         if (!cid) return;
         for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:cid];
@@ -533,7 +533,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
         NSInteger n = [self tilesPerRowForWidth:tv.bounds.size.width];
         row.tilesPerRow = n;
         [row setContentRasterized:!self.gridScrolling];   // rasterize at rest, plain while scrolling
-        __weak typeof(self) ws = self;
+        AD_WEAK typeof(self) ws = self;
         row.selectionMode = self.selectionMode;
         // Selection lookup callback — runs for each tile during layout so the
         // check overlay reflects the source-of-truth dict, not stale visuals.

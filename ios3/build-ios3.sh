@@ -86,15 +86,6 @@ if ! command -v ldid >/dev/null && [ ! -x "$tcbin/ldid" ]; then
 fi
 LDID="$(command -v ldid || echo "$tcbin/ldid")"
 
-# clang refuses pre-iOS-6 deployment targets without libarclite; we ship our own
-# ARC runtime, so satisfy the driver with an empty stub archive.
-arcstub="$work/arcstub"
-if [ ! -f "$arcstub/libarclite_iphoneos.a" ]; then
-    mkdir -p "$arcstub"; : > "$arcstub/empty.c"
-    "$CLANG" -target "$TRIPLE" -isysroot "$sdk" -c "$arcstub/empty.c" -o "$arcstub/empty.o"
-    "$AR" rcs "$arcstub/libarclite_iphoneos.a" "$arcstub/empty.o"
-fi
-
 # ---------------------------------------------------------------------------
 # 3. mbedTLS for armv6
 # ---------------------------------------------------------------------------
@@ -120,20 +111,24 @@ if [ ! -f "$mbedlib" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Compile AppDrop (ARC) + compat layer (MRC) + runtime shims
+# 4. Compile AppDrop (MRC) + compat layer (MRC) + blocks/GCD runtime shims
 # ---------------------------------------------------------------------------
 printf '\n==> Compiling AppDrop for %s...\n' "$TRIPLE"
 rm -f "$obj"/*.o
 
-# ARC sources: every .m in IPAInstaller EXCEPT the iOS-5 subscript shim, which
-# is superseded by AppDropRuntime.m (kept in the project, just not recompiled).
-ARC="-target $TRIPLE -isysroot $sdk -fobjc-arc -fobjc-runtime=ios-5.0 -fobjc-abi-version=2 \
+# AppDrop sources, compiled under Manual Reference Counting (-fno-objc-arc).
+# iOS 3/4's libobjc has no ARC runtime (objc_retain/release/storeStrong, zeroing
+# __weak), so the app was historically compiled ARC + a fake ARC runtime shim.
+# Under MRC, clang emits ordinary -retain/-release/-autorelease *message sends*
+# that the iOS 3 runtime implements natively — no ARC shim, no libarclite. Every
+# .m EXCEPT the iOS-5 subscript shim (superseded by AppDropRuntime.m).
+MRCAPP="-target $TRIPLE -isysroot $sdk -fno-objc-arc -fobjc-abi-version=2 \
      -include $COMPAT/AppDropCompat.h -I$mbeddir/include \
      -Wno-deprecated-declarations -Wno-unused-command-line-argument -Os"
 for s in "$SRC"/*.m; do
     b="$(basename "$s" .m)"
     [ "$b" = "IOS5Compat" ] && continue   # replaced by AppDropRuntime.m
-    "$CLANG" $ARC -c "$s" -o "$obj/app_$b.o"
+    "$CLANG" $MRCAPP -c "$s" -o "$obj/app_$b.o"
 done
 
 # MRC compat (runtime plumbing must not be ARC-managed)
@@ -142,8 +137,9 @@ MRC="-target $TRIPLE -isysroot $sdk -fno-objc-arc -fobjc-abi-version=2 -Wno-ever
 "$CLANG" $MRC -include "$COMPAT/AppDropCompat.h" -I"$COMPAT" -c "$COMPAT/AppDropJSON.m" -o "$obj/compat_json.o"
 "$CLANG" $MRC -I"$COMPAT" -c "$COMPAT/cJSON.c" -o "$obj/compat_cjson.o"
 
-# Runtime shims: ARC + blocks + GCD, so the binary is self-contained on iOS 3.
-"$CLANG" $MRC -c "$COMPAT/shim/arc_shim.m" -o "$obj/shim_arc.o"
+# Runtime shims: blocks + GCD only. iOS 3 has no blocks runtime and no
+# libdispatch regardless of ARC/MRC, so the binary still carries its own.
+# (The former arc_shim.m is gone — MRC needs no ARC runtime.)
 "$CLANG" $MRC -I"$COMPAT/shim/blocks" -DHAVE_OBJC=1 \
     -DHAVE_SYNC_BOOL_COMPARE_AND_SWAP_INT=1 -DHAVE_SYNC_BOOL_COMPARE_AND_SWAP_LONG=1 \
     -c "$COMPAT/shim/blocks/runtime.c" -o "$obj/shim_blocks_rt.o"
@@ -155,41 +151,25 @@ MRC="-target $TRIPLE -isysroot $sdk -fno-objc-arc -fobjc-abi-version=2 -Wno-ever
 # 5. Link
 # ---------------------------------------------------------------------------
 printf '\n==> Linking...\n'
-do_link() {
-    "$CLANG" -target "$TRIPLE" -isysroot "$sdk" -fobjc-arc -fobjc-runtime=ios-5.0 \
-        -fuse-ld=ld64 -mlinker-version=762 -L"$arcstub" -larclite_iphoneos \
-        -framework UIKit -framework Foundation -framework CoreGraphics \
-        -framework QuartzCore -framework ImageIO -framework CFNetwork -framework SystemConfiguration \
-        -lsqlite3 -lz \
-        "$obj"/*.o "$mbedlib" \
-        -o "$out/$APP_NAME" 2> "$work/link.err"
-}
-if ! do_link; then
-    cat "$work/link.err" >&2
-    # clang's driver injects libarclite by an absolute path inside its own
-    # install tree (e.g. /usr/lib/llvm-18/lib/arc/libarclite_iphoneos.a) BEFORE
-    # link time, ignoring -L. We ship our own ARC runtime, so drop an empty
-    # stub at exactly the path the driver names, then retry once.
-    want="$(grep -oE "/[^ '\"]*/lib/arc/libarclite_iphoneos\.a" "$work/link.err" | head -1)"
-    if [ -n "$want" ]; then
-        printf '\n==> clang wants libarclite at %s — installing empty stub there...\n' "$want"
-        dir="$(dirname "$want")"
-        if mkdir -p "$dir" 2>/dev/null; then :; else sudo mkdir -p "$dir"; fi
-        if cp "$arcstub/libarclite_iphoneos.a" "$want" 2>/dev/null; then :; else sudo cp "$arcstub/libarclite_iphoneos.a" "$want"; fi
-        do_link || { cat "$work/link.err" >&2; exit 1; }
-    else
-        exit 1
-    fi
-fi
+# MRC: no -fobjc-arc, no libarclite. The objc runtime calls are plain message
+# sends resolved by libobjc on the device.
+"$CLANG" -target "$TRIPLE" -isysroot "$sdk" \
+    -fuse-ld=ld64 -mlinker-version=762 \
+    -framework UIKit -framework Foundation -framework CoreGraphics \
+    -framework QuartzCore -framework ImageIO -framework CFNetwork -framework SystemConfiguration \
+    -lsqlite3 -lz \
+    "$obj"/*.o "$mbedlib" \
+    -o "$out/$APP_NAME" 2> "$work/link.err" || { cat "$work/link.err" >&2; exit 1; }
 file "$out/$APP_NAME"
 
 # Fail loudly if any ARC/blocks/GCD symbol leaked in as an unresolved import
-# (would crash on a real iOS 3 device).
-leaked="$(llvm-nm -mu "$out/$APP_NAME" 2>/dev/null | grep -iE '(_objc_(retain|release|storeStrong)|dispatch_async|dispatch_once|Block_copy|retainBlock)' || true)"
+# (would crash on a real iOS 3 device). ARC C-functions must NOT appear at all
+# now that the app is MRC — if they do, something is still compiled ARC.
+leaked="$(llvm-nm -mu "$out/$APP_NAME" 2>/dev/null | grep -iE '(_objc_(retain|release|storeStrong|storeWeak|loadWeak|autorelease)|dispatch_async|dispatch_once|Block_copy|retainBlock)' || true)"
 if [ -n "$leaked" ]; then
     echo "ERROR: unresolved ARC/blocks/GCD imports remain:" >&2; echo "$leaked" >&2; exit 1
 fi
-echo "OK: ARC/blocks/GCD resolved internally — binary is iOS 3 self-contained."
+echo "OK: blocks/GCD resolved internally, MRC retain/release native — binary is iOS 3 self-contained."
 
 # ---------------------------------------------------------------------------
 # 6. Bundle .app, fake-sign, package .ipa  (+ Cydia .deb when possible)

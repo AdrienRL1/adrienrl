@@ -238,7 +238,7 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
 - (void)pickFile {
     [self.view endEditing:YES];
     FilePickerViewController *fp = [[FilePickerViewController alloc] initWithDirectory:nil];
-    __weak UploadViewController *weakSelf = self;
+    AD_WEAK UploadViewController *weakSelf = self;
     fp.onPick = ^(NSString *path) {
         UploadViewController *s = weakSelf; if (!s) return;
         s.chosenPath = path;

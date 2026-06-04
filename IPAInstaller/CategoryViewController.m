@@ -491,7 +491,7 @@ static UIImage *AppDropModdedGlyph(void) {
 
     // ---- Tiles ----
     NSMutableArray *tiles = [NSMutableArray array];
-    __weak typeof(self) wself = self;
+    AD_WEAK typeof(self) wself = self;
     for (NSDictionary *it in self.items) {
         CategoryTileView *t = [[CategoryTileView alloc] initWithFrame:CGRectZero];
         // Tiles always show the auto mosaic (preview-image pinning was removed).

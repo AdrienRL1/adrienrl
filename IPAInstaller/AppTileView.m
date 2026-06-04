@@ -170,7 +170,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     UIImage *cached = iconUrl.length ? [[IconLoader shared] cachedImageForURL:iconUrl targetSize:sz] : nil;
     self.iconView.image = cached;   // already force-decoded by IconLoader → pure composite
     if (iconUrl.length && !cached) {
-        __weak typeof(self) ws = self;
+        AD_WEAK typeof(self) ws = self;
         [[IconLoader shared] loadImageForURL:iconUrl targetSize:sz via:nil completion:^(UIImage *img) {
             if (!img) return;
             __strong typeof(self) s = ws;

@@ -17,7 +17,7 @@ static const CGFloat kToolbarH = 44.0;
 @property (nonatomic, strong) UIToolbar *toolbar;
 @property (nonatomic, assign) BOOL selecting;
 @property (nonatomic, strong) NSMutableSet *selectedKeys;
-@property (nonatomic, weak)   UIBarButtonItem *editBarButton;   // anchors the edit menu popover on iPad
+@property (nonatomic, assign)   UIBarButtonItem *editBarButton;   // anchors the edit menu popover on iPad
 @end
 
 @implementation CollectionViewController

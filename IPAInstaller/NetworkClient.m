@@ -86,7 +86,7 @@ static NSMutableSet *_inflight = nil;
     [req setHTTPMethod:@"GET"];
     NCRequest *r = [[NCRequest alloc] init];
     @synchronized (_inflight) { [_inflight addObject:r]; }
-    __weak NCRequest *weakR = r;
+    AD_WEAK NCRequest *weakR = r;
     r.completion = ^(NSData *d, NSHTTPURLResponse *resp, NSError *err) {
         if (cb) {
             dispatch_async(dispatch_get_main_queue(), ^{ cb(d, resp, err); });
@@ -112,7 +112,7 @@ static NSMutableSet *_inflight = nil;
     if (body) [req setHTTPBody:body];
     NCRequest *r = [[NCRequest alloc] init];
     @synchronized (_inflight) { [_inflight addObject:r]; }
-    __weak NCRequest *weakR = r;
+    AD_WEAK NCRequest *weakR = r;
     r.completion = ^(NSData *d, NSHTTPURLResponse *resp, NSError *err) {
         if (cb) {
             dispatch_async(dispatch_get_main_queue(), ^{ cb(d, resp, err); });

@@ -77,7 +77,7 @@
 - (void)ensureTileCount {
     while ((NSInteger)self.tiles.count < self.tilesPerRow) {
         AppTileView *t = [[AppTileView alloc] initWithFrame:CGRectZero];
-        __weak typeof(self) ws = self;
+        AD_WEAK typeof(self) ws = self;
         t.onTap = ^(NSDictionary *app) {
             if (ws.onTileTap) ws.onTileTap(app);
         };

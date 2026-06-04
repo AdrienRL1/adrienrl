@@ -155,7 +155,7 @@ static UIImage *IconForceDecode(UIImage *image) {
     BOOL isHTTPS = [[finalURL lowercaseString] hasPrefix:@"https://"];
     NSTimeInterval timeout = 30;  // mbedTLS handshake on iPad 1 can take several seconds.
 
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     NSBlockOperation *op = [NSBlockOperation blockOperationWithBlock:^{
         __strong typeof(ws) self = ws; if (!self) return;
         NSData *d = nil;
