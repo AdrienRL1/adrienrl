@@ -64,6 +64,14 @@
    ```
 4. Tap **Add Source** — Cydia refreshes the source list. The repo is named **AdrienRL**.
 
+> **On the oldest devices (mainly iOS 5), Cydia may reject the HTTPS source** with a *"could not be verified"* / TLS error. These devices are missing the modern **Let's Encrypt root certificate (ISRG Root X1)** that `github.io` now chains to. Install it once and the source works:
+>
+> 1. On the device, open **`http://repo.invoxiplaygames.uk/certificates/`** in Safari — use **`http://`**, *not* `https://`, because the device can't yet verify the very certificate it's about to install (same chicken-and-egg that's blocking Cydia).
+> 2. Tap **ISRG Root X1 CA (Let's Encrypt)** and install the certificate (if it doesn't open on its own, go to **Settings → General → Profiles** and install it there).
+> 3. Return to Cydia and add `https://adrienrl1.github.io/cydia/` again — it now validates.
+>
+> iOS 6 and newer already trust this root (verified on iOS 6.1.3 / 6.1.4), so this is only needed on the earliest devices. Certificate page courtesy of [InvoxiPlayGames](https://repo.invoxiplaygames.uk/).
+
 ### Install AppDrop
 
 5. From the AdrienRL source, tap **AppDrop**
@@ -83,6 +91,7 @@ AppDrop's in-app updater checks GitHub Releases hourly and, when a new version i
 
 | Symptom | Fix |
 |---|---|
+| Cydia rejects the **HTTPS source** ("could not be verified") on old iOS | Mostly **iOS 5**. Install the **ISRG Root X1 (Let's Encrypt)** root certificate from `http://repo.invoxiplaygames.uk/certificates/` (see the note above the install steps), then add the source again. |
 | Cydia can't resolve **AppSync Unified** | Add Karen's official repo `https://cydia.akemi.ai/` (package `ai.akemi.appsyncunified`), then refresh. Use only the official build. |
 | Icon not visible after install | Reboot the device, or via SSH run `uicache -p /Applications/AppDrop.app && killall -9 SpringBoard`. |
 | App crashes on launch | Confirm your iOS is **5.0 or newer** (iOS 11+ is **not** supported). |
