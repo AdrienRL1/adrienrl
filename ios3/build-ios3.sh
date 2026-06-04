@@ -159,7 +159,7 @@ do_link() {
     "$CLANG" -target "$TRIPLE" -isysroot "$sdk" -fobjc-arc -fobjc-runtime=ios-5.0 \
         -fuse-ld=ld64 -mlinker-version=762 -L"$arcstub" -larclite_iphoneos \
         -framework UIKit -framework Foundation -framework CoreGraphics \
-        -framework QuartzCore -framework ImageIO \
+        -framework QuartzCore -framework ImageIO -framework CFNetwork -framework SystemConfiguration \
         -lsqlite3 -lz \
         "$obj"/*.o "$mbedlib" \
         -o "$out/$APP_NAME" 2> "$work/link.err"

@@ -63,6 +63,32 @@ enum {
 };
 #endif
 
+// ---- UIViewController iOS 6+ autorotation selectors (absent from 5.1 SDK headers) ----
+@interface UIViewController (AppDropAutorotate)
+- (NSUInteger)supportedInterfaceOrientations;
+- (BOOL)shouldAutorotate;
+@end
+
+// ---- UIView -tintColor (iOS 7+; runtime-guarded with respondsToSelector) ----
+@interface UIView (AppDropTint)
+- (void)setTintColor:(UIColor *)color;
+- (UIColor *)tintColor;
+@end
+
+// ---- UISwitch -tintColor (iOS 6+; runtime-guarded with respondsToSelector) ----
+@interface UISwitch (AppDropTint)
+- (void)setTintColor:(UIColor *)color;
+- (UIColor *)tintColor;
+@end
+
+// ---- UITableViewHeaderFooterView (iOS 6+; runtime-guarded with isKindOfClass) ----
+@interface UITableViewHeaderFooterView : UIView
+@property (nonatomic, retain) UIView *backgroundView;
+@property (nonatomic, readonly, retain) UIView *contentView;
+@property (nonatomic, readonly, retain) UILabel *textLabel;
+@property (nonatomic, readonly, retain) UILabel *detailTextLabel;
+@end
+
 // ---- @YES / @NO boxed BOOL literals (5.1 SDK defines YES/NO as (BOOL)1/(BOOL)0,
 //      which breaks @YES/@NO boxing; iOS 6 SDK uses __objc_yes/__objc_no builtins) ----
 #undef YES

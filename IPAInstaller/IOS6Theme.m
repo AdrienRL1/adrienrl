@@ -544,7 +544,8 @@ static UIImage *ad_roundedCard(UIColor *fill, UIColor *border) {
 // (the black bands the user saw — even in the default theme after a live switch). We force a CLEAR
 // backgroundView so the table backdrop shows through, and recolour the label light on dark themes.
 + (void)styleGroupedHeaderFooter:(UIView *)view {
-    if (![view isKindOfClass:[UITableViewHeaderFooterView class]]) return;
+    Class hfClass = NSClassFromString(@"UITableViewHeaderFooterView");
+    if (!hfClass || ![view isKindOfClass:hfClass]) return;
     UITableViewHeaderFooterView *hf = (UITableViewHeaderFooterView *)view;
     UIView *clear = [[UIView alloc] initWithFrame:hf.bounds];
     clear.backgroundColor = [UIColor clearColor];
