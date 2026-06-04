@@ -30,12 +30,79 @@
 //   * UIGraphicsBeginImageContextWithOptions
 //                                       (iOS 4.0 C function; RTLD_NEXT to the
 //                                        real UIKit impl on 4+, 1x fallback on 3)
+//   * Modern subscripting               (dict[key] / arr[i] read + write; the
+//                                        iOS 6 SDK syntax sends objectFor-
+//                                        KeyedSubscript: etc., absent pre-iOS 6.
+//                                        Ported here from the build-excluded
+//                                        IOS5Compat.m so it covers every site.)
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <CoreFoundation/CoreFoundation.h>
 #include <dlfcn.h>
+
+#pragma mark - Modern subscripting (dict[key], arr[i] — iOS 6 SDK syntax)
+// clang lowers `dict[key]` to -[NSDictionary objectForKeyedSubscript:],
+// `arr[i]` to -[NSArray objectAtIndexedSubscript:], and the assignment forms
+// to the matching setters. Those selectors first shipped in iOS 6; on iOS 3
+// they are unrecognized and throw NSInvalidArgumentException (the launch crash
+// we hit in setupAppearance: -[NSCFDictionary objectForKeyedSubscript:]).
+//
+// The IMPs delegate through the iOS-2-era selector (-objectForKey:,
+// -objectAtIndex:, …) so the runtime dispatches to the CONCRETE class's real
+// method (__NSCFDictionary), not the abstract-class stub. No-ops on iOS 6+
+// where the OS already provides the subscript methods.
+
+static id AppDropDictObjectForKeyedSubscript(id self, SEL _cmd, id key) {
+    return [self objectForKey:key];
+}
+static void AppDropMDictSetObjectForKeyedSubscript(id self, SEL _cmd, id obj, id key) {
+    [(NSMutableDictionary *)self setObject:obj forKey:key];
+}
+static id AppDropArrObjectAtIndexedSubscript(id self, SEL _cmd, NSUInteger idx) {
+    return [self objectAtIndex:idx];
+}
+static void AppDropMArrSetObjectAtIndexedSubscript(id self, SEL _cmd, id obj, NSUInteger idx) {
+    NSMutableArray *arr = (NSMutableArray *)self;
+    if (idx == [arr count]) {          // assigning past the end appends (Apple semantics)
+        [arr addObject:obj];
+    } else {
+        [arr replaceObjectAtIndex:idx withObject:obj];
+    }
+}
+
+@implementation NSDictionary (AppDropSubscriptImpl)
++ (void)load {
+    if ([NSDictionary instancesRespondToSelector:@selector(objectForKeyedSubscript:)]) return;
+    class_addMethod([NSDictionary class], @selector(objectForKeyedSubscript:),
+                    (IMP)AppDropDictObjectForKeyedSubscript, "@@:@");
+}
+@end
+
+@implementation NSMutableDictionary (AppDropSubscriptImpl)
++ (void)load {
+    if ([NSMutableDictionary instancesRespondToSelector:@selector(setObject:forKeyedSubscript:)]) return;
+    class_addMethod([NSMutableDictionary class], @selector(setObject:forKeyedSubscript:),
+                    (IMP)AppDropMDictSetObjectForKeyedSubscript, "v@:@@");
+}
+@end
+
+@implementation NSArray (AppDropSubscriptImpl)
++ (void)load {
+    if ([NSArray instancesRespondToSelector:@selector(objectAtIndexedSubscript:)]) return;
+    class_addMethod([NSArray class], @selector(objectAtIndexedSubscript:),
+                    (IMP)AppDropArrObjectAtIndexedSubscript, "@@:L");
+}
+@end
+
+@implementation NSMutableArray (AppDropSubscriptImpl)
++ (void)load {
+    if ([NSMutableArray instancesRespondToSelector:@selector(setObject:atIndexedSubscript:)]) return;
+    class_addMethod([NSMutableArray class], @selector(setObject:atIndexedSubscript:),
+                    (IMP)AppDropMArrSetObjectAtIndexedSubscript, "v@:@L");
+}
+@end
 
 #pragma mark - Attribute key constants (weak: real ones win on iOS 6+)
 
