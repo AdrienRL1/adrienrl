@@ -1,4 +1,5 @@
 #import "CatalogAppCell.h"
+#import "IOS6Theme.h"
 
 @interface CatalogAppCell ()
 @property (nonatomic, strong, readwrite) UIImageView *appIconView;
@@ -20,16 +21,18 @@
         self.appIconView.backgroundColor = [UIColor clearColor];
         [self.contentView addSubview:self.appIconView];
 
-        // Title — bold, single line.
+        // Title — bold, single line. Explicit colour so it stays visible on dark themes
+        // (otherwise it defaults to black and vanishes).
         self.appTitleLabel = [[UILabel alloc] init];
         self.appTitleLabel.font = [UIFont boldSystemFontOfSize:14];
+        self.appTitleLabel.textColor = [IOS6Theme labelDark];
         self.appTitleLabel.backgroundColor = [UIColor clearColor];
         [self.contentView addSubview:self.appTitleLabel];
 
         // Subtitle — two lines, meta + filename.
         self.appSubtitleLabel = [[UILabel alloc] init];
         self.appSubtitleLabel.font = [UIFont systemFontOfSize:11];
-        self.appSubtitleLabel.textColor = [UIColor darkGrayColor];
+        self.appSubtitleLabel.textColor = [IOS6Theme labelGray];
         self.appSubtitleLabel.numberOfLines = 2;
         self.appSubtitleLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
         self.appSubtitleLabel.backgroundColor = [UIColor clearColor];
@@ -70,6 +73,11 @@
     self.appTitleLabel.text = nil;
     self.appSubtitleLabel.text = nil;
     self.accessoryType = UITableViewCellAccessoryNone;
+    // Re-assert theme colours on reuse so a live theme switch (which reloads the table) recolours
+    // every row — including the cell fill, which otherwise defaults to white.
+    self.backgroundColor = [IOS6Theme cellColor];
+    self.appTitleLabel.textColor = [IOS6Theme labelDark];
+    self.appSubtitleLabel.textColor = [IOS6Theme labelGray];
 }
 
 @end

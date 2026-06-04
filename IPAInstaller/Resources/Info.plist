@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>AppDrop</string>
 	<key>CFBundleExecutable</key>
-	<string>IPAInstaller</string>
+	<string>AppDrop</string>
 	<key>CFBundleIconFile</key>
 	<string>Icon-72.png</string>
 	<key>CFBundleIconFiles</key>
@@ -77,7 +77,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0</string>
+	<string>3.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleURLTypes</key>

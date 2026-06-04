@@ -65,6 +65,11 @@ static UIImage * __attribute__((unused)) AppDropFeedbackBarIcon(void) {
 
 @implementation FeedbackViewController
 
+// Live theme re-apply (AppDelegate calls this on a theme switch — no restart).
+- (void)applyTheme {
+    self.view.backgroundColor = [IOS6Theme groupedBackgroundColor];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = T(@"feedback.title");
@@ -80,7 +85,7 @@ static UIImage * __attribute__((unused)) AppDropFeedbackBarIcon(void) {
     self.intro = [[UILabel alloc] initWithFrame:CGRectMake(pad, 8, W - 2*pad, 50)];
     self.intro.numberOfLines = 0;
     self.intro.font = [UIFont systemFontOfSize:14];
-    self.intro.textColor = [UIColor darkGrayColor];
+    self.intro.textColor = [IOS6Theme labelGray];
     self.intro.backgroundColor = [UIColor clearColor];
     self.intro.text = T(@"feedback.intro");
     [self.intro sizeToFit];
@@ -89,7 +94,9 @@ static UIImage * __attribute__((unused)) AppDropFeedbackBarIcon(void) {
 
     self.textView = [[UITextView alloc] initWithFrame:CGRectZero];
     self.textView.font = [UIFont systemFontOfSize:16];
-    self.textView.layer.borderColor = [UIColor colorWithRed:0.78 green:0.80 blue:0.84 alpha:1.0].CGColor;
+    self.textView.backgroundColor = [IOS6Theme cellColor];
+    self.textView.textColor = [IOS6Theme labelDark];
+    self.textView.layer.borderColor = [IOS6Theme separatorColor].CGColor;
     self.textView.layer.borderWidth = 1.0;
     self.textView.layer.cornerRadius = 8.0;
     self.textView.delegate = self;
@@ -97,7 +104,7 @@ static UIImage * __attribute__((unused)) AppDropFeedbackBarIcon(void) {
 
     self.placeholder = [[UILabel alloc] initWithFrame:CGRectZero];
     self.placeholder.font = [UIFont systemFontOfSize:16];
-    self.placeholder.textColor = [UIColor lightGrayColor];
+    self.placeholder.textColor = [IOS6Theme placeholderColor];
     self.placeholder.backgroundColor = [UIColor clearColor];
     self.placeholder.text = T(@"feedback.placeholder");
     [self.view addSubview:self.placeholder];
@@ -183,11 +190,19 @@ static UIImage * __attribute__((unused)) AppDropFeedbackBarIcon(void) {
         x += sz + 8;
     }
     if (self.images.count < kMaxImages) {
-        UIButton *add = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+        // Default = the stock white rounded "+" button; dark themes = a dark custom button
+        // (UIButtonTypeRoundedRect is always white on iOS 6).
+        BOOL dk = [IOS6Theme isDark];
+        UIButton *add = [UIButton buttonWithType:(dk ? UIButtonTypeCustom : UIButtonTypeRoundedRect)];
         add.frame = CGRectMake(x, 4, sz, sz);
         [add setTitle:@"＋" forState:UIControlStateNormal];
         add.titleLabel.font = [UIFont systemFontOfSize:34];
-        add.layer.borderColor = [UIColor colorWithRed:0.7 green:0.72 blue:0.76 alpha:1].CGColor;
+        if (dk) {
+            add.backgroundColor = [IOS6Theme cellColor];
+            [add setTitleColor:[IOS6Theme labelGray] forState:UIControlStateNormal];
+        }
+        add.layer.borderColor = (dk ? [IOS6Theme separatorColor]
+                                     : [UIColor colorWithRed:0.7 green:0.72 blue:0.76 alpha:1]).CGColor;
         add.layer.borderWidth = 1; add.layer.cornerRadius = 6;
         [add addTarget:self action:@selector(addPhotoTapped) forControlEvents:UIControlEventTouchUpInside];
         [self.thumbStrip addSubview:add];

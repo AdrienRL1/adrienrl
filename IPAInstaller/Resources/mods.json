@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "_comment": "Apps MODIFIÉES pour vieux iOS (3-10) : jeux moddés (argent illimité, niveaux débloqués…), builds patchées/déverrouillées, mods communautaires. Même mécanique que revival.json. CHAMPS par entrée : name (titre affiché) ; bid (bundle id d'origine → l'icône est tirée du catalogue) ; min_ios (ex. \"5.0\") ; version ; size (octets, affiché avant l'install) ; mod (courte description de la modification, ex. \"Argent illimité\") ; notes (crédit du créateur + détails) ; PUIS soit (1) ipa = URL directe d'un .ipa → INSTALL en un tap dans l'app (peut être un fichier GitHub direct, téléchargé par l'app) ; soit (2) ipa vide + link = entrée EXTERNE → bouton « Ouvrir la page ». RÈGLE link : doit s'ouvrir sur le vieux Safari (site simple, jamais github.com). Curé à la main + suggestions via Commentaires. Le mainteneur est responsable de la légalité de ce qu'il ajoute. Pour ajouter une app : copier le modèle ci-dessous dans 'apps'.",
+  "_template": {
+    "name": "Nom du jeu (Modded)",
+    "bid": "com.exemple.jeu",
+    "min_ios": "5.0",
+    "version": "1.0",
+    "size": 0,
+    "mod": "Argent illimité",
+    "notes": "Créé par … . Décris la modification ici.",
+    "ipa": "",
+    "link": ""
+  },
+  "apps": []
+}

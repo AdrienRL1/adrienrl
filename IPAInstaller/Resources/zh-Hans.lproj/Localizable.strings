@@ -23,6 +23,7 @@
 "catalog.end" = " — 结束";
 "catalog.select" = "选择";
 "catalog.install_n" = "安装 (%lu)";
+"select.count" = "已选择 %lu 个";
 "catalog.install_started_n" = "%lu个安装已开始";
 
 "chat.title" = "AI 聊天";
@@ -67,8 +68,33 @@
 "settings.about_device_ios" = "设备 iOS";
 "settings.about_device_model" = "设备型号";
 "settings.section_display" = "显示";
+"settings.hide_ai_tab" = "隐藏 AI 标签";
+"settings.theme" = "主题";
+"theme.default" = "默认（蓝色）";
+"theme.dark_gray" = "深色";
+"theme.dark_blue" = "午夜蓝";
+"theme.section_light" = "浅色";
+"theme.section_dark" = "深色模式";
+"theme.graphite" = "石墨色";
+"theme.noir" = "黑色";
+"theme.slate" = "石板灰";
+"theme.indigo" = "靛蓝";
+"theme.purple" = "紫色";
+"theme.pink" = "粉色";
+"theme.red" = "红色";
+"theme.orange" = "橙色";
+"theme.green" = "绿色";
+"theme.teal" = "青色";
+"theme.header" = "主题颜色";
+"theme.footer" = "立即应用于整个应用。“默认”保留经典的 iOS 6 蓝色外观。";
+"settings.theme_default" = "默认（蓝色）";
+"settings.theme_graphite" = "石墨色";
+"settings.theme_apply_msg" = "主题将在下次打开 AppDrop 时生效。";
 "settings.grid_density" = "每行应用数";
-"settings.section_display_footer" = "滑动以增减目录和搜索中每行显示的应用数量。";
+"settings.home_grid_density" = "主页每行图块数";
+"settings.cols_list" = "列表";
+"settings.show_favorites_home" = "在主页显示收藏";
+"settings.section_display_footer" = "设置每个网格每行的图块数。";
 "settings.about_chip" = "芯片";
 "settings.about_ram" = "内存 (RAM)";
 "settings.language" = "语言";
@@ -77,6 +103,7 @@
 "common.ok" = "好";
 "common.cancel" = "取消";
 
+"common.done" = "完成";
 "filter.title" = "筛选";
 "filter.all_versions" = "所有 iOS 版本";
 "filter.unique" = "唯一";
@@ -92,6 +119,8 @@
 
 /* ===== Install screen actions (v1.8.7) ===== */
 "install.cancel_all" = "全部取消";
+"install.pause_all" = "全部暂停";
+"install.resume_all" = "全部继续";
 "install.empty" = "尚未开始任何安装";
 "install.cancelled_title" = "已取消";
 "install.cancelled_msg" = "已取消 %ld 个下载。";
@@ -116,7 +145,9 @@
 "install.state.installing" = "正在本地安装...";
 "install.state.installed_prefix" = "已安装: %@";
 "install.state.cancelling" = "正在取消...";
+"install.state.paused" = "已暂停";
 "install.state.cancelled_user" = "用户已取消";
+"install.state.interrupted" = "已中断（应用已关闭）——请重新下载以重试。";
 
 /* ===== Install errors (v1.8.7) ===== */
 "install.error.failed_prefix" = "失败: %@";
@@ -145,6 +176,7 @@
 "app.info_bundle_id" = "Bundle ID";
 "app.info_version" = "版本";
 "app.info_min_ios" = "最低 iOS";
+"app.info_project" = "项目页面";
 "app.info_platform" = "平台";
 "app.info_size" = "大小";
 "app.info_file" = "文件";
@@ -188,8 +220,9 @@
 "onboarding.ipainstaller_msg" = "要安装 IPA，你需要从 Cydia 安装「IPA Installer Console」软件包 (搜索: appinst 或 ipainstaller)。没有它，应用无法在本地安装。你已经安装了吗？";
 "onboarding.ipainstaller_continue" = "是，继续";
 "onboarding.ipainstaller_cancel" = "还没有";
-"onboarding.catalog_quality_title" = "关于目录";
-"onboarding.catalog_quality_msg" = "上游目录中有少量应用的标题或图标不正确 — 这不在我们的控制范围内 (是 stuffed18.github.io 的数据问题，并非应用的问题)。每个应用下方显示的 .ipa 文件名才是实际将要安装的内容。安装前请再次核对是否为你想要的应用。";
+"onboarding.catalog_quality_title" = "安装应用前请注意";
+"onboarding.catalog_quality_msg" = "应用列表来自公开来源，因此部分应用显示的名称或图标可能不完全准确。安装前请查看应用下方显示的文件名，确认这是你想要的应用。";
+"onboarding.dont_show_again" = "不再显示";
 "common.understood" = "知道了";
 "filter.footer.sort" = "再次点按已选中的选项，可在升序 / 降序之间切换。";
 
@@ -254,12 +287,13 @@
 "settings.archive_save" = "保存";
 
 /* ===== v1.3.1 — 可配置下载文件夹 + 保留 IPA + 在 Filza 中打开 ===== */
-"settings.section_download_footer" = "并行流:archive.org 上 4 个流为最佳。保存文件夹:.ipa 的保存位置。保留 IPA:安装后保留副本(仅 iOS 6-9 — iOS 10+ 自动保存)。";
+"settings.section_download_footer" = "并行流:archive.org 上 4 个流为最佳。保存文件夹:.ipa 的保存位置。保留 IPA:安装后保留副本(仅 iOS 5-9 — iOS 10+ 自动保存)。";
 "settings.download_folder" = "保存文件夹";
 "settings.download_folder_default" = "默认(沙箱)";
 "settings.download_folder_custom" = "自定义路径…";
 "settings.download_folder_custom_msg" = "输入绝对路径,例如 /var/mobile/Documents/AppDrop。留空可恢复默认。文件夹将在首次保存时创建。";
 "settings.keep_ipa" = "安装后保留 IPA";
+"settings.allow_encrypted" = "允许加密的 IPA（高级）";
 "install.saved_at_suffix" = "已保存至 %@";
 "install.saved_alert_title" = "IPA 已保存";
 "install.saved_alert_msg" = "保存至:\n%@\n\n在 Filza 中打开以进行安装。如果 Filza 报签名错误 (0xe800B001),请从 Cydia 安装“appinst”包后重试。";
@@ -362,10 +396,13 @@
 
 /* ===== Revival / Works today (issue #4) ===== */
 "categories.revival" = "现在仍可用";
-"categories.revival_sub" = "仍可运行的修补版和复活版应用";
+"categories.revival_sub" = "仍能在旧版 iOS 上运行的应用";
+"categories.modded" = "修改版应用";
+"categories.modded_sub" = "改版应用和游戏";
+"modded.intro" = "为旧版 iOS 改版的应用和游戏。";
 "revival.title" = "现在仍可用";
-"revival.intro" = "在旧版 iOS 上现在真正可用的应用——修补版、复活版或社区制作。可通过反馈推荐更多。";
-"revival.empty" = "暂时没有适合你设备的内容——通过反馈推荐一个可用的应用吧！";
+"revival.intro" = "如今在旧版 iOS 上真正能用的应用 — 已修补、复活或社区制作。";
+"revival.empty" = "暂时没有适合你设备的内容。";
 "revival.install" = "安装";
 "revival.open" = "打开";
 "revival.install_started" = "已开始安装——请查看安装标签页。";
@@ -374,3 +411,98 @@
 "revival.beta" = "测试版";
 "revival.discontinued" = "已停止";
 "revival.update" = "更新到 v%@";
+"revival.open_page" = "打开项目页面";
+
+/* ── 收藏 / 收藏集 (Phase 1) ── */
+"collections.favorites" = "收藏";
+"collections.section" = "收藏与文件夹";
+"categories.section" = "分类";
+"collections.empty" = "暂无收藏。在应用页面点按 ☆ 即可添加到这里。";
+"collections.select" = "选择";
+"collections.select_all" = "全选";
+"collections.select_none" = "取消全选";
+"collections.remove" = "移除";
+"collections.download_n" = "下载 (%ld)";
+"collections.image" = "图片";
+"collections.image_title" = "预览图片";
+"collections.image_pick" = "选择一个应用作为图片…";
+"collections.image_auto" = "自动图片（轮换）";
+"collections.image_hint" = "点按一个应用将其固定为图片";
+"collections.image_pinned_title" = "已固定图片";
+"collections.image_pinned_msg" = "该应用将始终作为此收藏集的图片显示。";
+"collections.dl_started_title" = "已开始下载";
+"collections.dl_started_msg" = "已开始 %ld 个下载。";
+
+/* ── 主页：重置布局 (5c) ── */
+"home.reset" = "重置";
+"home.reset_title" = "重置布局？";
+"home.reset_msg" = "将主页恢复为自动布局（默认顺序、固定项和大小）。";
+
+/* ── 稍后下载 (Phase 2) ── */
+"collections.later" = "稍后下载";
+"collections.download_all" = "全部下载";
+"later.added" = "已添加到“稍后下载”。";
+"later.removed" = "已从“稍后下载”移除。";
+
+/* ── 多选 (Phase 3) ── */
+"later.short" = "稍后";
+"select.added_fav" = "已添加 %lu 个到收藏";
+"select.added_later" = "已添加 %lu 个到“稍后下载”";
+
+/* ── 文件夹 (Phase 4) ── */
+"folder.short" = "文件夹";
+"folder.add_title" = "添加到文件夹";
+"folder.new" = "新建文件夹";
+"folder.create" = "创建";
+"folder.edit" = "编辑";
+"folder.rename" = "重命名";
+"folder.delete" = "删除文件夹";
+"folder.delete_title" = "删除文件夹？";
+"folder.delete_title_named" = "删除“%@”？";
+"folder.delete_msg" = "文件夹将被删除。已安装的应用不会被卸载。";
+"select.added_folder" = "已添加 %lu 个到文件夹";
+
+
+/* v3.0 — 加密版本（FairPlay）警告 + 推荐未加密版本 */
+"app.encrypted_warning" = "此版本已加密（FairPlay）——无法安装：它绑定了原始 Apple ID。";
+"app.encrypted_use_version" = "未加密版本：%@ — 点按打开";
+
+/* v3.0 — badge version chiffrée (liste des versions) */
+"versions.encrypted" = "已加密 — 无法安装";
+
+/* v3.0 — chiffré : aucune alternative + ouverture auto de la version non chiffrée */
+"app.encrypted_none" = "此版本已加密，且没有可用的未加密版本。";
+
+/* v3.0 — 分享应用（经审核的上传） */
+"upload.title" = "分享应用";
+"upload.send" = "发送";
+"upload.share_button" = "＋ 分享应用";
+"upload.pick_title" = "选择 .ipa";
+"upload.pick_shortcuts" = "位置";
+"upload.pick_folders" = "文件夹";
+"upload.pick_files" = ".ipa 文件";
+"upload.pick_empty" = "这里没有 .ipa。";
+"upload.pick_button" = ".ipa 文件";
+"upload.pick_none" = "未选择文件";
+"upload.section_file" = "文件";
+"upload.section_category" = "类别";
+"upload.section_details" = "详情";
+"upload.section_rights" = "权利";
+"upload.intro" = "分享你有权分享的应用：你自己的应用、homebrew、开源、免费软件、公有领域。";
+"upload.legal" = "发送即表示你确认有权分享此应用。每次提交都会在发布前经过审核，并可被移除。";
+"upload.attest" = "我确认有权分享此应用";
+"upload.name_ph" = "应用名称";
+"upload.desc_ph" = "描述（是什么、改了什么…）";
+"upload.minios_ph" = "最低 iOS（如 5.0）";
+"upload.version_ph" = "版本（如 1.2）";
+"upload.mod_ph" = "改动内容（如有）";
+"upload.bid_ph" = "Bundle ID（可选）";
+"upload.credit_ph" = "你的名字／昵称（署名，可选）";
+"upload.sent_title" = "谢谢！";
+"upload.sent" = "你的应用已发送审核。感谢你的贡献！";
+"upload.err_nofile" = "请先选择一个 .ipa 文件。";
+"upload.err_noname" = "请为应用起个名字。";
+"upload.err_attest" = "你必须确认有权分享此应用。";
+"upload.err_toobig" = "文件太大（最多 %d MB）。";
+"upload.err_read" = "无法读取文件。";
+"upload.err_send" = "发送失败";

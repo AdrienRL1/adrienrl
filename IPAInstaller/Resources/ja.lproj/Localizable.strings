@@ -23,6 +23,7 @@
 "catalog.end" = " — 終了";
 "catalog.select" = "選択";
 "catalog.install_n" = "インストール (%lu)";
+"select.count" = "%lu件選択中";
 "catalog.install_started_n" = "%lu件のインストールを開始";
 
 "chat.title" = "AI チャット";
@@ -67,8 +68,33 @@
 "settings.about_device_ios" = "デバイスの iOS";
 "settings.about_device_model" = "デバイスのモデル";
 "settings.section_display" = "表示";
+"settings.hide_ai_tab" = "AIタブを非表示";
+"settings.theme" = "テーマ";
+"theme.default" = "デフォルト（青）";
+"theme.dark_gray" = "ダーク";
+"theme.dark_blue" = "ミッドナイトブルー";
+"theme.section_light" = "ライト";
+"theme.section_dark" = "ダークモード";
+"theme.graphite" = "グラファイト";
+"theme.noir" = "ブラック";
+"theme.slate" = "スレート";
+"theme.indigo" = "インディゴ";
+"theme.purple" = "パープル";
+"theme.pink" = "ピンク";
+"theme.red" = "レッド";
+"theme.orange" = "オレンジ";
+"theme.green" = "グリーン";
+"theme.teal" = "ティール";
+"theme.header" = "テーマカラー";
+"theme.footer" = "アプリ全体に即座に適用されます。「デフォルト」は従来の青いiOS 6の外観を保ちます。";
+"settings.theme_default" = "デフォルト（青）";
+"settings.theme_graphite" = "グラファイト";
+"settings.theme_apply_msg" = "テーマは次回AppDropを開いたときに適用されます。";
 "settings.grid_density" = "1行あたりのアプリ数";
-"settings.section_display_footer" = "カタログと検索で1行あたりに表示するアプリ数を増減します。";
+"settings.home_grid_density" = "ホームのタイル/行";
+"settings.cols_list" = "リスト";
+"settings.show_favorites_home" = "ホームにお気に入りを表示";
+"settings.section_display_footer" = "各グリッドの1行あたりのタイル数を設定。";
 "settings.about_chip" = "チップ";
 "settings.about_ram" = "メモリ (RAM)";
 "settings.language" = "言語";
@@ -77,6 +103,7 @@
 "common.ok" = "OK";
 "common.cancel" = "キャンセル";
 
+"common.done" = "完了";
 "filter.title" = "フィルタ";
 "filter.all_versions" = "すべての iOS バージョン";
 "filter.unique" = "一意";
@@ -92,6 +119,8 @@
 
 /* ===== Install screen actions (v1.8.7) ===== */
 "install.cancel_all" = "すべてキャンセル";
+"install.pause_all" = "すべて一時停止";
+"install.resume_all" = "すべて再開";
 "install.empty" = "インストールが開始されていません";
 "install.cancelled_title" = "キャンセル済み";
 "install.cancelled_msg" = "%ld 件のダウンロードをキャンセルしました。";
@@ -116,7 +145,9 @@
 "install.state.installing" = "ローカルインストール中...";
 "install.state.installed_prefix" = "インストール完了: %@";
 "install.state.cancelling" = "キャンセル中...";
+"install.state.paused" = "一時停止中";
 "install.state.cancelled_user" = "ユーザーによりキャンセル";
+"install.state.interrupted" = "中断されました（アプリが閉じられました）— もう一度ダウンロードしてください。";
 
 /* ===== Install errors (v1.8.7) ===== */
 "install.error.failed_prefix" = "失敗: %@";
@@ -145,6 +176,7 @@
 "app.info_bundle_id" = "バンドル ID";
 "app.info_version" = "バージョン";
 "app.info_min_ios" = "最小 iOS";
+"app.info_project" = "プロジェクトページ";
 "app.info_platform" = "プラットフォーム";
 "app.info_size" = "サイズ";
 "app.info_file" = "ファイル";
@@ -188,8 +220,9 @@
 "onboarding.ipainstaller_msg" = "IPA をインストールするには、Cydia から「IPA Installer Console」パッケージが必要です (検索: appinst または ipainstaller)。これがないとアプリをローカルにインストールできません。インストール済みですか？";
 "onboarding.ipainstaller_continue" = "はい、続ける";
 "onboarding.ipainstaller_cancel" = "まだ";
-"onboarding.catalog_quality_title" = "カタログについて";
-"onboarding.catalog_quality_msg" = "上流カタログにはタイトルやアイコンが正しくないアプリがわずかに含まれています。これは私たちの管理外です (stuffed18.github.io のデータの問題で、アプリの問題ではありません)。各アプリの下に表示される .ipa ファイル名が、実際にインストールされるものです。インストール前に、目的のアプリかどうか必ず確認してください。";
+"onboarding.catalog_quality_title" = "アプリをインストールする前に";
+"onboarding.catalog_quality_msg" = "アプリ一覧は公開されているデータを使っているため、一部のアプリは名前やアイコンが正しく表示されないことがあります。インストールする前に、アプリの下に表示されるファイル名を確認して、目的のアプリかどうか確かめてください。";
+"onboarding.dont_show_again" = "今後表示しない";
 "common.understood" = "了解";
 "filter.footer.sort" = "選択中のオプションを再度タップすると、昇順 / 降順を切り替えられます。";
 
@@ -254,12 +287,13 @@
 "settings.archive_save" = "保存";
 
 /* ===== v1.3.1 — 保存先フォルダ設定 + IPA保持 + Filzaで開く ===== */
-"settings.section_download_footer" = "並列ストリーム:archive.orgには4が最適。保存フォルダ:.ipaの保管先。IPAを保持:インストール後に控えを残す(iOS 6-9のみ — iOS 10+は自動保存)。";
+"settings.section_download_footer" = "並列ストリーム:archive.orgには4が最適。保存フォルダ:.ipaの保管先。IPAを保持:インストール後に控えを残す(iOS 5-9のみ — iOS 10+は自動保存)。";
 "settings.download_folder" = "保存フォルダ";
 "settings.download_folder_default" = "デフォルト(サンドボックス)";
 "settings.download_folder_custom" = "カスタムパス…";
 "settings.download_folder_custom_msg" = "絶対パスを入力してください(例:/var/mobile/Documents/AppDrop)。空のままにすると既定値に戻ります。フォルダは初回保存時に作成されます。";
 "settings.keep_ipa" = "インストール後にIPAを保持";
+"settings.allow_encrypted" = "暗号化されたIPAを許可（上級者向け）";
 "install.saved_at_suffix" = "%@ に保存しました";
 "install.saved_alert_title" = "IPAを保存しました";
 "install.saved_alert_msg" = "保存先:\n%@\n\nFilzaで開いてインストール。Filzaが署名エラー(0xe800B001)で失敗する場合は、Cydiaから「appinst」パッケージをインストールして再試行してください。";
@@ -362,10 +396,13 @@
 
 /* ===== Revival / Works today (issue #4) ===== */
 "categories.revival" = "今でも動く";
-"categories.revival_sub" = "今も動く修正版・復活版アプリ";
+"categories.revival_sub" = "今も動くアプリ";
+"categories.modded" = "改造アプリ";
+"categories.modded_sub" = "改造アプリ・ゲーム";
+"modded.intro" = "古い iOS 向けの改造アプリやゲーム。";
 "revival.title" = "今でも動くアプリ";
-"revival.intro" = "古いiOSで今も実際に動くアプリ（修正版・復活版・コミュニティ製）。フィードバックから提案できます。";
-"revival.empty" = "お使いの端末向けはまだありません — フィードバックから動くアプリを提案してください！";
+"revival.intro" = "今でも古い iOS で実際に動くアプリ — パッチ済み・復活・コミュニティ製。";
+"revival.empty" = "お使いの端末向けはまだありません。";
 "revival.install" = "インストール";
 "revival.open" = "開く";
 "revival.install_started" = "インストールを開始しました — インストールタブを確認してください。";
@@ -374,3 +411,98 @@
 "revival.beta" = "ベータ";
 "revival.discontinued" = "終了";
 "revival.update" = "v%@ に更新";
+"revival.open_page" = "プロジェクトページを開く";
+
+/* ── コレクション / お気に入り (Phase 1) ── */
+"collections.favorites" = "お気に入り";
+"collections.section" = "お気に入りとフォルダ";
+"categories.section" = "カテゴリ";
+"collections.empty" = "お気に入りはまだありません。アプリのページで☆をタップして追加します。";
+"collections.select" = "選択";
+"collections.select_all" = "すべて選択";
+"collections.select_none" = "選択をすべて解除";
+"collections.remove" = "削除";
+"collections.download_n" = "ダウンロード (%ld)";
+"collections.image" = "画像";
+"collections.image_title" = "プレビュー画像";
+"collections.image_pick" = "画像にするアプリを選ぶ…";
+"collections.image_auto" = "自動画像（ローテーション）";
+"collections.image_hint" = "画像に固定するアプリをタップ";
+"collections.image_pinned_title" = "画像を固定しました";
+"collections.image_pinned_msg" = "このアプリが常にコレクションの画像として表示されます。";
+"collections.dl_started_title" = "ダウンロードを開始しました";
+"collections.dl_started_msg" = "%ld 件のダウンロードを開始しました。";
+
+/* ── ホーム：レイアウトをリセット (5c) ── */
+"home.reset" = "リセット";
+"home.reset_title" = "レイアウトをリセットしますか？";
+"home.reset_msg" = "ホームを自動レイアウト（既定の順序・ピン・サイズ）に戻します。";
+
+/* ── あとでダウンロード (Phase 2) ── */
+"collections.later" = "あとでダウンロード";
+"collections.download_all" = "すべてダウンロード";
+"later.added" = "「あとでダウンロード」に追加しました。";
+"later.removed" = "「あとでダウンロード」から削除しました。";
+
+/* ── 複数選択 (Phase 3) ── */
+"later.short" = "あとで";
+"select.added_fav" = "%lu 件をお気に入りに追加";
+"select.added_later" = "%lu 件を「あとでダウンロード」に追加";
+
+/* ── フォルダ (Phase 4) ── */
+"folder.short" = "フォルダ";
+"folder.add_title" = "フォルダに追加";
+"folder.new" = "新規フォルダ";
+"folder.create" = "作成";
+"folder.edit" = "編集";
+"folder.rename" = "名前を変更";
+"folder.delete" = "フォルダを削除";
+"folder.delete_title" = "フォルダを削除しますか？";
+"folder.delete_title_named" = "「%@」を削除しますか？";
+"folder.delete_msg" = "フォルダを削除します。インストール済みのアプリは削除されません。";
+"select.added_folder" = "%lu 件をフォルダに追加";
+
+
+/* v3.0 — 暗号化バージョン（FairPlay）の警告＋未暗号化バージョンの推奨 */
+"app.encrypted_warning" = "このバージョンは暗号化されています（FairPlay）。元のApple IDに紐づいているためインストールできません。";
+"app.encrypted_use_version" = "暗号化されていないバージョン：%@ — タップして開く";
+
+/* v3.0 — badge version chiffrée (liste des versions) */
+"versions.encrypted" = "暗号化 — インストール不可";
+
+/* v3.0 — chiffré : aucune alternative + ouverture auto de la version non chiffrée */
+"app.encrypted_none" = "このバージョンは暗号化されており、暗号化されていないバージョンはありません。";
+
+/* v3.0 — アプリを共有（モデレートされたアップロード） */
+"upload.title" = "アプリを共有";
+"upload.send" = "送信";
+"upload.share_button" = "＋ アプリを共有";
+"upload.pick_title" = ".ipa を選択";
+"upload.pick_shortcuts" = "場所";
+"upload.pick_folders" = "フォルダ";
+"upload.pick_files" = ".ipa ファイル";
+"upload.pick_empty" = "ここに .ipa はありません。";
+"upload.pick_button" = ".ipa ファイル";
+"upload.pick_none" = "ファイル未選択";
+"upload.section_file" = "ファイル";
+"upload.section_category" = "カテゴリ";
+"upload.section_details" = "詳細";
+"upload.section_rights" = "権利";
+"upload.intro" = "共有する権利があるアプリを共有してください：自作アプリ、homebrew、オープンソース、フリーウェア、パブリックドメイン。";
+"upload.legal" = "送信すると、このアプリを共有する権利があることを確認したことになります。すべての投稿は公開前に審査され、削除される場合があります。";
+"upload.attest" = "このアプリを共有する権利があることを確認します";
+"upload.name_ph" = "アプリ名";
+"upload.desc_ph" = "説明（内容、改変点など）";
+"upload.minios_ph" = "最低 iOS（例：5.0）";
+"upload.version_ph" = "バージョン（例：1.2）";
+"upload.mod_ph" = "改変内容（あれば）";
+"upload.bid_ph" = "バンドルID（任意）";
+"upload.credit_ph" = "あなたの名前／ハンドル名（任意）";
+"upload.sent_title" = "ありがとうございます！";
+"upload.sent" = "アプリを審査のために送信しました。ご協力ありがとうございます！";
+"upload.err_nofile" = "先に .ipa ファイルを選んでください。";
+"upload.err_noname" = "アプリ名を入力してください。";
+"upload.err_attest" = "このアプリを共有する権利があることを確認する必要があります。";
+"upload.err_toobig" = "ファイルが大きすぎます（最大 %d MB）。";
+"upload.err_read" = "ファイルを読み込めませんでした。";
+"upload.err_send" = "送信に失敗しました";

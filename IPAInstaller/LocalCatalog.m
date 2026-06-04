@@ -511,8 +511,9 @@ static NSString *iconURLForImgPk(long imgPk) {
     // iOS), so the card counts match the category lists and exclude iOS 11+-only apps.
     NSString *sqlStr = [NSString stringWithFormat:
         @"SELECT category, COUNT(*) FROM entries_unique "
-        @"WHERE category IS NOT NULL AND category<>'' AND min_minos <= %ld "
-        @"GROUP BY category ORDER BY COUNT(*) DESC", (long)[self deviceMaxMinos]];
+        @"WHERE category IS NOT NULL AND category<>'' AND min_minos <= %ld%@ "
+        @"GROUP BY category ORDER BY COUNT(*) DESC",
+        (long)[self deviceMaxMinos], [self deviceIdiomPlatClause]];
     const char *sql = [sqlStr UTF8String];
     sqlite3_stmt *st = NULL;
     if (sqlite3_prepare_v2(self.db, sql, -1, &st, NULL) == SQLITE_OK) {
@@ -532,8 +533,9 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSString *sql = [NSString stringWithFormat:
                     @"SELECT subgenre, COUNT(*) FROM entries_unique "
                     @"WHERE category=?1 AND subgenre IS NOT NULL AND subgenre<>'' "
-                    @"AND min_minos <= %ld "
-                    @"GROUP BY subgenre ORDER BY COUNT(*) DESC", (long)[self deviceMaxMinos]];
+                    @"AND min_minos <= %ld%@ "
+                    @"GROUP BY subgenre ORDER BY COUNT(*) DESC",
+                    (long)[self deviceMaxMinos], [self deviceIdiomPlatClause]];
     sqlite3_stmt *st = NULL;
     if (sqlite3_prepare_v2(self.db, [sql UTF8String], -1, &st, NULL) == SQLITE_OK) {
         sqlite3_bind_text(st, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
@@ -563,33 +565,52 @@ static NSString *iconURLForImgPk(long imgPk) {
     return m <= [self deviceMaxMinos];
 }
 
+// SQL fragment that keeps only apps THIS device's idiom can actually run. An iPhone/iPod
+// CANNOT run iPad-only apps, so on a phone we require the iPhone plat bit (2). An iPad runs
+// iPhone apps in compatibility mode too, so on iPad we don't filter. Returns "" on iPad.
+// Used by the Accueil counts + icon mosaics, which otherwise recommended iPad-only apps on iPhone.
+// (The catalog/search/category LISTS already filter via CatalogFilter.deviceClass; these home-screen
+// summaries are the only surfaces that didn't.) NOTE: `cat_icon_pool` has no plat column, so this
+// only applies to entries_unique queries — on iPhone the mosaics source from entries_unique instead.
+- (NSString *)deviceIdiomPlatClause {
+    if ([UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad) return @"";
+    return @" AND (plat & 2) != 0";
+}
+
 - (NSArray *)iconPoolForCategory:(NSString *)category {
     if (!self.loaded || !self.db || !category.length) return @[];
     NSMutableArray *out = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
+    NSString *platClause = [self deviceIdiomPlatClause];   // "" on iPad, " AND (plat&2)!=0" on iPhone
     // 1. Curated, device-runnable icons (minos <= device iOS), biggest apps first.
-    const char *sql = "SELECT img_pk FROM cat_icon_pool WHERE category=?1 AND minos<=?2 "
-                      "ORDER BY rn_cat LIMIT 24";
-    sqlite3_stmt *st = NULL;
-    if (sqlite3_prepare_v2(self.db, sql, -1, &st, NULL) == SQLITE_OK) {
-        sqlite3_bind_text(st, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(st, 2, [self deviceMaxMinos]);
-        while (sqlite3_step(st) == SQLITE_ROW) {
-            int pk = sqlite3_column_int(st, 0);
-            NSString *u = iconURLForImgPk(pk);
-            if (u && ![seen containsObject:@(pk)]) { [seen addObject:@(pk)]; [out addObject:u]; }
+    //    cat_icon_pool has NO plat column, so on iPhone (where iPad-only apps must be hidden) we
+    //    SKIP it and source from entries_unique below (which has plat). iPad runs everything → use it.
+    if (platClause.length == 0) {
+        const char *sql = "SELECT img_pk FROM cat_icon_pool WHERE category=?1 AND minos<=?2 "
+                          "ORDER BY rn_cat LIMIT 24";
+        sqlite3_stmt *st = NULL;
+        if (sqlite3_prepare_v2(self.db, sql, -1, &st, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(st, 2, [self deviceMaxMinos]);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                int pk = sqlite3_column_int(st, 0);
+                NSString *u = iconURLForImgPk(pk);
+                if (u && ![seen containsObject:@(pk)]) { [seen addObject:@(pk)]; [out addObject:u]; }
+            }
         }
+        sqlite3_finalize(st);
     }
-    sqlite3_finalize(st);
 
-    // 2. Top up from entries_unique when the curated device-runnable set is THIN (<6). Some
-    // categories' biggest apps all need iOS 7+ — e.g. Social Networking has just 1 curated icon
-    // this device can run, Finance has 0 — so the card would never reshuffle. entries_unique
-    // still has hundreds of smaller device-runnable apps with icons (390 for Social Networking),
-    // giving a varied pool of REAL, runnable example icons. Deduped by img_pk.
+    // 2. entries_unique source — PRIMARY on iPhone (with the plat filter so no iPad-only icons),
+    // and a top-up on iPad when the curated set is THIN (<6). Some categories' biggest apps all
+    // need iOS 7+ — e.g. Social Networking has just 1 curated icon this device can run, Finance has
+    // 0 — so the card would never reshuffle. entries_unique still has hundreds of smaller
+    // device-runnable apps with icons, giving a varied pool of REAL example icons. Deduped by img_pk.
     if (out.count < 6) {
-        const char *fsql = "SELECT img_pk FROM entries_unique WHERE category=?1 AND min_minos<=?2 "
-                           "AND img_pk>0 ORDER BY size_kb DESC LIMIT 24";
+        NSString *fsqlStr = [NSString stringWithFormat:
+                           @"SELECT img_pk FROM entries_unique WHERE category=?1 AND min_minos<=?2 "
+                           @"AND img_pk>0%@ ORDER BY size_kb DESC LIMIT 24", platClause];
+        const char *fsql = [fsqlStr UTF8String];
         sqlite3_stmt *f = NULL;
         if (sqlite3_prepare_v2(self.db, fsql, -1, &f, NULL) == SQLITE_OK) {
             sqlite3_bind_text(f, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
@@ -609,27 +630,32 @@ static NSString *iconURLForImgPk(long imgPk) {
     if (!self.loaded || !self.db || !category.length || !subgenre.length) return @[];
     NSMutableArray *out = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
-    const char *sql = "SELECT img_pk FROM cat_icon_pool WHERE category=?1 AND subgenre=?2 "
-                      "AND minos<=?3 ORDER BY rn_sub LIMIT 24";
-    sqlite3_stmt *st = NULL;
-    if (sqlite3_prepare_v2(self.db, sql, -1, &st, NULL) == SQLITE_OK) {
-        sqlite3_bind_text(st, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(st, 2, [subgenre UTF8String], -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(st, 3, [self deviceMaxMinos]);
-        while (sqlite3_step(st) == SQLITE_ROW) {
-            int pk = sqlite3_column_int(st, 0);
-            NSString *u = iconURLForImgPk(pk);
-            if (u && ![seen containsObject:@(pk)]) { [seen addObject:@(pk)]; [out addObject:u]; }
+    NSString *platClause = [self deviceIdiomPlatClause];   // "" on iPad, " AND (plat&2)!=0" on iPhone
+    // cat_icon_pool has no plat column → skip it on iPhone (source from entries_unique below instead).
+    if (platClause.length == 0) {
+        const char *sql = "SELECT img_pk FROM cat_icon_pool WHERE category=?1 AND subgenre=?2 "
+                          "AND minos<=?3 ORDER BY rn_sub LIMIT 24";
+        sqlite3_stmt *st = NULL;
+        if (sqlite3_prepare_v2(self.db, sql, -1, &st, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, [subgenre UTF8String], -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(st, 3, [self deviceMaxMinos]);
+            while (sqlite3_step(st) == SQLITE_ROW) {
+                int pk = sqlite3_column_int(st, 0);
+                NSString *u = iconURLForImgPk(pk);
+                if (u && ![seen containsObject:@(pk)]) { [seen addObject:@(pk)]; [out addObject:u]; }
+            }
         }
+        sqlite3_finalize(st);
     }
-    sqlite3_finalize(st);
 
-    // Top up from entries_unique when the curated device-runnable set is THIN (<6) — same as
-    // the category-level pool, so a subgenre whose biggest apps all need a newer iOS still gets
-    // a varied set of real device-runnable example icons instead of a frozen single icon.
+    // entries_unique source — PRIMARY on iPhone (plat-filtered), top-up on iPad when THIN (<6), so a
+    // subgenre whose biggest apps all need a newer iOS still gets a varied set of real example icons.
     if (out.count < 6) {
-        const char *fsql = "SELECT img_pk FROM entries_unique WHERE category=?1 AND subgenre=?2 "
-                           "AND min_minos<=?3 AND img_pk>0 ORDER BY size_kb DESC LIMIT 24";
+        NSString *fsqlStr = [NSString stringWithFormat:
+                           @"SELECT img_pk FROM entries_unique WHERE category=?1 AND subgenre=?2 "
+                           @"AND min_minos<=?3 AND img_pk>0%@ ORDER BY size_kb DESC LIMIT 24", platClause];
+        const char *fsql = [fsqlStr UTF8String];
         sqlite3_stmt *f = NULL;
         if (sqlite3_prepare_v2(self.db, fsql, -1, &f, NULL) == SQLITE_OK) {
             sqlite3_bind_text(f, 1, [category UTF8String], -1, SQLITE_TRANSIENT);

@@ -1,5 +1,6 @@
 #import "HTTPSClient.h"
 #import "Localization.h"
+#import <CFNetwork/CFNetwork.h>   // CFNetworkCopySystemProxySettings (system HTTP proxy)
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -90,6 +91,55 @@ static int sock_recv(void *ctx, unsigned char *buf, size_t len) {
 @implementation HTTPSClient
 
 // Manual percent-encode for path, preserving URL-safe chars. iOS 5+ compatible.
+// Read the iOS system's MANUAL HTTP/HTTPS proxy (Wi-Fi → HTTP Proxy → Manual), if any.
+// Returns the proxy host (and *outPort) or nil. Auto-config (PAC) / SOCKS are intentionally
+// ignored — only a simple host:port proxy is honored. (Reddit: "Need http proxy support".)
+static NSString *HC_systemProxyHost(BOOL forHTTPS, int *outPort) {
+    (void)forHTTPS;  // iOS exposes ONE manual proxy (the HTTP keys); it's used for HTTP AND
+                     // HTTPS (the latter via a CONNECT tunnel). The HTTPS-specific keys are
+                     // macOS-only, so we read only the HTTP keys here.
+    NSDictionary *cfg = (NSDictionary *)CFBridgingRelease(CFNetworkCopySystemProxySettings());
+    if (![cfg isKindOfClass:[NSDictionary class]]) return nil;
+    if (![cfg[(NSString *)kCFNetworkProxiesHTTPEnable] boolValue]) return nil;
+    NSString *host = cfg[(NSString *)kCFNetworkProxiesHTTPProxy];
+    int port = [cfg[(NSString *)kCFNetworkProxiesHTTPPort] intValue];
+    if (![host isKindOfClass:[NSString class]] || !host.length || port <= 0) return nil;
+    if (outPort) *outPort = port;
+    return host;
+}
+
+// Connect to proxyHost:proxyPort and, for an HTTPS target, open a CONNECT tunnel to
+// targetHost:targetPort so the caller can TLS-handshake straight to the target. For a plain
+// HTTP target, *outHTTPViaProxy is set YES (caller must use an absolute-URI request line).
+// Returns a ready fd, or -1 on ANY failure (caller then falls back to a direct connect).
+static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetHost, int targetPort,
+                           BOOL isHTTPS, NSTimeInterval timeout, BOOL *outHTTPViaProxy) {
+    struct addrinfo hints = {0}, *res = NULL;
+    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
+    char portStr[16]; snprintf(portStr, sizeof(portStr), "%d", proxyPort);
+    if (getaddrinfo([proxyHost UTF8String], portStr, &hints, &res) != 0 || !res) return -1;
+    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (fd < 0) { freeaddrinfo(res); return -1; }
+    struct timeval tv; tv.tv_sec = (long)timeout; tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) { freeaddrinfo(res); close(fd); return -1; }
+    freeaddrinfo(res);
+    if (isHTTPS) {
+        NSString *c = [NSString stringWithFormat:
+            @"CONNECT %@:%d HTTP/1.0\r\nHost: %@:%d\r\n\r\n", targetHost, targetPort, targetHost, targetPort];
+        NSData *cd = [c dataUsingEncoding:NSUTF8StringEncoding];
+        if (send(fd, cd.bytes, cd.length, 0) != (ssize_t)cd.length) { close(fd); return -1; }
+        char buf[1024]; ssize_t n = recv(fd, buf, sizeof(buf) - 1, 0);
+        if (n <= 0) { close(fd); return -1; }
+        buf[n] = 0;
+        if (!strstr(buf, " 200")) { close(fd); return -1; }   // tunnel refused → fall back to direct
+    } else if (outHTTPViaProxy) {
+        *outHTTPViaProxy = YES;
+    }
+    return fd;
+}
+
 + (NSString *)percentEncodePath:(NSString *)src {
     // If already encoded (contains %XX), return as-is
     if ([src rangeOfString:@"%"].location != NSNotFound) return src;
@@ -242,49 +292,63 @@ static int sock_recv(void *ctx, unsigned char *buf, size_t len) {
     }
 
     // ---- TCP connection ----
-    struct addrinfo hints = {0}, *res = NULL;
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    char portStr[16];
-    snprintf(portStr, sizeof(portStr), "%d", (int)port);
-    int gaErr = getaddrinfo([host UTF8String], portStr, &hints, &res);
-    if (gaErr != 0 || !res) {
-        // System DNS failed — fall back to DNS-over-HTTPS, then connect to the resolved IP
-        // (SNI/Host stay the original host, set below, so TLS + CDN routing still work).
-        NSString *dohIP = HC_resolveViaDoH(host);
-        if (dohIP.length) {
-            struct addrinfo nh = {0};
-            nh.ai_family = AF_UNSPEC; nh.ai_socktype = SOCK_STREAM; nh.ai_flags = AI_NUMERICHOST;
-            res = NULL;
-            gaErr = getaddrinfo([dohIP UTF8String], portStr, &nh, &res);
-        }
+    // Honor a manual iOS HTTP/HTTPS proxy (Wi-Fi → HTTP Proxy) if one is set: route through it
+    // (CONNECT tunnel for HTTPS). No proxy → the direct connect below runs EXACTLY as before
+    // (zero change for proxy-less users). A proxy failure also falls through to direct.
+    BOOL httpViaProxy = NO;
+    int fd = -1;
+    { int pPort = 0; NSString *proxy = HC_systemProxyHost(isHTTPS, &pPort);
+      if (proxy.length) fd = HC_proxyConnect(proxy, pPort, host, (int)port, isHTTPS, timeout, &httpViaProxy); }
+    if (fd < 0) {
+        struct addrinfo hints = {0}, *res = NULL;
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        char portStr[16];
+        snprintf(portStr, sizeof(portStr), "%d", (int)port);
+        int gaErr = getaddrinfo([host UTF8String], portStr, &hints, &res);
         if (gaErr != 0 || !res) {
-            if (outError) *outError = mkErr(2, [NSString stringWithFormat:@"DNS failed: %s",
-                                                  gai_strerror(gaErr)]);
+            // System DNS failed — fall back to DNS-over-HTTPS, then connect to the resolved IP
+            // (SNI/Host stay the original host, set below, so TLS + CDN routing still work).
+            NSString *dohIP = HC_resolveViaDoH(host);
+            if (dohIP.length) {
+                struct addrinfo nh = {0};
+                nh.ai_family = AF_UNSPEC; nh.ai_socktype = SOCK_STREAM; nh.ai_flags = AI_NUMERICHOST;
+                res = NULL;
+                gaErr = getaddrinfo([dohIP UTF8String], portStr, &nh, &res);
+            }
+            if (gaErr != 0 || !res) {
+                if (outError) *outError = mkErr(2, [NSString stringWithFormat:@"DNS failed: %s",
+                                                      gai_strerror(gaErr)]);
+                return nil;
+            }
+        }
+        fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        if (fd < 0) {
+            freeaddrinfo(res);
+            if (outError) *outError = mkErr(3, @"socket() failed");
             return nil;
         }
-    }
-    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (fd < 0) {
-        freeaddrinfo(res);
-        if (outError) *outError = mkErr(3, @"socket() failed");
-        return nil;
-    }
-    // Socket timeouts (use timeout for both send and recv)
-    struct timeval tv;
-    tv.tv_sec = (long)timeout;
-    tv.tv_usec = 0;
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        // Socket timeouts (use timeout for both send and recv)
+        struct timeval tv;
+        tv.tv_sec = (long)timeout;
+        tv.tv_usec = 0;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-    if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
+        if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
+            freeaddrinfo(res);
+            close(fd);
+            if (outError) *outError = mkErr(4, [NSString stringWithFormat:@"connect() failed: %s",
+                                                  strerror(errno)]);
+            return nil;
+        }
         freeaddrinfo(res);
-        close(fd);
-        if (outError) *outError = mkErr(4, [NSString stringWithFormat:@"connect() failed: %s",
-                                              strerror(errno)]);
-        return nil;
     }
-    freeaddrinfo(res);
+    // A plain-HTTP request through a proxy must use an absolute-URI request line.
+    if (httpViaProxy && !isHTTPS) {
+        path = (port == 80) ? [NSString stringWithFormat:@"http://%@%@", host, path]
+                            : [NSString stringWithFormat:@"http://%@:%d%@", host, (int)port, path];
+    }
 
     NSData *body = nil;
     NSData *reqData = [self buildHTTPRequestBody:method path:path host:host
@@ -706,44 +770,54 @@ static int sock_recv(void *ctx, unsigned char *buf, size_t len) {
     NSString *encPath = [self percentEncodePath:path];
     if (url.query.length) encPath = [NSString stringWithFormat:@"%@?%@", encPath, url.query];
 
-    // ---- TCP ----
-    struct addrinfo hints = {0}, *res = NULL;
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    char portStr[16];
-    snprintf(portStr, sizeof(portStr), "%d", (int)port);
-    int gaErr = getaddrinfo([host UTF8String], portStr, &hints, &res);
-    if (gaErr != 0 || !res) {
-        // System DNS failed (e.g. a carrier blocks the host at DNS level) — fall back to
-        // DNS-over-HTTPS (8.8.8.8 by literal IP) and connect to the resolved IP. SNI/Host
-        // stay the original host (set below) so archive.org's CDN still routes correctly.
-        NSString *dohIP = HC_resolveViaDoH(host);
-        if (dohIP.length) {
-            struct addrinfo nh = {0};
-            nh.ai_family = AF_UNSPEC; nh.ai_socktype = SOCK_STREAM; nh.ai_flags = AI_NUMERICHOST;
-            res = NULL;
-            gaErr = getaddrinfo([dohIP UTF8String], portStr, &nh, &res);
-        }
+    // ---- TCP (honor a manual iOS HTTP/HTTPS proxy if set; direct otherwise) ----
+    BOOL httpViaProxy = NO;
+    int fd = -1;
+    { int pPort = 0; NSString *proxy = HC_systemProxyHost(isHTTPS, &pPort);
+      if (proxy.length) fd = HC_proxyConnect(proxy, pPort, host, (int)port, isHTTPS, 60, &httpViaProxy); }
+    if (fd < 0) {
+        struct addrinfo hints = {0}, *res = NULL;
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        char portStr[16];
+        snprintf(portStr, sizeof(portStr), "%d", (int)port);
+        int gaErr = getaddrinfo([host UTF8String], portStr, &hints, &res);
         if (gaErr != 0 || !res) {
-            if (outError) *outError = mkErr(2, [NSString stringWithFormat:@"DNS: %s", gai_strerror(gaErr)]);
+            // System DNS failed (e.g. a carrier blocks the host at DNS level) — fall back to
+            // DNS-over-HTTPS (8.8.8.8 by literal IP) and connect to the resolved IP. SNI/Host
+            // stay the original host (set below) so archive.org's CDN still routes correctly.
+            NSString *dohIP = HC_resolveViaDoH(host);
+            if (dohIP.length) {
+                struct addrinfo nh = {0};
+                nh.ai_family = AF_UNSPEC; nh.ai_socktype = SOCK_STREAM; nh.ai_flags = AI_NUMERICHOST;
+                res = NULL;
+                gaErr = getaddrinfo([dohIP UTF8String], portStr, &nh, &res);
+            }
+            if (gaErr != 0 || !res) {
+                if (outError) *outError = mkErr(2, [NSString stringWithFormat:@"DNS: %s", gai_strerror(gaErr)]);
+                return NO;
+            }
+        }
+        fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        if (fd < 0) {
+            freeaddrinfo(res);
+            if (outError) *outError = mkErr(3, @"socket()");
             return NO;
         }
-    }
-    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (fd < 0) {
+        struct timeval tv = { 60, 0 };  // generous timeout
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
+            freeaddrinfo(res); close(fd);
+            if (outError) *outError = mkErr(4, [NSString stringWithFormat:@"connect: %s", strerror(errno)]);
+            return NO;
+        }
         freeaddrinfo(res);
-        if (outError) *outError = mkErr(3, @"socket()");
-        return NO;
     }
-    struct timeval tv = { 60, 0 };  // generous timeout
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
-        freeaddrinfo(res); close(fd);
-        if (outError) *outError = mkErr(4, [NSString stringWithFormat:@"connect: %s", strerror(errno)]);
-        return NO;
+    if (httpViaProxy && !isHTTPS) {
+        encPath = (port == 80) ? [NSString stringWithFormat:@"http://%@%@", host, encPath]
+                               : [NSString stringWithFormat:@"http://%@:%d%@", host, (int)port, encPath];
     }
-    freeaddrinfo(res);
 
     // ---- TLS setup (if HTTPS) ----
     mbedtls_ssl_context ssl;

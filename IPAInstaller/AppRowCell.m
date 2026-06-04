@@ -9,28 +9,50 @@
 
 @implementation AppRowCell
 
-+ (double)gridDensity {
+// v3.0: the catalogue grid is configured by an explicit COLUMN COUNT (chosen via the native wheel
+// picker in Settings → Affichage), not a 0–1 density. Idiom-aware default: iPhone 1 = single-column
+// LIST (the historical layout), iPad 4 = grid. Stored per-device in IPAInstall.GridColumns.
++ (NSInteger)gridColumns {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    double density = ([d objectForKey:@"IPAInstall.GridDensity"] != nil)
-        ? [d doubleForKey:@"IPAInstall.GridDensity"] : 0.55;  // default ≈ 165 pt tiles
-    if (density < 0) density = 0;
-    if (density > 1) density = 1;
-    return density;
+    BOOL pad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+    NSInteger def = pad ? 4 : 1;
+    NSInteger n = ([d objectForKey:@"IPAInstall.GridColumns"] != nil)
+        ? [d integerForKey:@"IPAInstall.GridColumns"] : def;
+    if (n < 1)  n = 1;
+    if (n > 12) n = 12;
+    return n;
 }
 
 + (NSInteger)tilesPerRowForWidth:(CGFloat)w {
-    if (UI_USER_INTERFACE_IDIOM() != UIUserInterfaceIdiomPad) return 1;
-    // dense(1) = 88 pt tiles (many, tiny) … sparse(0) = 240 pt tiles (few, large).
-    CGFloat tileW = 240.0 - [self gridDensity] * 152.0;
-    NSInteger n = MAX(2, (NSInteger)(w / tileW));
-    return MIN(n, 12);   // was 8 — allow denser grids per user request
+    if (w < 1) w = [UIScreen mainScreen].bounds.size.width;
+    NSInteger n = [self gridColumns];
+    BOOL pad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+    // Never make tiles absurdly small for the width: cap at however many ~76 pt tiles fit.
+    NSInteger maxFit = (NSInteger)(w / 76.0);
+    NSInteger floorCols = pad ? 2 : 1;   // iPad is always a grid (≥2); iPhone can be a 1-col list
+    if (maxFit < floorCols) maxFit = floorCols;
+    if (n < floorCols) n = floorCols;
+    if (n > maxFit) n = maxFit;
+    return n;
 }
 
-// Row height tracks the density so tiles shrink in BOTH dimensions, not just width.
-// dense(1) = 118 pt … sparse(0) = 196 pt.
+// Row height for a given table width. Single-column (list) rows are a fixed 76 pt; grid rows scale
+// with the ACTUAL tile width (w / columns) so tiles shrink in BOTH dimensions as columns rise.
++ (CGFloat)gridRowHeightForWidth:(CGFloat)w {
+    if (w < 1) w = [UIScreen mainScreen].bounds.size.width;
+    NSInteger n = [self tilesPerRowForWidth:w];
+    if (n <= 1) return 76;   // single-column list row (CatalogAppCell)
+    CGFloat tileW = w / (CGFloat)n;
+    CGFloat h = tileW * 0.42 + 82.0;   // ≈ the old iPad proportions (4-up → ~163, 8-up → ~122)
+    if (h < 96)  h = 96;
+    if (h > 230) h = 230;
+    return h;
+}
+
+// Convenience using the main-screen (portrait) width. iPad grid height is width-independent so
+// this stays exact there; iPhone callers that have the live table width should pass it instead.
 + (CGFloat)gridRowHeight {
-    if (UI_USER_INTERFACE_IDIOM() != UIUserInterfaceIdiomPad) return 76;
-    return 196.0 - [self gridDensity] * 78.0;
+    return [self gridRowHeightForWidth:[UIScreen mainScreen].bounds.size.width];
 }
 
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
@@ -42,13 +64,10 @@
         self.backgroundColor = bg;
         self.contentView.opaque = YES;
         self.contentView.backgroundColor = bg;
-        // Flatten the whole row (up to ~11 tiles × several layers each) into ONE cached
-        // bitmap. While a row stays on screen it then composites as a single opaque layer
-        // instead of dozens — the decisive win for the old A6X / iPad 1 GPU. CA re-renders
-        // a row only when its content actually changes (on cell reuse), which during a
-        // fling is just the 1–2 rows entering from the edge, not every visible row.
-        self.contentView.layer.shouldRasterize = YES;
-        self.contentView.layer.rasterizationScale = [UIScreen mainScreen].scale;
+        // NOTE: row-level layer rasterization was removed. It only ran AT REST (scrolling was already
+        // plain), so it gave ~no scroll benefit, but its cached bitmap wasn't invalidated when a tile's
+        // selection badge / themed card changed → the badge only appeared after a rotation. Compositing
+        // the (opaque, cached-card) tiles live is cheap at rest and correct.
         self.tiles = [NSMutableArray array];
         self.tilesPerRow = 4;
     }
@@ -74,6 +93,11 @@
 
 - (void)setApps:(NSArray *)apps {
     self.appsCache = apps;
+    // Refresh the page colour (the gaps between tiles) on every reuse so a live theme switch
+    // recolours the row — init only runs once, but reloadData re-runs setApps.
+    UIColor *bg = [IOS6Theme contentBackgroundColor];
+    self.backgroundColor = bg;
+    self.contentView.backgroundColor = bg;
     [self ensureTileCount];
     for (NSInteger i = 0; i < self.tilesPerRow; i++) {
         AppTileView *t = self.tiles[i];
@@ -90,7 +114,6 @@
 }
 
 - (void)setSelectionMode:(BOOL)selectionMode {
-    if (_selectionMode == selectionMode) return;
     _selectionMode = selectionMode;
     for (AppTileView *t in self.tiles) t.selectionMode = selectionMode;
 }
@@ -102,11 +125,9 @@
     [self setNeedsLayout];
 }
 
-- (void)setContentRasterized:(BOOL)on {
-    if (self.contentView.layer.shouldRasterize == on) return;
-    self.contentView.layer.shouldRasterize = on;
-    if (on) self.contentView.layer.rasterizationScale = [UIScreen mainScreen].scale;
-}
+// Kept as a no-op so the controllers' scroll handlers still compile; rasterization was removed
+// (see init) because its cached bitmap broke live selection-badge / theme updates.
+- (void)setContentRasterized:(BOOL)on { (void)on; }
 
 - (void)redrawTiles {
     for (AppTileView *t in self.tiles) [t setNeedsDisplay];

@@ -3,12 +3,25 @@
 # new bake shows up without requiring a manual respring/reboot.
 set -e
 
-APP=/Applications/IPAInstaller.app
+APP=/Applications/AppDrop.app
 
-if [ -x /usr/bin/uicache ]; then
-    /usr/bin/uicache -p "$APP" >/dev/null 2>&1 || true
-elif [ -x /var/jb/usr/bin/uicache ]; then
-    /var/jb/usr/bin/uicache -p "$APP" >/dev/null 2>&1 || true
+# v2.0.1: the app bundle was renamed IPAInstaller.app → AppDrop.app. dpkg removes the old
+# bundle's files on upgrade, but nuke any leftover so users never see a duplicate/ghost icon.
+rm -rf /Applications/IPAInstaller.app 2>/dev/null || true
+
+# CRITICAL: uicache must run as the `mobile` user. The MobileInstallation cache
+# (/var/mobile/Library/Caches/com.apple.mobile.installation.plist) is owned by `mobile`; running
+# uicache as root (which is how dpkg runs this script) fails with "cannot open cache file" and
+# silently leaves the registration stale. That only bites when the bundle PATH changes (the
+# IPAInstaller.app → AppDrop.app rename) — SpringBoard then tries to launch the old, deleted path
+# and the app appears to "crash" on every tap. So: run uicache as `mobile`, fall back to root.
+UICACHE=/usr/bin/uicache
+[ -x "$UICACHE" ] || UICACHE=/var/jb/usr/bin/uicache
+if [ -x "$UICACHE" ]; then
+    su mobile -c "$UICACHE -p $APP" >/dev/null 2>&1 \
+        || "$UICACHE" -u "$APP" -p "$APP" >/dev/null 2>&1 \
+        || "$UICACHE" -p "$APP" >/dev/null 2>&1 \
+        || true
 fi
 
 exit 0

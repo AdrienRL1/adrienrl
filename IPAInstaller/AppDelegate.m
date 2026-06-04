@@ -5,7 +5,8 @@
 #import "CatalogViewController.h"
 #import "CategoryViewController.h"
 #import "SearchViewController.h"
-#import "ChatViewController.h"
+#import "CollectionViewController.h"
+#import "CollectionStore.h"
 #import "SettingsViewController.h"
 #import "Localization.h"
 #import "UpdateChecker.h"
@@ -31,12 +32,75 @@ static UIImage *AppDropHomeTabIcon(void) {
     return img;
 }
 
+// v3.0: a filled 5-point STAR glyph for the Favoris tab (which replaces the removed AI tab). Same
+// alpha-mask technique as the home glyph, so the tab bar tints it correctly in light AND dark themes.
+static UIImage *AppDropFavoritesTabIcon(void) {
+    CGSize s = CGSizeMake(30, 30);
+    UIGraphicsBeginImageContextWithOptions(s, NO, [UIScreen mainScreen].scale);
+    [[UIColor blackColor] setFill];
+    UIBezierPath *star = [UIBezierPath bezierPath];
+    CGFloat cx = 15, cy = 15.5, R = 13.0, r = 5.4;
+    for (int i = 0; i < 10; i++) {
+        CGFloat ang = -M_PI_2 + i * (M_PI / 5.0);
+        CGFloat rad = (i % 2 == 0) ? R : r;
+        CGPoint p = CGPointMake(cx + rad * cosf(ang), cy + rad * sinf(ang));
+        if (i == 0) [star moveToPoint:p]; else [star addLineToPoint:p];
+    }
+    [star closePath];
+    [star fill];
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return img;
+}
+
+// iOS 5 does NOT forward rotation from a UINavigationController to its visible view
+// controller (iOS 6+ does). Since every tab is nav-wrapped, that left the whole app
+// portrait-locked on iPad iOS 5.1.1 (feedback #13: "goes crazy"/"won't rotate"). This
+// subclass forwards every rotation query to the top view controller, so the app rotates
+// based on what's actually on screen — and it's a no-op relative to the default on iOS 6+.
+@interface ADNavigationController : UINavigationController
+- (void)applyADTheme;
+@end
+@implementation ADNavigationController
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [self applyADTheme];
+}
+// Nav-bar styling. For the DEFAULT theme this leaves the bar STOCK (exactly the published v2.0
+// look — the custom PNG never showed through iOS 6's unreliable appearance proxy). For a dark
+// theme it applies a code-drawn dark gradient + white title directly on the instance (the proxy
+// has no visible effect on iOS 6, so per-instance styling is the only thing that works).
+// Factored out so the central applier can re-run it live on every tab's nav bar — no restart.
+- (void)applyADTheme {
+    [IOS6Theme applyToNavigationBar:self.navigationBar];
+    // Default = stock light bar (UIBarStyleDefault). Both the DARK family AND the light-COLOUR
+    // family carry a custom vivid/dark bar image whose text + status bar must be light → BarStyleBlack.
+    self.navigationBar.barStyle = [IOS6Theme isDefaultTheme] ? UIBarStyleDefault : UIBarStyleBlack;
+}
+- (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)o {   // iOS 5
+    UIViewController *top = self.topViewController;
+    return top ? [top shouldAutorotateToInterfaceOrientation:o] : YES;
+}
+- (NSUInteger)supportedInterfaceOrientations {                               // iOS 6+
+    UIViewController *top = self.topViewController;
+    return top ? [top supportedInterfaceOrientations] : UIInterfaceOrientationMaskAll;
+}
+- (BOOL)shouldAutorotate {                                                   // iOS 6+
+    UIViewController *top = self.topViewController;
+    return top ? [top shouldAutorotate] : YES;
+}
+@end
+
 // v1.3.1: alert delegate so the AppDelegate can react to the Filza-launch
 // confirmation. The dismissed-path is stored on the alert itself (via tag
 // + an associated property) so we can fire filza://view/<path> at the right
 // time without re-deriving anything from the notification userInfo.
 @interface AppDelegate () <UIAlertViewDelegate>
 @property (nonatomic, copy) NSString *pendingFilzaPath;
+// Tab bar + the full set of 5 tab nav controllers (built once at launch). The AI/chat tab can
+// be hidden live via Settings, so we keep all 5 alive and just toggle which ones are shown.
+@property (nonatomic, strong) UITabBarController *tabBarVC;
+@property (nonatomic, strong) NSArray *allTabNavs;
 @end
 
 @implementation AppDelegate
@@ -63,42 +127,48 @@ static UIImage *AppDropHomeTabIcon(void) {
         // v1.7: the Catalogue tab opens on the category menu (with a "All apps" row
         // at the top that pushes the full filtered list — the classic CatalogViewController).
         CategoryViewController *catalog = [[CategoryViewController alloc] init];
-        UINavigationController *catalogNav = [[UINavigationController alloc] initWithRootViewController:catalog];
+        UINavigationController *catalogNav = [[ADNavigationController alloc] initWithRootViewController:catalog];
         catalogNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.home")
                                                                 image:AppDropHomeTabIcon()
                                                                   tag:0];
 
         CPLog(@"alloc SearchVC");
         SearchViewController *search = [[SearchViewController alloc] init];
-        UINavigationController *searchNav = [[UINavigationController alloc] initWithRootViewController:search];
+        UINavigationController *searchNav = [[ADNavigationController alloc] initWithRootViewController:search];
         searchNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.search")
                                                               image:[UIImage imageNamed:@"tab-search"]
                                                                 tag:1];
 
-        CPLog(@"alloc ChatVC");
-        ChatViewController *chat = [[ChatViewController alloc] init];
-        UINavigationController *chatNav = [[UINavigationController alloc] initWithRootViewController:chat];
-        chatNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.ai")
-                                                           image:[UIImage imageNamed:@"tab-ai"]
-                                                             tag:2];
+        CPLog(@"alloc FavVC");
+        // v3.0: Favoris tab (replaces the removed AI tab) — opens the built-in Favorites collection.
+        CollectionViewController *fav = [[CollectionViewController alloc] initWithCollectionId:CollectionFavoritesId];
+        UINavigationController *favNav = [[ADNavigationController alloc] initWithRootViewController:fav];
+        favNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"collections.favorites")
+                                                          image:AppDropFavoritesTabIcon()
+                                                            tag:2];
 
         CPLog(@"alloc RootVC");
         RootViewController *install = [[RootViewController alloc] init];  // legacy URL/jobs screen
-        UINavigationController *installNav = [[UINavigationController alloc] initWithRootViewController:install];
+        UINavigationController *installNav = [[ADNavigationController alloc] initWithRootViewController:install];
         installNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.install")
                                                               image:[UIImage imageNamed:@"tab-install"]
                                                                 tag:3];
 
         CPLog(@"alloc SettingsVC");
         SettingsViewController *settings = [[SettingsViewController alloc] init];
-        UINavigationController *settingsNav = [[UINavigationController alloc] initWithRootViewController:settings];
+        UINavigationController *settingsNav = [[ADNavigationController alloc] initWithRootViewController:settings];
         settingsNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.settings")
                                                                image:[UIImage imageNamed:@"tab-settings"]
                                                                  tag:4];
 
         CPLog(@"alloc TabBarController");
         UITabBarController *tabs = [[UITabBarController alloc] init];
-        tabs.viewControllers = @[catalogNav, searchNav, chatNav, installNav, settingsNav];
+        self.tabBarVC = tabs;
+        self.allTabNavs = @[catalogNav, searchNav, favNav, installNav, settingsNav];
+        tabs.viewControllers = self.allTabNavs;
+        // Tab-bar theming: STOCK for the default theme (= v2.0), code-drawn dark gradient for dark
+        // themes. Done directly on the instance (the UIAppearance proxy is unreliable on iOS 6).
+        [IOS6Theme applyToTabBar:tabs.tabBar];
         tabs.selectedIndex = 0;  // Catalogue first (it's the main feature)
         self.window.rootViewController = tabs;
         CPLog(@"makeKeyAndVisible");
@@ -136,7 +206,10 @@ static UIImage *AppDropHomeTabIcon(void) {
                                                   name:UpdateCheckerStatusChangedNotification
                                                 object:nil];
     [self refreshSettingsTabBadge];  // initial state (probably no badge yet)
-    [[UpdateChecker shared] checkForUpdates:NO];
+    // Defer the launch update-check off the critical path: on a slow A4 the first content build
+    // (Accueil grid) should own the CPU/network for the first couple of seconds, not a version ping.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ [[UpdateChecker shared] checkForUpdates:NO]; });
 
     // v1.3.1: pop an "Open in Filza?" prompt whenever InstallManager archives
     // a .ipa. Fires for iOS 10+ (always) and iOS 6-9 when "Keep IPA after
@@ -147,20 +220,33 @@ static UIImage *AppDropHomeTabIcon(void) {
                                                   name:InstallManagerJobSavedNotification
                                                 object:nil];
 
-    // v2.0.9 — show the catalog-quality reminder at every cold launch. The upstream
-    // catalog has a small fraction of rows with wrong title or icon (out of our control,
-    // it's a data issue at stuffed18.github.io). The user explicitly asked for this to
-    // fire on every launch so they don't forget to double-check what they install.
-    // Deferred ~0.6 s so the tab bar / catalog appears first, then the alert pops over it.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        UIAlertView *a = [[UIAlertView alloc] initWithTitle:T(@"onboarding.catalog_quality_title")
-                                                    message:T(@"onboarding.catalog_quality_msg")
-                                                   delegate:nil
-                                          cancelButtonTitle:T(@"common.understood")
-                                          otherButtonTitles:nil];
-        [a show];
-    });
+    // Apply a theme change instantly across the whole app (no restart). Posted by IOS6Theme
+    // when the user picks a colour in Settings → Thème.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(applyThemeEverywhere)
+                                                  name:AppDropThemeChangedNotification
+                                                object:nil];
+    if (![IOS6Theme isDefaultTheme]) [self applyStatusBarStyle];   // dark + light-colour bars need a light status bar; default keeps stock
+
+    // Catalog-quality reminder: some catalog rows have a wrong title/icon (a data issue in the
+    // public source, out of our control), so the user should double-check before installing.
+    // Shown at every cold launch UNLESS the user tapped "Don't show again" on the alert itself
+    // (no Settings toggle — the opt-out lives on the notice). Deferred ~0.6 s so the tab bar /
+    // catalog paints first, then the alert pops over it.
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"AppDropHideCatalogNotice"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            // Re-check inside the block in case the flag changed in the meantime.
+            if ([[NSUserDefaults standardUserDefaults] boolForKey:@"AppDropHideCatalogNotice"]) return;
+            UIAlertView *a = [[UIAlertView alloc] initWithTitle:T(@"onboarding.catalog_quality_title")
+                                                        message:T(@"onboarding.catalog_quality_msg")
+                                                       delegate:self
+                                              cancelButtonTitle:T(@"common.understood")
+                                              otherButtonTitles:T(@"onboarding.dont_show_again"), nil];
+            a.tag = 9911;
+            [a show];
+        });
+    }
 
     return YES;
 }
@@ -180,12 +266,48 @@ static UIImage *AppDropHomeTabIcon(void) {
 - (void)refreshSettingsTabBadge {
     UITabBarController *tabs = (UITabBarController *)self.window.rootViewController;
     if (![tabs isKindOfClass:[UITabBarController class]]) return;
-    if (tabs.viewControllers.count < 5) return;  // sanity — should be 5 tabs
-    // Settings is tab index 4 (catalog/search/ai/install/settings).
-    UIViewController *settingsNav = tabs.viewControllers[4];
     UpdateChecker *uc = [UpdateChecker shared];
-    settingsNav.tabBarItem.badgeValue =
-        (uc.status == UpdateCheckerStatusAvailable) ? @"1" : nil;
+    NSString *badge = (uc.status == UpdateCheckerStatusAvailable) ? @"1" : nil;
+    // Find the Settings tab by its root VC class — its index shifts when the AI tab is hidden.
+    for (UIViewController *vc in tabs.viewControllers) {
+        UIViewController *root = [vc isKindOfClass:[UINavigationController class]]
+            ? [(UINavigationController *)vc viewControllers].firstObject : vc;
+        if ([root isKindOfClass:[SettingsViewController class]]) {
+            vc.tabBarItem.badgeValue = badge;
+            return;
+        }
+    }
+}
+
+// Re-apply the active theme to every live screen so a theme switch takes effect immediately
+// (no app restart). Walks ALL tab nav stacks — not just the visible one — so when the user
+// flips to another tab it's already themed. Newly-pushed screens read the theme fresh at load.
+- (void)applyThemeEverywhere {
+    // Tab bar chrome (resets to STOCK when switching back to the default theme).
+    [IOS6Theme applyToTabBar:self.tabBarVC.tabBar];
+
+    // Each tab's nav bar + every loaded view controller in its stack.
+    for (UINavigationController *nav in self.allTabNavs) {
+        if ([nav isKindOfClass:[ADNavigationController class]])
+            [(ADNavigationController *)nav applyADTheme];
+        for (UIViewController *vc in nav.viewControllers) {
+            if (![vc isViewLoaded]) continue;                      // themes itself on first load
+            if ([vc respondsToSelector:@selector(applyTheme)])
+                [(id<ADThemable>)vc applyTheme];                   // screen-specific re-theme
+            [IOS6Theme retintViewTree:vc.view];                   // generic controls (switches, search…)
+        }
+    }
+    [self applyStatusBarStyle];
+}
+
+- (void)applyStatusBarStyle {
+    // Every non-default theme (dark AND light-colour) gets a solid dark status bar with light
+    // glyphs so it reads over the custom bar; only the classic blue default keeps the stock style.
+    // Best-effort: on iOS 7+ this is a no-op when status-bar appearance is view-controller-based.
+    UIApplication *app = [UIApplication sharedApplication];
+    if (![app respondsToSelector:@selector(setStatusBarStyle:animated:)]) return;
+    UIStatusBarStyle style = [IOS6Theme isDefaultTheme] ? UIStatusBarStyleDefault : UIStatusBarStyleBlackOpaque;
+    [app setStatusBarStyle:style animated:YES];
 }
 
 // v1.3.1: hook for the "Open in Filza?" prompt. Posted by InstallManager after
@@ -206,6 +328,13 @@ static UIImage *AppDropHomeTabIcon(void) {
 }
 
 - (void)alertView:(UIAlertView *)alert clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if (alert.tag == 9911) {   // catalog-quality notice: the non-cancel button is "Don't show again"
+        if (buttonIndex != alert.cancelButtonIndex) {
+            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"AppDropHideCatalogNotice"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }
+        return;
+    }
     if (alert.tag != 200) return;
     if (buttonIndex == alert.cancelButtonIndex) {
         self.pendingFilzaPath = nil;
@@ -256,17 +385,19 @@ static UIImage *AppDropHomeTabIcon(void) {
 }
 
 - (void)setupAppearance {
-    // v1.3.2.1: removed the iOS-7+ flat early-return that was added in v1.3.
-    // User explicitly asked for the iOS 6 skeuomorphic look on every iOS
-    // version (gradient blue nav bar, dark metal tab bar, white shadowed
-    // titles), so we always apply the UIAppearance overrides below. iOS 7+
-    // honors most of these (background image, tint, title text attributes)
-    // even though it's not the "native" look — that's the whole point.
-    // UIAppearance proxy (iOS 5+) — apply once for all nav/tab bars + buttons.
+    // DEFAULT THEME = exactly the published v2.0 look: STOCK iOS 6 bars. v2.0 only ever set the
+    // UIAppearance proxy (which has no visible effect on iOS 6 in this app), so it rendered stock
+    // bars. We replicate that by applying NO chrome styling at all for the default theme — neither
+    // proxy nor direct — leaving the system to draw its native bars. Dark themes do the real work
+    // via per-instance styling (ADNavigationController / tab bar), with the proxy below as a
+    // harmless belt-and-suspenders for anything not reached directly.
+    if ([IOS6Theme isDefaultTheme]) return;
+
     id navProxy = [UINavigationBar appearance];
-    if ([navProxy respondsToSelector:@selector(setBackgroundImage:forBarMetrics:)]) {
+    {
         UIImage *navBg = [IOS6Theme navBarBackground];
-        if (navBg) [navProxy setBackgroundImage:navBg forBarMetrics:UIBarMetricsDefault];
+        if (navBg && [navProxy respondsToSelector:@selector(setBackgroundImage:forBarMetrics:)])
+            [navProxy setBackgroundImage:navBg forBarMetrics:UIBarMetricsDefault];
     }
     if ([navProxy respondsToSelector:@selector(setTitleTextAttributes:)]) {
         NSDictionary *attrs = @{
@@ -278,7 +409,9 @@ static UIImage *AppDropHomeTabIcon(void) {
         [navProxy setTitleTextAttributes:attrs];
     }
     if ([navProxy respondsToSelector:@selector(setTintColor:)]) {
-        [navProxy setTintColor:[IOS6Theme primaryBlue]];
+        // iOS 6: the bar's color comes from tintColor (the setBackgroundImage: appearance call is
+        // unreliably reported as unsupported by the proxy). So the TINT is the real theme lever.
+        [navProxy setTintColor:[IOS6Theme barTintColor]];
     }
 
     // Tab bar (iOS 5+)

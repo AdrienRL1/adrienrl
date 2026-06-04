@@ -39,4 +39,16 @@ typedef NS_ENUM(NSInteger, MachOInspectionResult) {
 // commands. Safe to call from any thread; doesn't retain the file.
 + (MachOInspectionResult)inspectIPA:(NSString *)ipaPath;
 
+// Probe a REMOTE .ipa over HTTP **without downloading it** — uses Range requests to read only
+// the ZIP tail + the main binary's first ~32 KB (a few tens of KB total). Lets the catalog warn
+// "this version is FairPlay-encrypted (won't run)" and recommend a decrypted version, before any
+// full download. Requires the server to support Range (archive.org does); returns Unknown if not.
+// The result is cached per-URL (persisted) — a given file's cryptid never changes.
+// `completion` is called on the MAIN queue.
++ (void)inspectURL:(NSString *)url completion:(void (^)(MachOInspectionResult result))completion;
+
+// Synchronous, no-network cache lookup. Returns the cached MachOInspectionResult, or -1 if this
+// URL hasn't been probed yet (so a caller can show a cached badge instantly, then probe if absent).
++ (NSInteger)cachedResultForURL:(NSString *)url;
+
 @end
