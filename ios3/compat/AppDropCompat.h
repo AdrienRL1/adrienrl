@@ -64,6 +64,41 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 
+// ---- UIBezierPath: present but NON-FUNCTIONAL on iOS 3.1 (real class debuts
+//      in iOS 3.2). On 3.1.3 the class symbol exists yet its drawing methods
+//      (moveToPoint:/addLineToPoint:/fill/stroke/...) are unimplemented, so the
+//      first glyph drawn at launch throws:
+//          *** -[UIBezierPath addLineToPoint:]: unrecognized selector
+//      and the launch @try shows "AppDrop failed to launch".
+//
+//      ADBezierPath (AppDropBezier.m) is a complete, self-contained CGPath-
+//      backed replacement using only iOS-2-era CoreGraphics. The macro below
+//      transparently rewrites every `UIBezierPath` token in the AppDrop sources
+//      to ADBezierPath, so there are zero call-site edits and identical drawing
+//      output on iOS 3.1 through 10. (Same strategy as AppDropJSON.m, which
+//      ships its own NSJSONSerialization.) AppDropBezier.m #undefs this so its
+//      @implementation keeps the real ADBezierPath name. ----
+@interface ADBezierPath : NSObject
+@property (nonatomic, assign) CGFloat lineWidth;
+@property (nonatomic, assign) CGLineCap lineCapStyle;
+@property (nonatomic, assign) CGLineJoin lineJoinStyle;
+@property (nonatomic, assign) BOOL usesEvenOddFillRule;
++ (ADBezierPath *)bezierPath;
++ (ADBezierPath *)bezierPathWithRect:(CGRect)rect;
++ (ADBezierPath *)bezierPathWithOvalInRect:(CGRect)rect;
++ (ADBezierPath *)bezierPathWithRoundedRect:(CGRect)rect cornerRadius:(CGFloat)radius;
+- (void)moveToPoint:(CGPoint)point;
+- (void)addLineToPoint:(CGPoint)point;
+- (void)closePath;
+- (void)fill;
+- (void)stroke;
+- (void)addClip;
+- (CGPathRef)CGPath;
+@end
+#ifndef UIBezierPath
+#define UIBezierPath ADBezierPath
+#endif
+
 // ---- UIInterfaceOrientationMask: iOS 6 NS_OPTIONS ----
 #ifndef UIInterfaceOrientationMaskPortrait
 typedef NSUInteger UIInterfaceOrientationMask;
