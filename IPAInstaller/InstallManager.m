@@ -26,6 +26,8 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                     localPath:(NSString *)localPath
                       attempt:(int)attempt;
 - (void)postSavedNotificationForJob:(InstallJob *)job;
+- (void)scheduleUICacheRefresh;
+- (void)runUICache;
 @end
 
 @implementation InstallManager
@@ -209,6 +211,17 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         j.message = d[@"message"];
         j.progress = [d[@"progress"] integerValue];
         j.startedAt = started ?: [NSDate date];
+        // A job persisted as ACTIVE (downloading/installing/connecting/queued) can't survive the
+        // app being killed — its download/install thread is gone. Restoring it as-is leaves a
+        // zombie: a stuck progress bar the 2 s poll never advances (poll skips local- jobs), and
+        // a misleading "downloading…" forever. Reconcile every non-terminal restored job to a
+        // clear "interrupted" failed state so the list is honest and the user just re-downloads.
+        // (Feedback #30 reopen / #38 background-stops-download — defensive hardening either way.)
+        if (![InstallManager isTerminalState:j.state]) {
+            j.state = @"failed";
+            j.message = T(@"install.state.interrupted");
+            j.progress = 0;
+        }
         if (j.jobId) _jobsById[j.jobId] = j;
     }
 }
@@ -469,7 +482,9 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     dispatch_async(dispatch_get_main_queue(), ^{
         job.state = @"downloading";
         job.message = T(@"install.state.connecting");
-        job.progress = 0;
+        // Don't reset progress here: on resume the job already holds its paused % and the
+        // partial .ipa is on disk (Range resume), so keep it rather than flashing 0% → 73%.
+        // A fresh job is already at 0, so nothing changes for the normal path.
         [self postChanged];
     });
 
@@ -512,7 +527,10 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                          streamCount:streams
                          isCancelled:^BOOL{
         InstallJob *j = weakJob;
-        if (!j || j.cancelRequested) return YES;
+        // Abort on cancel OR pause. Pause keeps the partial .ipa + chunks on disk (handled in
+        // the completion's pause branch); without this the downloader runs on and the progress
+        // ticks below keep overwriting the "paused" UI, so the user sees the download "restart".
+        if (!j || j.cancelRequested || j.pauseRequested) return YES;
         // Only consider slow-mirror abort if we still have retry budget — otherwise
         // there's no point dropping the connection.
         if (attempt < kMaxMirrorAttempts - 1) {
@@ -542,6 +560,10 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         dispatch_async(dispatch_get_main_queue(), ^{
             InstallJob *j = weakJob;
             if (!j) return;
+            // A tick can still arrive between the user pausing and the downloader actually
+            // aborting. Don't let it overwrite the "paused" message/progress (would flicker
+            // back to "downloading…" and look like the pause failed).
+            if (j.pauseRequested || [j.state isEqualToString:@"paused"]) return;
             j.currentBytes = received;
             j.totalBytes = total;
             if (bps > 0) j.bytesPerSec = j.bytesPerSec * 0.5 + bps * 0.5;
@@ -559,7 +581,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         if (!ok) {
             // Slow-mirror retry: don't surface the failure, just kick off a new attempt.
             // The partial .ipa stays on disk; HTTPSClient will send Range: bytes=N-.
-            if (slowAbort && !job.cancelRequested && attempt < kMaxMirrorAttempts - 1) {
+            if (slowAbort && !job.cancelRequested && !job.pauseRequested && attempt < kMaxMirrorAttempts - 1) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     InstallJob *j = weakJob;
                     if (!j || j.cancelRequested) return;
@@ -572,6 +594,18 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
                                dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                     [self attemptDownloadForJob:job localPath:localPath attempt:attempt + 1];
+                });
+                return;
+            }
+            // PAUSE: the loop aborted because the user paused. Keep the partial .ipa + chunks on disk
+            // so resumeJob: (which re-queues → attemptDownloadForJob) continues via Range. Free the slot.
+            if (job.pauseRequested) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    job.pauseRequested = NO;
+                    job.state = @"paused";
+                    job.message = T(@"install.state.paused");
+                    [self postChanged];
+                    [self pumpQueue];   // a paused job no longer holds a download slot
                 });
                 return;
             }
@@ -628,7 +662,12 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         // mirror. Inspector returns Unknown on any parse / read error,
         // which we treat as "proceed" (false-negative ≪ false-positive).
         MachOInspectionResult enc = [MachOInspector inspectIPA:localPath];
-        if (enc == MachOInspectionResultEncrypted) {
+        // The user can opt into installing FairPlay-encrypted IPAs anyway (Settings →
+        // "Allow encrypted IPAs"). They won't launch on a different Apple ID, but power users
+        // with an on-device decryptor want them installed regardless (Reddit + feedback #47).
+        // Default OFF → we still fail-fast with a clear message.
+        BOOL allowEncrypted = [[NSUserDefaults standardUserDefaults] boolForKey:@"IPAInstall.AllowEncrypted"];
+        if (enc == MachOInspectionResultEncrypted && !allowEncrypted) {
             NSLog(@"[InstallManager] FairPlay-encrypted .ipa detected: %@", job.url);
             dispatch_async(dispatch_get_main_queue(), ^{
                 job.state = @"failed";
@@ -677,6 +716,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                 BOOL success = (exitCode == 0) || (out && [out.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
                 if (success) {
                     job.state = @"completed";
+                    [self scheduleUICacheRefresh];   // rebuild the SpringBoard icon cache so the new app appears (feedback #26/#36)
                     NSRegularExpression *r = [NSRegularExpression regularExpressionWithPattern:
                         @"Installed (.+?) successfully" options:0 error:nil];
                     NSTextCheckingResult *m = r ? [r firstMatchInString:out
@@ -826,6 +866,42 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 // Install an .ipa file. Thin wrapper over -runIpainstallerArgs:capturedOutput:.
 - (int)runIpainstallerOnFile:(NSString *)path capturedOutput:(NSString **)outOutput {
     return [self runIpainstallerArgs:(path.length ? @[path] : @[]) capturedOutput:outOutput];
+}
+
+// After a successful install the new icon often won't appear on SpringBoard until the icon
+// cache is rebuilt — ipainstaller doesn't reliably trigger it on every jailbreak (feedback
+// #26/#36: "I download it but it doesn't show on my home screen"). uicache rebuilds it.
+// It's expensive, so coalesce a burst of installs (multi-select) into a single run.
+static NSInteger gUICacheToken = 0;
+
+- (void)scheduleUICacheRefresh {
+    NSInteger token = ++gUICacheToken;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+        if (token != gUICacheToken) return;   // a newer install rescheduled — let that later one run uicache
+        [self runUICache];
+    });
+}
+
+- (void)runUICache {
+    static const char *kUICacheCandidates[] = {
+        "/usr/bin/uicache",            // legacy / iOS 5-10 jailbreaks (our audience)
+        "/var/jb/usr/bin/uicache",     // rootless jailbreaks
+        "/opt/procursus/bin/uicache",  // Procursus bootstrap
+        NULL
+    };
+    const char *exec = NULL;
+    for (int i = 0; kUICacheCandidates[i]; i++) {
+        if (access(kUICacheCandidates[i], X_OK) == 0) { exec = kUICacheCandidates[i]; break; }
+    }
+    if (!exec) return;   // no uicache on this device — nothing we can do
+    const char *slash = strrchr(exec, '/');
+    char *const argv[] = { (char *)(slash ? slash + 1 : exec), NULL };  // bare `uicache` = rebuild all (legacy)
+    pid_t pid = 0;
+    if (posix_spawn(&pid, exec, NULL, NULL, argv, environ) == 0) {
+        int status = 0;
+        waitpid(pid, &status, 0);
+    }
 }
 
 // Installed version of an app AppDrop installed via ipainstaller, parsed from the
@@ -992,6 +1068,57 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     return count;
 }
 
+#pragma mark - Pause / Resume
+
+// Pausable = queued or downloading (NOT installing — ipainstaller can't be paused — nor terminal/paused).
+- (BOOL)isPausableState:(NSString *)state {
+    return [state isEqualToString:@"queued"] || [state isEqualToString:@"downloading"];
+}
+
+- (void)pauseJob:(NSString *)jobId {
+    InstallJob *job = self.jobsById[jobId];
+    if (!job || ![self isPausableState:job.state]) return;
+    BOOL wasDownloading = [job.state isEqualToString:@"downloading"];
+    job.state = @"paused";
+    job.message = T(@"install.state.paused");
+    if (wasDownloading) {
+        job.pauseRequested = YES;   // the running loop polls this, aborts, and KEEPS the partial
+    } else {
+        [self pumpQueue];           // it was only queued — nothing to abort; free nothing, just refresh queue
+    }
+    [self postChanged];
+}
+
+- (void)resumeJob:(NSString *)jobId {
+    InstallJob *job = self.jobsById[jobId];
+    if (!job || ![job.state isEqualToString:@"paused"]) return;
+    job.pauseRequested = NO;
+    job.state = @"queued";          // pumpQueue restarts it; the partial .ipa resumes via HTTP Range
+    job.message = T(@"install.state.queued");
+    [self postChanged];
+    [self pumpQueue];
+}
+
+- (NSInteger)pauseAllActiveJobs {
+    NSInteger count = 0;
+    for (InstallJob *j in [[self.jobsById allValues] copy])
+        if ([self isPausableState:j.state]) { [self pauseJob:j.jobId]; count++; }
+    return count;
+}
+
+- (NSInteger)resumeAllPausedJobs {
+    NSInteger count = 0;
+    for (InstallJob *j in [[self.jobsById allValues] copy])
+        if ([j.state isEqualToString:@"paused"]) { [self resumeJob:j.jobId]; count++; }
+    return count;
+}
+
+- (BOOL)hasPausedJobs {
+    for (InstallJob *j in [self.jobsById allValues])
+        if ([j.state isEqualToString:@"paused"]) return YES;
+    return NO;
+}
+
 - (BOOL)hasActiveJobs {
     for (InstallJob *j in [self.jobsById allValues]) {
         if (![InstallManager isTerminalState:j.state]) return YES;
@@ -1010,9 +1137,25 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 }
 
 - (void)postChanged {
+    [self updateIdleTimer];   // keep the screen awake while a download/install is in progress
     [[NSNotificationCenter defaultCenter] postNotificationName:InstallManagerJobsChangedNotification
                                                         object:self];
     [self pumpQueue];   // start the next queued install when a slot frees (or a new one is added)
+}
+
+// Prevent the auto-lock from interrupting an active download/install — a common complaint was the
+// screen turning off mid-download. Stay awake while ANY job is downloading/installing/queued; return
+// to normal once everything is done/paused. (idleTimerDisabled is per-process, so it also auto-resets
+// when the app quits to hand off to ipainstaller.) Applied on the main thread (UIApplication).
+- (void)updateIdleTimer {
+    BOOL active = NO;
+    for (InstallJob *j in [self.jobsById allValues]) {
+        if ([j.state isEqualToString:@"downloading"] ||
+            [j.state isEqualToString:@"installing"] ||
+            [j.state isEqualToString:@"queued"]) { active = YES; break; }
+    }
+    dispatch_block_t apply = ^{ [UIApplication sharedApplication].idleTimerDisabled = active; };
+    if ([NSThread isMainThread]) apply(); else dispatch_async(dispatch_get_main_queue(), apply);
 }
 
 // v1.3.1: fired once per save. AppDelegate observes globally and pops a

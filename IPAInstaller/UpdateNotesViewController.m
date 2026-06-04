@@ -11,16 +11,24 @@
 
 #pragma mark - Lifecycle
 
+// Live theme re-apply (AppDelegate calls this on a theme switch — no restart). The release-notes
+// web view stays white for legibility; the surface + nav bar follow the theme.
+- (void)applyTheme {
+    self.view.backgroundColor = [IOS6Theme contentBackgroundColor];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor whiteColor];
+    self.view.backgroundColor = [IOS6Theme contentBackgroundColor];
     self.title = T(@"update_notes.title");
 
-    // Nav bar buttons. UIBarButtonSystemItemCancel auto-localizes via iOS.
+    // Nav bar buttons. v3.0: titled (T()) so it follows the APP language, not the device's
+    // (UIBarButtonSystemItemCancel localizes to the device language → mismatched the app language).
     self.navigationItem.leftBarButtonItem =
-        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel
-                                                      target:self
-                                                      action:@selector(cancelTapped)];
+        [[UIBarButtonItem alloc] initWithTitle:T(@"common.cancel")
+                                         style:UIBarButtonItemStyleBordered
+                                        target:self
+                                        action:@selector(cancelTapped)];
     // AppDrop is distributed via the AdrienRL Cydia source — this button
     // hands off to whichever package manager the user has rather than
     // starting an in-app download.
@@ -35,8 +43,8 @@
     self.headerLabel = [[UILabel alloc] init];
     self.headerLabel.numberOfLines = 0;
     self.headerLabel.font = [UIFont systemFontOfSize:13];
-    self.headerLabel.textColor = [UIColor colorWithWhite:0.45 alpha:1.0];
-    self.headerLabel.backgroundColor = [UIColor colorWithWhite:0.96 alpha:1.0];
+    self.headerLabel.textColor = [IOS6Theme labelGray];
+    self.headerLabel.backgroundColor = [IOS6Theme groupedBackgroundColor];
     self.headerLabel.textAlignment = NSTextAlignmentCenter;
     self.headerLabel.text = [self headerText];
     [self.view addSubview:self.headerLabel];
@@ -45,7 +53,7 @@
     self.webView = [[UIWebView alloc] init];
     self.webView.delegate = self;
     self.webView.opaque = YES;
-    self.webView.backgroundColor = [UIColor whiteColor];
+    self.webView.backgroundColor = [IOS6Theme contentBackgroundColor];
     self.webView.scalesPageToFit = NO;  // we control sizing via CSS
     [self.view addSubview:self.webView];
 
@@ -99,6 +107,13 @@
 
 #pragma mark - Markdown → HTML
 
+// UIColor → "#RRGGBB" for injecting theme colours into the notes CSS.
+static NSString *ADHex(UIColor *c) {
+    CGFloat r=0,g=0,b=0,a=0;
+    if (![c getRed:&r green:&g blue:&b alpha:&a]) { CGFloat w=0; [c getWhite:&w alpha:&a]; r=g=b=w; }
+    return [NSString stringWithFormat:@"#%02X%02X%02X", (int)(r*255), (int)(g*255), (int)(b*255)];
+}
+
 // We don't bundle a markdown parser to stay light. Hand-rolled conversion is
 // enough for our release notes (no nested lists, no tables, no images).
 - (NSString *)renderHTML {
@@ -110,28 +125,38 @@
     // - 14 pt body, comfortable line-height for reading on phone screens.
     // - Bold h2 a bit larger; code spans get a subtle background; links the
     //   AppDrop blue.
+    // Colours follow the active theme so the notes are readable in dark mode too.
+    NSString *cBg = ADHex([IOS6Theme contentBackgroundColor]);
+    NSString *cText = ADHex([IOS6Theme labelDark]);
+    NSString *cH = ADHex([IOS6Theme titleColor]);
+    NSString *cCode = ADHex([IOS6Theme cellColor]);
+    NSString *cLink = ADHex([IOS6Theme primaryBlue]);
+    BOOL dk = [IOS6Theme isDark];
+    NSString *bBg = dk ? @"#10243f" : @"#eef5ff";
+    NSString *bBorder = dk ? @"#26456f" : @"#d0e3ff";
+    NSString *bText = dk ? @"#cfe2ff" : @"#13427a";
+    NSString *bBold = dk ? @"#ffffff" : @"#0a3266";
+
     [html appendString:@"<html><head><style>"];
     [html appendString:@"html,body{margin:0;padding:0;}"];
-    [html appendString:@"body{"
-                       @"font-family:-apple-system,'Helvetica Neue',Helvetica,sans-serif;"
-                       @"font-size:14px;line-height:1.45;color:#222;"
-                       @"padding:14px 16px 24px 16px;"
-                       @"-webkit-text-size-adjust:100%;}"];
-    [html appendString:@"h2{font-size:17px;margin:18px 0 6px 0;color:#111;}"];
+    [html appendFormat:@"body{font-family:-apple-system,'Helvetica Neue',Helvetica,sans-serif;"
+                       @"font-size:14px;line-height:1.45;color:%@;background:%@;"
+                       @"padding:14px 16px 24px 16px;-webkit-text-size-adjust:100%%;}", cText, cBg];
+    [html appendFormat:@"h2{font-size:17px;margin:18px 0 6px 0;color:%@;}", cH];
     [html appendString:@"p{margin:8px 0;}"];
     [html appendString:@"ul{margin:6px 0 10px 0;padding-left:22px;}"];
     [html appendString:@"li{margin:3px 0;}"];
-    [html appendString:@"code{font-family:Menlo,Courier,monospace;font-size:12px;"
-                       @"background:#f1f1f3;padding:1px 5px;border-radius:3px;}"];
+    [html appendFormat:@"code{font-family:Menlo,Courier,monospace;font-size:12px;"
+                       @"background:%@;padding:1px 5px;border-radius:3px;}", cCode];
     [html appendString:@"strong,b{font-weight:600;}"];
-    [html appendString:@"a{color:#137dd6;text-decoration:none;}"];
+    [html appendFormat:@"a{color:%@;text-decoration:none;}", cLink];
     [html appendString:@"em,i{font-style:italic;}"];
-    // Banner styling — light-blue callout above the release notes so the
-    // user understands the install path is Cydia, not in-app.
-    [html appendString:@".cydia-banner{margin:0 0 14px 0;padding:10px 12px;"
-                       @"background:#eef5ff;border:1px solid #d0e3ff;"
-                       @"border-radius:6px;font-size:13px;color:#13427a;}"];
-    [html appendString:@".cydia-banner b{color:#0a3266;}"];
+    // Banner styling — callout above the release notes so the user understands the install
+    // path is Cydia, not in-app. Darkened variant on dark themes.
+    [html appendFormat:@".cydia-banner{margin:0 0 14px 0;padding:10px 12px;"
+                       @"background:%@;border:1px solid %@;"
+                       @"border-radius:6px;font-size:13px;color:%@;}", bBg, bBorder, bText];
+    [html appendFormat:@".cydia-banner b{color:%@;}", bBold];
     [html appendString:@"</style></head><body>"];
 
     // Cydia banner — always shown, regardless of notes presence.

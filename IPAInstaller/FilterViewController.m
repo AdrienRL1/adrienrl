@@ -1,5 +1,6 @@
 #import "FilterViewController.h"
 #import "Localization.h"
+#import "IOS6Theme.h"
 
 static NSArray *iOSChoices(void) {
     return @[@"", @"3.0", @"4.0", @"5.0", @"5.1.1", @"6.0", @"6.1.3", @"7.0", @"7.1", @"8.0", @"9.0", @"10.0"];
@@ -56,25 +57,95 @@ static NSString *deviceClassLabel(NSString *key) {
 
 @implementation FilterViewController
 
+// Filter is presented MODALLY in its OWN navigation controller (not the themed ADNavigationController),
+// so its top bar stays stock/light unless we theme it here. Default → stock; dark → dark bar.
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [IOS6Theme applyToNavigationBar:self.navigationController.navigationBar];
+    self.navigationController.navigationBar.barStyle = [IOS6Theme isDark] ? UIBarStyleBlack : UIBarStyleDefault;
+}
+
+// Live theme re-apply (AppDelegate calls this on a theme switch — no restart).
+- (void)applyTheme {
+    self.view.backgroundColor = [IOS6Theme groupedBackgroundColor];
+    self.table.backgroundColor = [IOS6Theme groupedBackgroundColor];
+    if ([IOS6Theme isDark]) self.table.backgroundView = nil;
+    self.table.separatorColor = [IOS6Theme separatorColor];
+    [IOS6Theme applyToNavigationBar:self.navigationController.navigationBar];
+    self.navigationController.navigationBar.barStyle = [IOS6Theme isDark] ? UIBarStyleBlack : UIBarStyleDefault;
+    [self.table reloadData];
+}
+
+// Theme every cell: dark fill + light text, with the "Reset" row kept red (brightened on dark).
+- (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)ipDisplayed {
+    cell.backgroundColor = [IOS6Theme cellColor];
+    cell.detailTextLabel.textColor = [IOS6Theme labelGray];
+    if (kSectionFor(ipDisplayed.section) == SectionReset) {
+        cell.textLabel.textColor = [IOS6Theme isDark]
+            ? [UIColor colorWithRed:0.98 green:0.45 blue:0.45 alpha:1.0]
+            : [UIColor colorWithRed:0.70 green:0.10 blue:0.10 alpha:1.0];
+    } else {
+        cell.textLabel.textColor = [IOS6Theme labelDark];
+    }
+    if ([cell.accessoryView isKindOfClass:[UISwitch class]]) {
+        UISwitch *sw = (UISwitch *)cell.accessoryView;   // stock green on default, accent on dark
+        if ([sw respondsToSelector:@selector(setOnTintColor:)]) sw.onTintColor = [IOS6Theme isDefaultTheme] ? nil : [IOS6Theme accent];
+        if ([sw respondsToSelector:@selector(setTintColor:)]) sw.tintColor = [IOS6Theme isDefaultTheme] ? nil : [IOS6Theme separatorColor];   // iOS 6+ (crashes iOS 5)
+    }
+}
+
+// Section header AND footer: clear the (else black/textured) backdrop + recolour the label.
+- (void)tableView:(UITableView *)tv willDisplayHeaderView:(UIView *)view forSection:(NSInteger)s {
+    [IOS6Theme styleGroupedHeaderFooter:view];
+}
+- (void)tableView:(UITableView *)tv willDisplayFooterView:(UIView *)view forSection:(NSInteger)s {
+    [IOS6Theme styleGroupedHeaderFooter:view];
+}
+
+// iOS 5 never calls the willDisplay hooks above → on iOS 5 we supply our own readable header/footer
+// views (light label on dark themes). iOS 6+ returns nil/automatic → unchanged system look.
+- (UIView *)tableView:(UITableView *)tv viewForHeaderInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return nil;
+    return [IOS6Theme manualGroupedHeaderViewForTitle:[self tableView:tv titleForHeaderInSection:s] width:tv.bounds.size.width];
+}
+- (CGFloat)tableView:(UITableView *)tv heightForHeaderInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return UITableViewAutomaticDimension;
+    return [IOS6Theme manualGroupedHeaderHeightForTitle:[self tableView:tv titleForHeaderInSection:s]];
+}
+- (UIView *)tableView:(UITableView *)tv viewForFooterInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return nil;
+    return [IOS6Theme manualGroupedFooterViewForText:[self tableView:tv titleForFooterInSection:s] width:tv.bounds.size.width];
+}
+- (CGFloat)tableView:(UITableView *)tv heightForFooterInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return UITableViewAutomaticDimension;
+    return [IOS6Theme manualGroupedFooterHeightForText:[self tableView:tv titleForFooterInSection:s] width:tv.bounds.size.width];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = T(@"filter.title");
     if (!self.filter) self.filter = [CatalogFilter load_];
 
+    // v3.0: titled buttons (T()) instead of UIBarButtonSystemItem — system items follow the DEVICE
+    // language, which mismatched the app language (e.g. "Annuler" while the app was in English).
     self.navigationItem.leftBarButtonItem =
-        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel
-                                                       target:self
-                                                       action:@selector(cancelTapped)];
+        [[UIBarButtonItem alloc] initWithTitle:T(@"common.cancel")
+                                         style:UIBarButtonItemStyleBordered
+                                        target:self
+                                        action:@selector(cancelTapped)];
     self.navigationItem.rightBarButtonItem =
-        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
-                                                       target:self
-                                                       action:@selector(doneTapped)];
+        [[UIBarButtonItem alloc] initWithTitle:T(@"common.done")
+                                         style:UIBarButtonItemStyleDone
+                                        target:self
+                                        action:@selector(doneTapped)];
 
     self.table = [[UITableView alloc] initWithFrame:self.view.bounds
                                                 style:UITableViewStyleGrouped];
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.table.backgroundColor = [IOS6Theme groupedBackgroundColor];
+    if ([IOS6Theme isDark]) self.table.backgroundView = nil;   // kill the light iOS-6 grouped backdrop
     [self.view addSubview:self.table];
 }
 

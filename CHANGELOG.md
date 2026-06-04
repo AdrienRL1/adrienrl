@@ -2,6 +2,64 @@
 
 Older release notes are also available on the [GitHub Releases](https://github.com/AdrienRL1/AppDrop/releases) page.
 
+## AppDrop v3.0 — Themes, dark mode, Favorites & folders, and a layout that's finally yours
+
+The biggest visual update yet. Seventeen colour themes with a full dark mode, a home screen you can rearrange like widgets, Favorites and named folders, a "download later" queue, a new (and growing) Modded-apps section, moderated app sharing, pause/resume downloads, and FairPlay detection that warns you *before* a download — plus dozens of fixes across all 8 languages.
+
+### Install / update
+
+Add the source on your jailbroken device (Cydia → **Sources → Edit → Add**):
+
+```
+https://adrienrl1.github.io/cydia/
+```
+
+Then **AdrienRL → AppDrop → Install** (or **Upgrade** if you already have it). Cydia pulls AppSync Unified and IPA Installer Console for you.
+
+> Upgrading from v2.0? Your default look is unchanged until you pick a theme in **Settings → Theme**.
+
+### Make it yours
+
+- **17 themes + full dark mode** — Settings → Theme. The classic iOS 6 **Default (blue)**, plus **7 light colours** (Red, Orange, Green, Teal, Indigo, Purple, Pink) and **9 dark themes** (Dark, Midnight Blue, Indigo, Purple, Pink, Red, Orange, Green, Teal). The whole app retints **instantly, with no restart**.
+- **List or grid — your call, on every device** — both the catalogue and search can be a single-column list or a packed icon grid, on **iPhone *and* iPad**. Pick the exact number of apps per row with a **native iOS-6 wheel picker** (it replaces the old density slider). The home tiles get their own setting too.
+- **Widget-style home** — long-press to enter edit mode, then **drag to reorder** tiles, **resize** them (1×1 / 2×1 / 2×2), pin your favourites to the top, or **Reset** to defaults. Your layout is remembered.
+
+### Organize your apps
+
+- **Favorites** — ⭐ any app from its detail screen. A new **Favorites tab** and a home tile show your starred apps with an icon mosaic.
+- **Named folders** — create your own collections right on the home screen ("+ New folder"), rename or delete them, and add apps by multi-select.
+- **Download later** — save apps to a queue and grab them when you're ready, with a one-tap "Download all".
+
+### More to install
+
+- **Modded apps** — a brand-new section for patched / unlocked / modded builds for legacy iOS. It starts out empty and fills up over time, updating on its own (no app release needed).
+- **Share an app** — contribute an app you have the right to share (your own, homebrew, open-source, freeware, public domain) through a **moderated** upload, straight from a built-in file picker.
+
+### Downloads & installs
+
+- **Pause & resume** — pause a running download and pick it up later (it resumes via HTTP Range), with Pause-all / Resume-all.
+- **FairPlay-aware** — AppDrop now checks whether a build is DRM-encrypted **before** you download it; if so it shows a 🔒 banner and, when you tapped it from the catalogue, **switches to a clean, installable version automatically** when one exists. Encrypted builds are flagged in the Versions list too. (Advanced users with an on-device decryptor can flip "Allow encrypted IPAs" in Settings.)
+- **Stays awake while downloading** — auto-lock no longer interrupts a download or install, and newly installed apps appear on your home screen right away.
+- **HTTP proxy support** — downloads honour a manual Wi-Fi HTTP proxy if you've set one.
+
+### Fixes & polish
+
+- Buttons like **Cancel / Done now follow the app's language**, not the device's (no more "Annuler" in an English app).
+- **"Works Today" on iPhone** shows proper list rows instead of stretched tiles.
+- **iPhone no longer suggests iPad-only apps**, and **iPad on iOS 5.1.1 rotates correctly** now.
+- Interrupted installs are shown honestly as failed instead of a stuck "downloading…", and the install list no longer steals your pause/resume tap.
+- App descriptions no longer scroll sideways on long links, and the whole app (including the update-notes screen) is readable in every theme.
+- All **8 languages** updated for everything above.
+
+### Removed
+
+- The **AI chat / natural-language search** has been removed. The free, no-key LLM it relied on became rate-limited and could no longer work reliably for everyone — so the tab made way for **Favorites**.
+
+### Compatibility
+
+- **iOS 5.0 – 10.x** (armv7 / 32-bit). Tested on iPad 1 (iOS 5.1.1), iPhone 5 (iOS 6.1.4), iPad 4 (iOS 6.1.3), and iPad mini 2 (iOS 10.3.3).
+- iOS 11+ is not supported (Apple dropped 32-bit apps).
+
 ## AppDrop v2.0 — Categories, "Works today", feedback & a self-updating catalog
 
 The biggest AppDrop update yet. A brand-new home screen, a curated list of apps that still work today, an in-app feedback channel, a catalog that keeps itself up to date, an 8th language, and a lot of polish.

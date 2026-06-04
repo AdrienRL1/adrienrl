@@ -16,16 +16,22 @@
 
 - (void)setApps:(NSArray *)apps;
 
-// Shared grid density: how many tiles fit across `w` points. iPhone always 1.
-// On iPad it reads the "IPAInstall.GridDensity" pref (0…1, set by the Settings
-// slider) so Catalogue, Recherche and Catégories stay in sync.
+// How many app tiles fit across `w` points — the chosen column count (IPAInstall.GridColumns,
+// set by the wheel picker in Settings), clamped so tiles never get absurdly small for the width.
+// v3.0: works on BOTH idioms — n==1 means single-column LIST (iPhone default), n≥2 means a
+// packed grid (iPad default). Catalogue + Recherche share it.
 + (NSInteger)tilesPerRowForWidth:(CGFloat)w;
 
-// The current density pref (0…1), clamped. iPad slider value.
-+ (double)gridDensity;
+// The raw chosen column count (IPAInstall.GridColumns), idiom-aware default (iPhone 1 = list,
+// iPad 4 = grid), clamped 1…12. This is what the Settings row + wheel show (before width clamping).
++ (NSInteger)gridColumns;
 
-// Density-aware row height for the iPad tile grid (so tiles shrink in both
-// dimensions). iPhone returns the fixed list row height (76).
+// Density-aware row height for a given table width. Single-column (list) rows are a fixed 76 pt;
+// grid rows scale with the tile size. Prefer this over -gridRowHeight where the live width is known.
++ (CGFloat)gridRowHeightForWidth:(CGFloat)w;
+
+// Convenience: row height using the main-screen (portrait) width. iPad grid height is
+// width-independent, so this stays exact there; iPhone callers should pass the live width.
 + (CGFloat)gridRowHeight;
 
 // Toggle the row's flatten-to-bitmap rasterization. Keep it ON at rest (cheap static

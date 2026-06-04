@@ -42,20 +42,28 @@ static NSString *const kRevivalURL = @"https://adrienrl1.github.io/cydia/revival
 }
 
 - (void)load {
-    NSArray *result = @[];
-    NSData *d = [NSData dataWithContentsOfFile:[self cachePath]];   // downloaded (latest), if any
-    if (!d.length) {
-        NSString *path = [[NSBundle mainBundle] pathForResource:@"revival" ofType:@"json"];
-        d = path.length ? [NSData dataWithContentsOfFile:path] : nil;   // bundled fallback
+    // Parse BOTH the downloaded cache and the bundled fallback, then use whichever has the
+    // higher top-level "version". This stops a STALE downloaded cache (an older hosted file)
+    // from downgrading a newer bundled list — the exact bug where new bundled apps "disappeared"
+    // after a relaunch because refreshFromNetwork had re-cached the old hosted revival.json.
+    // Once the hosted file's version >= the bundled one, the download wins again. Bundled wins ties.
+    NSDictionary *cached = nil, *bundled = nil;
+    NSData *cd = [NSData dataWithContentsOfFile:[self cachePath]];
+    if (cd.length) {
+        id o = [NSJSONSerialization JSONObjectWithData:cd options:0 error:NULL];
+        if ([o isKindOfClass:[NSDictionary class]]) cached = o;
     }
-    if (d.length) {
-        id obj = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
-        if ([obj isKindOfClass:[NSDictionary class]]) {
-            id apps = [(NSDictionary *)obj objectForKey:@"apps"];
-            if ([apps isKindOfClass:[NSArray class]]) result = apps;
-        }
+    NSString *bp = [[NSBundle mainBundle] pathForResource:@"revival" ofType:@"json"];
+    if (bp.length) {
+        NSData *bd = [NSData dataWithContentsOfFile:bp];
+        id o = bd.length ? [NSJSONSerialization JSONObjectWithData:bd options:0 error:NULL] : nil;
+        if ([o isKindOfClass:[NSDictionary class]]) bundled = o;
     }
-    self.apps = result;
+    NSInteger cv = [cached[@"version"] integerValue];
+    NSInteger bv = [bundled[@"version"] integerValue];
+    NSDictionary *chosen = (cached && cv > bv) ? cached : (bundled ?: cached);
+    id apps = chosen[@"apps"];
+    self.apps = [apps isKindOfClass:[NSArray class]] ? apps : @[];
 }
 
 - (NSArray *)allApps { return self.apps ?: @[]; }
@@ -101,15 +109,21 @@ static BOOL RevVersionLTE(NSString *a, NSString *b) {
     for (NSDictionary *e in [self compatibleApps]) {
         if (![e isKindOfClass:[NSDictionary class]]) continue;
         NSString *bid = e[@"bid"] ?: @"";
-        NSString *icon = @"";
-        if (bid.length) {
-            // Reuse the REAL app's catalogue icon (e.g. Discord's, Roblox's).
+        // Explicit icon URL wins (for apps NOT in the 2008-2014 catalogue, e.g. ChatGPT);
+        // otherwise reuse the REAL app's catalogue icon via bid (e.g. Discord's).
+        NSString *icon = [e[@"icon"] isKindOfClass:[NSString class]] ? e[@"icon"] : @"";
+        if (!icon.length && bid.length) {
             NSArray *vers = [[LocalCatalog shared] versionsForBundleId:bid];
             for (NSDictionary *v in vers) {
                 if ([v isKindOfClass:[NSDictionary class]] && [v[@"icon"] length]) { icon = v[@"icon"]; break; }
             }
         }
         NSString *ipa = e[@"ipa"] ?: @"";
+        NSString *link = e[@"link"] ?: @"";
+        // "External" revival entry: no direct .ipa, just a project page (a Cydia tweak, a
+        // companion-server app, etc. that can't be installed by one in-app tap). The detail
+        // screen turns the Install button into "Open project page" for these.
+        BOOL external = (ipa.length == 0 && link.length > 0);
         [out addObject:@{
             @"title":        e[@"name"] ?: @"",
             @"icon":         icon,
@@ -123,6 +137,8 @@ static BOOL RevVersionLTE(NSString *a, NSString *b) {
             @"isRevival":    @YES,
             @"revivalStatus": e[@"status"] ?: @"active",
             @"revivalNotes":  e[@"notes"] ?: @"",
+            @"revivalLink":   link,
+            @"revivalExternal": @(external),
         }];
     }
     return out;

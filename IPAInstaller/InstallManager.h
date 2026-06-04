@@ -26,6 +26,9 @@ extern NSString *const InstallManagerJobSavedNotification;
 // Atomic for memory ordering (BOOL writes are word-aligned so already atomic on ARMv7,
 // but the keyword documents intent and adds a barrier).
 @property (atomic, assign) BOOL cancelRequested;
+// Pause: like cancel, the download loop polls this and aborts — but the partial .ipa + chunks are
+// KEPT (state → "paused") so resumeJob: continues via HTTP Range instead of restarting.
+@property (atomic, assign) BOOL pauseRequested;
 // v1.3.1: set when the .ipa was archived to the download folder (either iOS 10+
 // fallback or the iOS 6-9 "Keep IPA" toggle). Lets observers offer a Filza
 // quick-open without re-deriving the path.
@@ -50,6 +53,16 @@ extern NSString *const InstallManagerJobSavedNotification;
 // Cancel every job that's still active (queued/downloading/installing).
 // Returns the number of jobs that were actually cancelled.
 - (NSInteger)cancelAllActiveJobs;
+
+// Pause a downloading/queued job (keeps the partial → resumable). No-op on installing/terminal jobs.
+- (void)pauseJob:(NSString *)jobId;
+// Resume a paused job (re-queues it; the download continues via HTTP Range).
+- (void)resumeJob:(NSString *)jobId;
+// Pause every paused-able job; resume every paused job. Return how many were affected.
+- (NSInteger)pauseAllActiveJobs;
+- (NSInteger)resumeAllPausedJobs;
+// YES if at least one job is currently paused (for the Install menu's Pause/Resume-all toggle).
+- (BOOL)hasPausedJobs;
 
 // Convenience: YES if at least one job is in a non-terminal state.
 - (BOOL)hasActiveJobs;

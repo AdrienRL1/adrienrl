@@ -7,16 +7,18 @@
 #import "Localization.h"
 #import "UpdateChecker.h"
 #import "UpdateNotesViewController.h"
+#import "ThemePickerViewController.h"
 #import "DeviceInfo.h"
 #import "AppRowCell.h"
+#import "CategoryViewController.h"
+#import "ADNumberPickerSheet.h"
+#import "CollectionStore.h"
 #import "FeedbackViewController.h"
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 extern char **environ;
-
-static inline BOOL kSetIsIPad(void) { return UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad; }
 
 typedef NS_ENUM(NSInteger, SettingsSection) {
     SectionLanguage = 0,
@@ -44,9 +46,10 @@ static NSString * const kPrefParallelStreams = @"IPAInstall.ParallelStreams";
 // ipainstaller is broken there.
 static NSString * const kPrefDownloadFolder = @"IPAInstall.DownloadFolder";
 static NSString * const kPrefKeepIPA        = @"IPAInstall.KeepIPAAfterInstall";
-// v1.4: iPad grid density (0…1) for Catalogue + Recherche tiles. Read by
-// +[AppRowCell tilesPerRowForWidth:]. Higher = more, smaller tiles.
-static NSString * const kPrefGridDensity    = @"IPAInstall.GridDensity";
+static NSString * const kPrefAllowEncrypted = @"IPAInstall.AllowEncrypted";
+// v3.0: the Catalogue/Recherche grid is now configured by a COLUMN COUNT (IPAInstall.GridColumns,
+// set via the native wheel in showGridColumnsPicker), read by +[AppRowCell gridColumns]. The old
+// 0…1 IPAInstall.GridDensity slider pref is retired.
 NSString * const kAppDropGridDensityChangedNotification = @"AppDropGridDensityChanged";
 // SectionLLM removed: chat AI is now Pollinations LLM (no API keys needed).
 
@@ -69,6 +72,55 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
 
 @implementation SettingsViewController
 
+// Live theme re-apply. Reloading also refreshes the "Thème" row's detail (active theme name)
+// and any accent-coloured text, so Settings reflects the new theme immediately.
+- (void)applyTheme {
+    self.view.backgroundColor = [IOS6Theme groupedBackgroundColor];
+    self.table.backgroundColor = [IOS6Theme groupedBackgroundColor];
+    if ([IOS6Theme isDark]) self.table.backgroundView = nil;   // remove the light grouped backdrop
+    self.table.separatorColor = [IOS6Theme separatorColor];
+    [self.table reloadData];
+}
+
+// Theme the cell fill for EVERY row (background only — text colours are set per-row in
+// cellForRow so accent rows keep their colour). Keeps grouped cells dark on dark themes.
+- (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)ip {
+    cell.backgroundColor = [IOS6Theme cellColor];
+    if ([cell.accessoryView isKindOfClass:[UISwitch class]]) {
+        UISwitch *sw = (UISwitch *)cell.accessoryView;   // stock green on default, accent on dark
+        if ([sw respondsToSelector:@selector(setOnTintColor:)]) sw.onTintColor = [IOS6Theme isDefaultTheme] ? nil : [IOS6Theme accent];
+        // -[UISwitch setTintColor:] is iOS 6+ → guard it (it crashed Settings on iPad 1 / iOS 5.1.1).
+        if ([sw respondsToSelector:@selector(setTintColor:)]) sw.tintColor = [IOS6Theme isDefaultTheme] ? nil : [IOS6Theme separatorColor];
+    }
+}
+
+// Section header AND footer: clear the (else black/textured) backdrop + recolour the label.
+- (void)tableView:(UITableView *)tv willDisplayHeaderView:(UIView *)view forSection:(NSInteger)s {
+    [IOS6Theme styleGroupedHeaderFooter:view];
+}
+- (void)tableView:(UITableView *)tv willDisplayFooterView:(UIView *)view forSection:(NSInteger)s {
+    [IOS6Theme styleGroupedHeaderFooter:view];
+}
+
+// iOS 5 never calls the willDisplay hooks above → on iOS 5 we supply our own readable header/footer
+// views (light label on dark themes). iOS 6+ returns nil/automatic → unchanged system look.
+- (UIView *)tableView:(UITableView *)tv viewForHeaderInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return nil;
+    return [IOS6Theme manualGroupedHeaderViewForTitle:[self tableView:tv titleForHeaderInSection:s] width:tv.bounds.size.width];
+}
+- (CGFloat)tableView:(UITableView *)tv heightForHeaderInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return UITableViewAutomaticDimension;
+    return [IOS6Theme manualGroupedHeaderHeightForTitle:[self tableView:tv titleForHeaderInSection:s]];
+}
+- (UIView *)tableView:(UITableView *)tv viewForFooterInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return nil;
+    return [IOS6Theme manualGroupedFooterViewForText:[self tableView:tv titleForFooterInSection:s] width:tv.bounds.size.width];
+}
+- (CGFloat)tableView:(UITableView *)tv heightForFooterInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return UITableViewAutomaticDimension;
+    return [IOS6Theme manualGroupedFooterHeightForText:[self tableView:tv titleForFooterInSection:s] width:tv.bounds.size.width];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = T(@"settings.title");
@@ -84,6 +136,10 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.table.backgroundColor = [IOS6Theme groupedBackgroundColor];
+    // iOS 6 grouped tables draw a light textured backgroundView ON TOP of backgroundColor — kill it
+    // on dark themes so the dark backdrop shows (default keeps its native texture untouched).
+    if ([IOS6Theme isDark]) self.table.backgroundView = nil;
     [self.view addSubview:self.table];
 
     // Live-refresh the Updates section when UpdateChecker reports a new
@@ -121,9 +177,9 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
     if (s == SectionLanguage) return 1;
-    if (s == SectionDisplay) return kSetIsIPad() ? 1 : 0;  // density slider — iPad only
+    if (s == SectionDisplay) return 4;  // theme + catalogue density + home density + Favoris toggle (both idioms)
     if (s == SectionUpdates) return 2;   // installed version + latest release
-    if (s == SectionDownload) return 4;  // simultaneous downloads + parallel streams + folder + keep-ipa
+    if (s == SectionDownload) return 5;  // simultaneous downloads + parallel streams + folder + keep-ipa + allow-encrypted
     if (s == SectionArchive) return 3;   // email + access key + secret key
     if (s == SectionDiag) return 2;
     if (s == SectionCache) return 1;
@@ -135,7 +191,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
     if (s == SectionLanguage) return T(@"settings.language");
-    if (s == SectionDisplay) return kSetIsIPad() ? T(@"settings.section_display") : nil;
+    if (s == SectionDisplay) return T(@"settings.section_display");
     if (s == SectionUpdates) return T(@"settings.section_updates");
     if (s == SectionDownload) return T(@"settings.section_download");
     if (s == SectionArchive) return T(@"settings.section_archive");
@@ -147,7 +203,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    if (s == SectionDisplay) return kSetIsIPad() ? T(@"settings.section_display_footer") : nil;
+    if (s == SectionDisplay) return T(@"settings.section_display_footer");
     if (s == SectionUpdates) return [self updatesSectionFooter];
     if (s == SectionDownload) return T(@"settings.section_download_footer");
     if (s == SectionArchive) return T(@"settings.section_archive_footer");
@@ -171,7 +227,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
         sc.textLabel.textColor = [IOS6Theme primaryBlue];
         sc.detailTextLabel.text = kSupportURL;     // full link, always visible
         sc.detailTextLabel.font = [UIFont systemFontOfSize:13];
-        sc.detailTextLabel.textColor = [UIColor grayColor];
+        sc.detailTextLabel.textColor = [IOS6Theme labelGray];
         sc.detailTextLabel.numberOfLines = 1;
         sc.selectionStyle = UITableViewCellSelectionStyleBlue;
         sc.accessoryType = UITableViewCellAccessoryNone;
@@ -183,6 +239,9 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1
                                       reuseIdentifier:cid];
     }
+    // Default text colours (every call, so reuse resets them) — accent rows override below.
+    cell.textLabel.textColor = [IOS6Theme labelDark];
+    cell.detailTextLabel.textColor = [IOS6Theme labelGray];
     cell.accessoryType = UITableViewCellAccessoryNone;
     cell.accessoryView = nil;       // v1.3.1: clear sticky UISwitch from row reuse
     cell.detailTextLabel.text = nil;
@@ -192,12 +251,12 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     // rows never set a font, so they inherited the cell default (~17 pt) and looked
     // bigger than the 14 pt rows. Branches that want bold/blue override this after.
     cell.textLabel.font = [UIFont systemFontOfSize:14];
-    cell.textLabel.textColor = [UIColor blackColor];
+    cell.textLabel.textColor = [IOS6Theme labelDark];
     cell.textLabel.numberOfLines = 1;
 
     if (ip.section == SectionLanguage) {
         cell.textLabel.text = T(@"settings.language");
-        cell.textLabel.textColor = [UIColor blackColor];
+        cell.textLabel.textColor = [IOS6Theme labelDark];
         cell.textLabel.font = [UIFont systemFontOfSize:14];
         NSString *override = [[NSUserDefaults standardUserDefaults] stringForKey:@"IPAInstall.Language"];
         if (override.length) {
@@ -208,37 +267,41 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
                                           [Localization displayNameForLanguageCode:[Localization currentLanguageCode]]];
         }
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    } else if (ip.section == SectionDisplay && kSetIsIPad()) {
-        // Grid density slider (iPad ONLY — never built on iPhone/iPod). Right = denser
-        // = more (smaller) tiles. Drives
-        // +[AppRowCell tilesPerRowForWidth:] for both Catalogue and Recherche.
+    } else if (ip.section == SectionDisplay && ip.row == 0) {
+        // Theme — opens a scrolling colour picker. "Défaut" keeps the classic blue iOS 6 look;
+        // any colour recolours the whole app live (no restart). Detail shows the active theme.
+        cell.textLabel.text = T(@"settings.theme");
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        cell.detailTextLabel.text = [IOS6Theme displayNameForThemeID:[IOS6Theme currentThemeID]];
+    } else if (ip.section == SectionDisplay && ip.row == 1) {
+        // v3.0: catalogue columns — tap to pick the number of apps per row on a native iOS 6 wheel
+        // (1 = Liste on iPhone). Drives +[AppRowCell tilesPerRowForWidth:] for Catalogue + Recherche.
         cell.textLabel.text = T(@"settings.grid_density");
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        NSInteger c = [AppRowCell gridColumns];
+        cell.detailTextLabel.text = (c <= 1) ? T(@"settings.cols_list")
+                                             : [NSString stringWithFormat:@"%ld", (long)c];
+    } else if (ip.section == SectionDisplay && ip.row == 2) {
+        // v3.0: Accueil tile columns — same native wheel, separate setting. Drives
+        // +[CategoryViewController homeColumnsForWidth:] (apps/folders per row on the Accueil).
+        cell.textLabel.text = T(@"settings.home_grid_density");
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld", (long)[CategoryViewController homeColumns]];
+    } else if (ip.section == SectionDisplay && ip.row == 3) {
+        // v3.0: show/hide the Favoris tile on the Accueil (the Favoris tab in the bottom bar always stays). Default ON.
+        cell.textLabel.text = T(@"settings.show_favorites_home");
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
-        float dens = ([def objectForKey:kPrefGridDensity] != nil)
-            ? [def floatForKey:kPrefGridDensity] : 0.55f;
-        // Accessory = [live count][slider]. The count updates in real time as the
-        // user drags, so they see how many apps per row the setting produces.
-        UIView *acc = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 256, 32)];
-        acc.backgroundColor = [UIColor clearColor];
-        UILabel *cnt = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 42, 32)];
-        cnt.tag = 555;
-        cnt.font = [UIFont boldSystemFontOfSize:16];
-        cnt.textColor = [IOS6Theme primaryBlue];
-        cnt.textAlignment = NSTextAlignmentCenter;
-        cnt.backgroundColor = [UIColor clearColor];
-        cnt.text = [NSString stringWithFormat:@"%ld", (long)[self currentTilesPerRow]];
-        UISlider *sl = [[UISlider alloc] initWithFrame:CGRectMake(46, 1, 210, 30)];
-        sl.minimumValue = 0.0;
-        sl.maximumValue = 1.0;
-        sl.value = dens;
-        [sl addTarget:self action:@selector(gridDensityChanged:)
-            forControlEvents:UIControlEventValueChanged];
-        [acc addSubview:cnt];
-        [acc addSubview:sl];
-        cell.accessoryView = acc;
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        UISwitch *favSw = [[UISwitch alloc] initWithFrame:CGRectZero];
+        favSw.on = ([[NSUserDefaults standardUserDefaults] objectForKey:@"IPAInstall.ShowFavoritesOnHome"] == nil)
+                   ? YES : [[NSUserDefaults standardUserDefaults] boolForKey:@"IPAInstall.ShowFavoritesOnHome"];
+        [favSw addTarget:self action:@selector(favoritesOnHomeToggled:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = favSw;
     } else if (ip.section == SectionUpdates) {
-        cell.textLabel.textColor = [UIColor blackColor];
+        cell.textLabel.textColor = [IOS6Theme labelDark];
         cell.textLabel.font = [UIFont systemFontOfSize:14];
         UpdateChecker *uc = [UpdateChecker shared];
         if (ip.row == 0) {
@@ -279,7 +342,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
     } else if (ip.section == SectionDownload) {
-        cell.textLabel.textColor = [UIColor blackColor];
+        cell.textLabel.textColor = [IOS6Theme labelDark];
         cell.textLabel.font = [UIFont systemFontOfSize:14];
         if (ip.row == 0) {
             // v2.0: max simultaneous app downloads (1–8, default 2).
@@ -305,7 +368,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
             } else {
                 cell.detailTextLabel.text = T(@"settings.download_folder_default");
             }
-        } else {
+        } else if (ip.row == 3) {
             // Keep IPA toggle — UISwitch in the accessoryView. Selection
             // disabled so the row doesn't flash blue on tap (user expects
             // toggling the switch, not the row).
@@ -318,9 +381,22 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
                 forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
             cell.detailTextLabel.text = nil;
+        } else {
+            // row 4 — allow installing FairPlay-encrypted IPAs (advanced). The app normally
+            // blocks them (they won't launch on a different Apple ID); power users with an
+            // on-device decryptor enable this. Default OFF. (Reddit + feedback #47.)
+            cell.textLabel.text = T(@"settings.allow_encrypted");
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            cell.accessoryType = UITableViewCellAccessoryNone;
+            UISwitch *sw2 = [[UISwitch alloc] initWithFrame:CGRectZero];
+            sw2.on = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefAllowEncrypted];
+            [sw2 addTarget:self action:@selector(allowEncryptedToggled:)
+                forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw2;
+            cell.detailTextLabel.text = nil;
         }
     } else if (ip.section == SectionArchive) {
-        cell.textLabel.textColor = [UIColor blackColor];
+        cell.textLabel.textColor = [IOS6Theme labelDark];
         cell.textLabel.font = [UIFont systemFontOfSize:14];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
@@ -411,6 +487,12 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
         [self showLanguagePicker];
         return;
     }
+    if (ip.section == SectionDisplay && ip.row == 0) {
+        [self.navigationController pushViewController:[[ThemePickerViewController alloc] init] animated:YES];
+        return;
+    }
+    if (ip.section == SectionDisplay && ip.row == 1) { [self showGridColumnsPicker]; return; }
+    if (ip.section == SectionDisplay && ip.row == 2) { [self showHomeColumnsPicker]; return; }
     if (ip.section == SectionUpdates) {
         if (ip.row == 1) [self handleUpdatesRowTap];
         return;
@@ -763,23 +845,72 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
-// v1.4: grid density slider (iPad). Persists + notifies Catalogue/Recherche to
-// re-lay-out their tile grids live.
-- (void)gridDensityChanged:(UISlider *)sl {
-    [[NSUserDefaults standardUserDefaults] setFloat:sl.value forKey:kPrefGridDensity];
+// Allow installing FairPlay-encrypted IPAs (Settings → Download). Default OFF.
+- (void)allowEncryptedToggled:(UISwitch *)sw {
+    [[NSUserDefaults standardUserDefaults] setBool:sw.on forKey:kPrefAllowEncrypted];
     [[NSUserDefaults standardUserDefaults] synchronize];
-    // Live update the count label sitting next to the slider.
-    UILabel *cnt = (UILabel *)[sl.superview viewWithTag:555];
-    if (cnt) cnt.text = [NSString stringWithFormat:@"%ld", (long)[self currentTilesPerRow]];
-    [[NSNotificationCenter defaultCenter]
-        postNotificationName:kAppDropGridDensityChangedNotification object:nil];
 }
 
-// Apps-per-row the current density produces at this screen width (for the live label).
-- (NSInteger)currentTilesPerRow {
-    CGFloat w = self.view.bounds.size.width;
-    if (w < 1) w = [UIScreen mainScreen].bounds.size.width;
-    return [AppRowCell tilesPerRowForWidth:w];
+// v3.0: catalogue columns — a native iOS 6 wheel to pick the number of apps per row (1 = Liste on
+// iPhone). Persists IPAInstall.GridColumns + posts the shared notification so Catalogue + Recherche
+// re-lay-out live; the Settings row's value refreshes too.
+- (void)showGridColumnsPicker {
+    BOOL pad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+    NSArray *vals = pad ? @[@2,@3,@4,@5,@6,@7,@8] : @[@1,@2,@3,@4];
+    NSMutableArray *labels = [NSMutableArray array];
+    for (NSNumber *v in vals) {
+        [labels addObject:(v.integerValue <= 1) ? T(@"settings.cols_list")
+                                                : [NSString stringWithFormat:@"%ld", (long)v.integerValue]];
+    }
+    __weak typeof(self) ws = self;
+    [ADNumberPickerSheet presentInView:self.view
+                                 title:T(@"settings.grid_density")
+                                values:vals
+                                labels:labels
+                         selectedValue:[AppRowCell gridColumns]
+                                onPick:^(NSInteger value) {
+        [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"IPAInstall.GridColumns"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [[NSNotificationCenter defaultCenter] postNotificationName:kAppDropGridDensityChangedNotification object:nil];
+        // Update the row's value IN PLACE (not reloadSections:) — rebuilding the cell drops its
+        // dark-theme text colour until willDisplayCell: re-fires on scroll (the "texte illisible" bug).
+        UITableViewCell *c = [ws.table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:SectionDisplay]];
+        if (c) c.detailTextLabel.text = (value <= 1) ? T(@"settings.cols_list")
+                                                     : [NSString stringWithFormat:@"%ld", (long)value];
+    }];
+}
+
+// v3.0: Accueil columns — the same native wheel, picking the number of tiles (apps/folders) per row.
+// Persists IPAInstall.HomeColumns; the same notification makes the Accueil grid relayout live.
+- (void)showHomeColumnsPicker {
+    BOOL pad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+    // iPhone is capped at 3 columns for the Accueil (beyond that the tiles get too small for the
+    // folder name; at 3 the tiles show the name only — see CategoryTileView). iPad goes up to 8.
+    NSArray *vals = pad ? @[@2,@3,@4,@5,@6,@7,@8] : @[@2,@3];
+    NSMutableArray *labels = [NSMutableArray array];
+    for (NSNumber *v in vals) [labels addObject:[NSString stringWithFormat:@"%ld", (long)v.integerValue]];
+    __weak typeof(self) ws = self;
+    [ADNumberPickerSheet presentInView:self.view
+                                 title:T(@"settings.home_grid_density")
+                                values:vals
+                                labels:labels
+                         selectedValue:[CategoryViewController homeColumns]
+                                onPick:^(NSInteger value) {
+        [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"IPAInstall.HomeColumns"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [[NSNotificationCenter defaultCenter] postNotificationName:kAppDropGridDensityChangedNotification object:nil];
+        // In-place value update (see showGridColumnsPicker — avoids the dark-theme reload bug).
+        UITableViewCell *c = [ws.table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:2 inSection:SectionDisplay]];
+        if (c) c.detailTextLabel.text = [NSString stringWithFormat:@"%ld", (long)value];
+    }];
+}
+
+// v3.0: show/hide the Favoris tile on the Accueil (the Favoris tab stays). Default ON. Posts the
+// collection-change notification so the Accueil rebuilds its grid live, with/without the tile.
+- (void)favoritesOnHomeToggled:(UISwitch *)sw {
+    [[NSUserDefaults standardUserDefaults] setBool:sw.on forKey:@"IPAInstall.ShowFavoritesOnHome"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [[NSNotificationCenter defaultCenter] postNotificationName:CollectionStoreDidChangeNotification object:nil];
 }
 
 #pragma mark - Simultaneous-downloads picker (v2.0)

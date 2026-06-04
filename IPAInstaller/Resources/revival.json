@@ -1,19 +1,56 @@
 {
-  "version": 2,
-  "_comment": "Apps qui fonctionnent (ou peuvent fonctionner) aujourd'hui sur vieux iOS — installables DIRECTEMENT (URL .ipa). bid = bundle id d'origine (icône depuis le catalogue + lien croisé). size = octets (affiché avant install). NON GARANTI : projets communautaires qui peuvent casser/fermer. Curé à la main + suggestions via Feedback. (Roblox/Novarin retirés : les anciens clients ne se connectent pas au Roblox officiel.)",
+  "version": 3,
+  "_comment": "Apps qui fonctionnent aujourd'hui sur vieux iOS. RÈGLES (voir mémoire) : (a) créditer le créateur dans 'notes' ; (b) 'link' DOIT s'ouvrir sur le vieux Safari (iOS 5/6) — donc un site simple (ex. bag-xml.com) qui contient le lien vers le bon repo Cydia, JAMAIS github.com (illisible sur old iOS). Types : (1) ipa non vide = install DIRECT in-app (tap) ; le .ipa peut être un fichier GitHub direct (téléchargé par l'app, pas par Safari). (2) ipa vide + link = entrée EXTERNE : bouton « Ouvrir la page du projet ». bid = bundle id d'origine (icône depuis le catalogue). size = octets. NON GARANTI : projets communautaires. Curé à la main + suggestions via Feedback.",
   "apps": [
     {
       "name": "Discord Classic",
       "bid": "com.hammerandchisel.discord",
       "min_ios": "5.0",
-      "version": "0.8.8",
+      "version": "0.9.1",
       "status": "active",
-      "login_works": "partial",
+      "login_works": "yes",
       "needs_server": false,
-      "size": 10961448,
-      "ipa": "https://github.com/TorutheRedFox/iOS-Discord-Classic/releases/download/0.8.8-prerelease-8-fix/Discord.ipa",
-      "link": "https://github.com/TorutheRedFox/iOS-Discord-Classic",
-      "notes": "Client Discord maintenu par la communauté pour iOS 5–6. Lecture et envoi de messages fonctionnent. Peut casser si Discord change son API."
+      "size": 4086254,
+      "ipa": "https://github.com/bag-xml/Discord-Classic/releases/download/v0.9.1-facelift/Discord-v0.9.1-facelift.ipa",
+      "link": "https://bag-xml.com/projects/discord-classic",
+      "notes": "Créé par bag-xml. Client Discord pour iOS 5+ : lecture et envoi de messages fonctionnent. Remplace l'ancienne build 0.8.8. Peut casser si Discord change son API."
+    },
+    {
+      "name": "YouTube — TubeRepair",
+      "bid": "com.google.ios.youtube",
+      "min_ios": "5.0",
+      "version": "",
+      "status": "active",
+      "needs_server": false,
+      "size": 0,
+      "ipa": "",
+      "link": "https://tuberepair.bag-xml.com/",
+      "notes": "Créé par bag-xml. Permet de regarder YouTube sur vieux iOS (tweak Cydia). Ouvre la page (compatible vieux iOS) qui contient le repo Cydia et les instructions."
+    },
+    {
+      "name": "Twitter → Bluesky (BlueTweety)",
+      "bid": "com.atebits.Tweetie2",
+      "min_ios": "6.0",
+      "version": "",
+      "status": "active",
+      "needs_server": true,
+      "size": 0,
+      "ipa": "",
+      "link": "https://bag-xml.com/projects/",
+      "notes": "Créé par bag-xml. Remplace le Twitter d'origine (cassé) par Bluesky sur vieux iOS. Tweak Cydia : ouvre la page bag-xml qui pointe vers le repo Cydia."
+    },
+    {
+      "name": "ChatGPT for Legacy iOS",
+      "bid": "",
+      "icon": "https://adrienrl1.github.io/cydia/revival-icons/chatgpt.png",
+      "min_ios": "5.0",
+      "version": "",
+      "status": "active",
+      "needs_server": false,
+      "size": 0,
+      "ipa": "",
+      "link": "https://bag-xml.com/projects/chatgpt",
+      "notes": "Créé par bag-xml. Client ChatGPT pour iOS 5+ : conversations, analyse et génération d'images. Tweak Cydia : ouvre la page bag-xml qui pointe vers le repo Cydia."
     }
   ]
 }

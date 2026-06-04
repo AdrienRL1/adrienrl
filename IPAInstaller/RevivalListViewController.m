@@ -6,6 +6,9 @@
 #import "AppDetailViewController.h"
 #import "CatalogFilter.h"
 #import "FilterViewController.h"
+#import "CatalogAppCell.h"
+#import "IconLoader.h"
+#import "UploadViewController.h"
 
 // numeric version compare: -1 (a<b), 0 (a==b), 1 (a>b)
 static int RevVerCmp(NSString *a, NSString *b) {
@@ -18,6 +21,16 @@ static int RevVerCmp(NSString *a, NSString *b) {
         if (x != y) return x < y ? -1 : 1;
     }
     return 0;
+}
+
+static const CGFloat kRevIconSize = 44;   // iPhone row icon (matches the catalogue)
+
+static NSString *RevHumanSize(long long bytes) {
+    if (bytes <= 0) return @"?";
+    double b = (double)bytes;
+    if (b >= 1024.0*1024.0) return [NSString stringWithFormat:@"%.1f MB", b/(1024.0*1024.0)];
+    if (b >= 1024.0)        return [NSString stringWithFormat:@"%.0f KB", b/1024.0];
+    return [NSString stringWithFormat:@"%lld B", bytes];
 }
 
 // Same UI as the catalogue: a grid of AppRowCell tiles + the same Filters screen. Tapping a
@@ -37,9 +50,17 @@ static int RevVerCmp(NSString *a, NSString *b) {
     return w > 0 ? w : [UIScreen mainScreen].bounds.size.width;
 }
 
+// Live theme re-apply (AppDelegate calls this on a theme switch — no restart).
+- (void)applyTheme {
+    UIColor *bg = [IOS6Theme contentBackgroundColor] ?: [UIColor whiteColor];
+    self.view.backgroundColor = bg;
+    self.tableView.backgroundColor = bg;
+    [self.tableView reloadData];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = T(@"revival.title");
+    self.title = self.customTitle ?: T(@"revival.title");
     UIColor *bg = [IOS6Theme contentBackgroundColor] ?: [UIColor whiteColor];
     self.view.backgroundColor = bg;
     self.tableView.backgroundColor = bg;
@@ -48,7 +69,7 @@ static int RevVerCmp(NSString *a, NSString *b) {
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
         initWithTitle:T(@"catalog.filters") style:UIBarButtonItemStyleBordered
                target:self action:@selector(filtersTapped)];
-    self.allApps = [[RevivalCatalog shared] appDicts];
+    self.allApps = self.customAppDicts ?: [[RevivalCatalog shared] appDicts];
     self.apps = [self applyFilter:[CatalogFilter load_] to:self.allApps];
     self.tpr = MAX(1, [AppRowCell tilesPerRowForWidth:[self gridWidth]]);
     self.tableView.rowHeight = [AppRowCell gridRowHeight];
@@ -111,7 +132,7 @@ static int RevVerCmp(NSString *a, NSString *b) {
 
 - (void)installHeader {
     CGFloat W = [self gridWidth];
-    NSString *t = T(@"revival.intro");
+    NSString *t = self.customIntro ?: T(@"revival.intro");
     if (self.allApps.count == 0) t = [t stringByAppendingFormat:@"\n\n%@", T(@"revival.empty")];
     UIFont *f = [UIFont systemFontOfSize:13];
     CGSize sz;
@@ -123,22 +144,79 @@ static int RevVerCmp(NSString *a, NSString *b) {
     UILabel *intro = [[UILabel alloc] initWithFrame:CGRectMake(12, 10, W - 24, ceilf(sz.height))];
     intro.numberOfLines = 0;
     intro.font = f;
-    intro.textColor = [UIColor grayColor];
+    intro.textColor = [IOS6Theme labelGray];
     intro.backgroundColor = [UIColor clearColor];
     intro.text = t;
-    UIView *hdr = [[UIView alloc] initWithFrame:CGRectMake(0, 0, W, ceilf(sz.height) + 20)];
+    CGFloat hdrH = ceilf(sz.height) + 20;
+    UIView *hdr = [[UIView alloc] initWithFrame:CGRectMake(0, 0, W, hdrH)];
     [hdr addSubview:intro];
+
+    // Glossy iOS-6 accent button to share an app the user has the right to share (→ upload screen).
+    if (self.uploadTarget.length) {
+        CGFloat by = hdrH, bh = 40;
+        UIButton *share = [UIButton buttonWithType:UIButtonTypeCustom];
+        share.frame = CGRectMake(12, by, W - 24, bh);
+        share.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [share setTitle:T(@"upload.share_button") forState:UIControlStateNormal];
+        share.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+        [IOS6Theme styleButton:share];
+        [share addTarget:self action:@selector(shareTapped) forControlEvents:UIControlEventTouchUpInside];
+        [hdr addSubview:share];
+        hdr.frame = CGRectMake(0, 0, W, by + bh + 12);
+    }
     self.tableView.tableHeaderView = hdr;
+}
+
+- (void)shareTapped {
+    UploadViewController *vc = [[UploadViewController alloc] initWithTarget:self.uploadTarget];
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 #pragma mark - Table
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
+    if (UI_USER_INTERFACE_IDIOM() != UIUserInterfaceIdiomPad) return self.apps.count;  // iPhone: one row per app
     if (self.tpr < 1) self.tpr = 1;
     return (self.apps.count + self.tpr - 1) / self.tpr;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    // ===== iPhone: single-app list row. AppRowCell is an iPad-grid component and renders
+    // wrong stretched full-width on a phone (icon centered over the text — feedback #12/#35);
+    // mirror the catalogue's iPhone row (CatalogAppCell) instead. =====
+    if (UI_USER_INTERFACE_IDIOM() != UIUserInterfaceIdiomPad) {
+        static NSString *cellId = @"revCell";
+        CatalogAppCell *cell = [tv dequeueReusableCellWithIdentifier:cellId];
+        if (!cell) cell = [[CatalogAppCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                reuseIdentifier:cellId];
+        NSDictionary *app = (ip.row < (NSInteger)self.apps.count) ? self.apps[ip.row] : nil;
+        cell.appTitleLabel.text = app[@"title"] ?: @"?";
+        long long size = [app[@"size"] longLongValue];
+        cell.appSubtitleLabel.text = [NSString stringWithFormat:@"v%@ — min iOS %@ — %@",
+                                        app[@"version"] ?: @"?", app[@"minOS"] ?: @"?", RevHumanSize(size)];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+        NSString *iconUrl = app[@"icon"];
+        CGSize sz = CGSizeMake(kRevIconSize, kRevIconSize);
+        UIImage *cached = [[IconLoader shared] cachedImageForURL:iconUrl targetSize:sz];
+        if (cached) {
+            cell.appIconView.image = cached;
+        } else {
+            cell.appIconView.image = nil;
+            NSString *expected = app[@"title"];
+            [[IconLoader shared] loadImageForURL:iconUrl targetSize:sz via:nil completion:^(UIImage *img) {
+                if (!img) return;
+                CatalogAppCell *vis = (CatalogAppCell *)[self.tableView cellForRowAtIndexPath:ip];
+                if (![vis isKindOfClass:[CatalogAppCell class]]) return;
+                if (ip.row >= (NSInteger)self.apps.count) return;
+                if (![self.apps[ip.row][@"title"] isEqual:expected]) return;
+                vis.appIconView.image = img;
+            }];
+        }
+        return cell;
+    }
+
+    // ===== iPad: multi-tile grid row =====
     static NSString *rid = @"revrow";
     AppRowCell *c = [tv dequeueReusableCellWithIdentifier:rid];
     if (!c) c = [[AppRowCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:rid];
@@ -155,6 +233,16 @@ static int RevVerCmp(NSString *a, NSString *b) {
         [slice addObject:self.apps[i]];
     [c setApps:slice];
     return c;
+}
+
+// iPhone taps go through the table row (iPad taps are handled by the tile's onTileTap).
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) return;
+    if (ip.row >= (NSInteger)self.apps.count) return;
+    NSDictionary *app = self.apps[ip.row];
+    AppDetailViewController *d = [[AppDetailViewController alloc] initWithApp:app allowVersionSwitch:NO];
+    [self.navigationController pushViewController:d animated:YES];
 }
 
 @end

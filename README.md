@@ -1,6 +1,6 @@
 # AppDrop
 
-> Browse 43,000+ vintage iOS apps (2008–2014) — every archived version included — and install them on your jailbroken device, with built-in AI search.
+> Browse 43,000+ vintage iOS apps (2008–2014) — every archived version included — and install them on your jailbroken device.
 
 <p align="center">
   <img src="screenshots/appdrop-icon.png" width="120" height="120" alt="AppDrop icon">
@@ -11,7 +11,11 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/screenshot-home.png" width="600" alt="AppDrop home — browse vintage apps by category on iPad">
+  <img src="screenshots/v3-home.png" width="600" alt="AppDrop home — browse vintage apps by category on iPad">
+</p>
+
+<p align="center">
+  <b>📱 Fully optimized for iPad</b> — a true iPad interface (multi-column grids, large tiles, full landscape), <b>not a blown-up iPhone app</b>. Just as native on iPhone.
 </p>
 
 ---
@@ -25,31 +29,30 @@
 
 ## Features
 
-- **43,000+ vintage apps** — browsable **by category** right from the home screen, with every archived version of each app available (≈157k IPA files in total)
+- **43,000+ vintage apps** — browsable **by category** right from the home screen, with every archived version of each app available
+- **Built for iPad — and iPhone** — a real iPad interface with multi-column grids, large tiles and full landscape support (not a stretched-up iPhone app); on iPhone it falls back to a clean, native list or grid
 - **Auto-updating catalog** — downloaded on first launch and refreshed automatically when new apps are added, so you never reinstall the app just for new content
-- **"Works today"** — a section for apps confirmed still running on old iOS, with one-tap install and update detection (one app for now; the category is there to grow over time)
-- **AI search** — describe an app in any language, the LLM finds it for you
+- **"Works Today"** — a section for apps confirmed still running on old iOS (patched, revived, or community-made), with one-tap install and update detection
+- **Modded apps** — a brand-new section for patched / unlocked / modded builds for legacy iOS, starting fresh and growing over time (it updates on its own, no app release needed)
+- **17 themes + full dark mode** — recolour the whole app instantly: 8 light colours and 9 dark variants, applied live with no restart
+- **Your own layout** — switch any grid between **list and icons** and pick how many apps/tiles per row with a native iOS-6 wheel
+- **Widget-style home** — drag to reorder the home tiles, resize them (1×1 / 2×1 / 2×2), pin your favourites on top, or hit Reset to start over
+- **Favorites & folders** — ⭐ star any app, and organise apps into your own named collections right on the home screen
+- **Download later** — queue apps to a "later" list and grab them when you're ready
+- **Share an app** — contribute an app you have the right to share (your own, homebrew, open-source, freeware, public domain) through a moderated upload
 - **Device-aware** — each app shows whether it'll run on *your* device, the catalog hides apps your iOS can't run, and AppDrop auto-picks the newest version you can actually install
+- **FairPlay-aware** — detects DRM-encrypted builds before installing and steers you to a clean, installable version
 - **8 languages** — EN / FR / ES / DE / PT‑BR / JA / ZH‑Hans / TR, auto-detected from your device
 - **Localized app descriptions** — rich descriptions for thousands of apps, in all 8 languages
 - **Multi-select install** — queue up dozens of apps in one batch, with a configurable max of simultaneous downloads (1–8)
-- **Cancellable downloads** — live progress, a "N downloading · M waiting" counter, and active downloads sorted to the top
-- **In-app feedback** — report a bug or an idea (with screenshots) straight from the app
-- **DNS-over-HTTPS fallback** — installs keep working even where your ISP blocks archive.org at the DNS level
+- **Pause, resume & cancel** — pause a running download and pick it back up later, with live progress and a "N downloading · M waiting" counter
+- **DNS-over-HTTPS + HTTP proxy** — installs keep working even where your ISP blocks archive.org at the DNS level, and downloads honour your manual Wi-Fi HTTP proxy if you set one
 - **Skeuomorphic iOS 6 UI** — fits naturally into your jailbroken device
-- **No backend, no account, no tracking** — talks directly to archive.org and pollinations.ai
+- **No backend, no account, no tracking** — talks directly to archive.org
 
 ## Install
 
-> **From v1.5 onwards, AppDrop is distributed exclusively via Cydia.** No more manual IPA transfer, no SSH, no file manager. Cydia handles everything — including the two required dependencies (AppSync Unified, IPA Installer Console).
-
-### ⚠️ Already running AppDrop installed via IPA? Uninstall it first.
-
-If you previously installed AppDrop via the `.ipa` flow (from a v1.4-or-earlier GitHub release), **remove that copy before adding the Cydia source**:
-
-- On your home screen, **long-press the AppDrop icon** until it wiggles → tap the **×** → **Delete**
-
-Why: the IPA install lives at `/var/mobile/Containers/Bundle/Application/<UUID>/IPAInstaller.app/` while the Cydia install lives at `/Applications/IPAInstaller.app/`. If you leave the old one behind, you can end up with two icons or a confused SpringBoard. Your downloaded apps + settings stay in their own container — they're not lost when you delete the bundle.
+> AppDrop is distributed via Cydia. No manual IPA transfer, no SSH, no file manager — Cydia handles everything, including the two required dependencies (AppSync Unified, IPA Installer Console).
 
 ### Add the AppDrop source
 
@@ -72,20 +75,16 @@ Cydia automatically pulls and installs the two prerequisite packages if you don'
 
 When the install finishes, AppDrop appears on your home screen. Tap it and you're done.
 
-### Older versions
-
-The AppDrop repo keeps every past release. From the package page, tap **Modify** → you can pick among **v1.4**, **v1.4-5**, **v1.5**, or the latest revision. Useful if a new release regresses something for your specific device.
-
 ### Updates
 
-AppDrop's in-app updater checks GitHub Releases hourly and, when a new version is out, opens Cydia directly on the package page so you can tap **Upgrade** in one tap. No download flow inside the app.
+AppDrop's in-app updater checks GitHub Releases hourly and, when a new version is out, opens Cydia directly on the package page so you can tap **Upgrade** in one tap.
 
 ### Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Cydia can't resolve **AppSync Unified** | Add Karen's repo: `https://cydia.akemi.ai/`, then refresh. |
-| Icon not visible after install | Reboot the device, or via SSH run `uicache -p /Applications/IPAInstaller.app && killall -9 SpringBoard`. |
+| Cydia can't resolve **AppSync Unified** | Add Karen's official repo `https://cydia.akemi.ai/` (package `ai.akemi.appsyncunified`), then refresh. Use only the official build. |
+| Icon not visible after install | Reboot the device, or via SSH run `uicache -p /Applications/AppDrop.app && killall -9 SpringBoard`. |
 | App crashes on launch | Confirm your iOS is **5.0 or newer** (iOS 11+ is **not** supported). |
 | Dependencies marked as "broken" | Refresh all your sources, then try Install again. |
 
@@ -93,41 +92,53 @@ AppDrop's in-app updater checks GitHub Releases hourly and, when a new version i
 
 ### Browse by category
 
-<img src="screenshots/screenshot-home.png" width="500" alt="Categories home on iPad">
+<img src="screenshots/v3-home.png" width="500" alt="Categories home on iPad">
 
-The home screen sorts 43,000+ vintage apps into categories (Games, Utilities, Entertainment…), with quick rows for **All apps** and **Works Today**. Tap a category to browse it, *Filters* to narrow by iOS version, device, or sort order, and *Select* for multi-pick batch installs.
+The home screen sorts 43,000+ vintage apps into categories (Games, Utilities, Entertainment…), with quick tiles for **All apps**, **Works Today**, **Favorites**, **Download later** and **Modded apps**. Tap a category to browse it, and rearrange or resize the tiles to make the home yours.
 
-### AI search
+### The catalog
 
-<img src="screenshots/screenshot-12.png" width="380" alt="AI chat finding racing games">
+<img src="screenshots/v3-catalog.png" width="500" alt="Catalog grid of app icons on iPad">
 
-Tap the *AI Chat* tab and describe an app in plain language — any of the 8 supported languages works. The LLM identifies vintage titles (Real Racing 3, Asphalt 6, NFS, etc.) and shows them as tappable install cards.
+Every version of every app, with icons, names and sizes. Use *Filters* to narrow by iOS version, device or sort order, and *Select* for multi-pick batch installs. Prefer a tidy list or a dense icon grid? Set it in **Settings → Display**.
 
-### Search
+### App details
 
-<img src="screenshots/screenshot-13.png" width="400" alt="Search tab finding Real Racing 1/2/3">
+<img src="screenshots/v3-detail.png" width="380" alt="App detail screen with compatibility banner and install button">
 
-The **Search** tab lets you find apps by name in real time across all 43,000+ apps (every version included) — debounce is 150 ms so results stream in as you type. Each row shows the version, minimum iOS, file size and the actual `.ipa` filename so you can pick the right mirror. Tap a row to open the detail screen and install.
+Each app shows a localized description, version, size and a green/orange banner telling you whether it runs on *your* device. Install it, save it for ⭐ favorites, queue it for later, or browse **every archived version** from the *Versions* button.
+
+### Works Today
+
+<img src="screenshots/v3-works-today.png" width="500" alt="Works Today — apps that still run on old iOS">
+
+A curated shelf of apps that **still work on today's internet** on old iOS — patched, revived or community-made (YouTube, Twitter → Bluesky, Discord Classic, …). One tap installs them, and AppDrop tells you when a newer build is out.
 
 ### Filters
 
-<img src="screenshots/screenshot-14.png" width="380" alt="Filters screen">
+<img src="screenshots/v3-filters.png" width="380" alt="Filters screen">
 
 Narrow the catalog by minimum / maximum iOS version, device class (iPhone, iPad, both), uniqueness (one row per bundle ID), and sort order. Tap a sort row again to flip ascending / descending.
 
-### Feedback
+### Make it yours — 17 themes & adjustable layout
 
-<img src="screenshots/screenshot-15.png" width="380" alt="In-app feedback form">
+<p>
+  <img src="screenshots/v3-themes.png" width="300" alt="Theme picker — 8 light colours + 9 dark themes">
+  <img src="screenshots/v3-density-wheel.png" width="300" alt="Native wheel to pick apps per row">
+</p>
 
-Hit a bug or have an idea? The **Feedback** button (top-left on the home screen) opens a simple form — type your message, optionally attach a few screenshots, and tap **Send**. It posts straight to the project's GitHub issues, no account needed.
+Pick from **8 light colours** or **9 dark themes** — the whole app retints instantly, no restart. Then dial in your layout: list vs grid, and how many apps or home tiles per row, via a native iOS-6 picker wheel.
+
+<p>
+  <img src="screenshots/v3-home-dark.png" width="300" alt="Home screen in dark mode">
+  <img src="screenshots/v3-home-teal.png" width="300" alt="Home screen in a teal light theme">
+</p>
 
 ## How it works
 
 ```
 Catalog metadata          : stuffed18.github.io/ipa-archive-updated
    ↓ pre-built SQLite (catalog.db.gz) downloaded on first launch, auto-refreshed
-AI search                 : text.pollinations.ai (anonymous, no key)
-   ↓ returns app titles + keywords
 IPA download              : http://archive.org/download/X/Y.ipa
    ↓ archive.org → CDN redirect → mbedTLS-bundled HTTPS
 Local install             : /usr/bin/ipainstaller path/to/Y.ipa
@@ -135,7 +146,7 @@ Local install             : /usr/bin/ipainstaller path/to/Y.ipa
 App on home screen ✓
 ```
 
-AppDrop downgrades archive.org requests from `https://` to `http://` to bypass Fastly's JA3-fingerprint blocking on old TLS clients. The CDN node then redirects to HTTPS, and the bundled mbedTLS handles the Let's Encrypt handshake on iOS 6 where the system TLS stack is too old.
+AppDrop downgrades archive.org requests from `https://` to `http://` to bypass Fastly's JA3-fingerprint blocking on old TLS clients. The CDN node then redirects to HTTPS, and the bundled mbedTLS handles the Let's Encrypt handshake on iOS 5-6 where the system TLS stack is too old.
 
 ## Build from source
 
@@ -149,20 +160,18 @@ export THEOS=$HOME/theos
 # One-time: build mbedTLS for armv7 (or use the prebuilt libs in deps/build/)
 cd deps && bash build-mbedtls-ios.sh && cd ..
 
-# Build the .ipa and deploy directly to a jailbroken device via SSH
-IPAD_IP=192.168.x.x bash build-install.sh
+# Build the .deb and deploy directly to a jailbroken device via SSH
+gmake package FINALPACKAGE=1
 ```
-
-The build script needs `sshpass` (Homebrew: `brew install hudochenkov/sshpass/sshpass`) and SSH access (root / alpine by default) to a jailbroken iOS 6+ device.
 
 ## Architecture
 
 | Layer | Technology |
 |---|---|
 | UI | Objective-C, UIKit, custom `drawRect:` skeuomorphic widgets |
-| Networking | Bundled mbedTLS (TLS 1.2) on raw sockets — iOS 6 system TLS can't handshake modern servers |
+| Networking | Bundled mbedTLS (TLS 1.2) on raw sockets — iOS 5-6 system TLS can't handshake modern servers |
 | Catalog DB | SQLite (system `libsqlite3`) |
-| AI | Pollinations.ai (GPT-OSS 20B) with a vintage-iOS expert system prompt |
+| Theming | Live palette engine with notification-based retint |
 | Install | `posix_spawn` → `/usr/bin/ipainstaller` |
 | i18n | NSBundle `.lproj` × 8 langs |
 | Build | Theos (clang armv7) |
@@ -173,14 +182,13 @@ AppDrop runs no analytics, has no account system, sends no telemetry. See [PRIVA
 
 ## License
 
-[MIT License](LICENSE) — use it, modify it, fork it.
+[MIT License](LICENSE)
 
 ## Credits
 
 - **stuffed18** — public IPA catalog metadata at [github.com/stuffed18/ipa-archive-updated](https://github.com/stuffed18/ipa-archive-updated)
 - **archive.org** — hosting the actual IPA files
-- **Pollinations.ai** — free anonymous LLM endpoint
-- **mbedTLS** — Apache-2.0 TLS library that made HTTPS work on iOS 6
+- **mbedTLS** — Apache-2.0 TLS library that made HTTPS work on iOS 5-6
 - **autopear** — `ipainstaller`, the helper AppDrop delegates to
 - **Yusubera** (Reddit) — Turkish translation
 

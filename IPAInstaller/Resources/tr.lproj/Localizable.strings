@@ -25,6 +25,7 @@
 "catalog.end" = " — son";
 "catalog.select" = "Seç";
 "catalog.install_n" = "Yükle (%lu)";
+"select.count" = "%lu seçildi";
 "catalog.install_started_n" = "%lu yükleme başlatıldı";
 
 /* ===== AI Chat screen ===== */
@@ -73,8 +74,33 @@
 "settings.about_device_ios" = "Cihaz iOS";
 "settings.about_device_model" = "Cihaz Modeli";
 "settings.section_display" = "Ekran";
+"settings.hide_ai_tab" = "Yapay zeka sekmesini gizle";
+"settings.theme" = "Tema";
+"theme.default" = "Varsayılan (mavi)";
+"theme.dark_gray" = "Koyu";
+"theme.dark_blue" = "Gece Mavisi";
+"theme.section_light" = "Açık";
+"theme.section_dark" = "Koyu mod";
+"theme.graphite" = "Grafit";
+"theme.noir" = "Siyah";
+"theme.slate" = "Arduvaz";
+"theme.indigo" = "Çivit";
+"theme.purple" = "Mor";
+"theme.pink" = "Pembe";
+"theme.red" = "Kırmızı";
+"theme.orange" = "Turuncu";
+"theme.green" = "Yeşil";
+"theme.teal" = "Turkuaz";
+"theme.header" = "Tema rengi";
+"theme.footer" = "Tüm uygulamada anında uygulanır. “Varsayılan” klasik mavi iOS 6 görünümünü korur.";
+"settings.theme_default" = "Varsayılan (mavi)";
+"settings.theme_graphite" = "Grafit";
+"settings.theme_apply_msg" = "Tema, AppDrop'u bir sonraki açışınızda uygulanır.";
 "settings.grid_density" = "Satır başına uygulama";
-"settings.section_display_footer" = "Katalog ve aramada satır başına daha fazla veya daha az uygulama göstermek için kaydırın.";
+"settings.home_grid_density" = "Satır başına ana ekran kutusu";
+"settings.cols_list" = "Liste";
+"settings.show_favorites_home" = "Ana ekranda Favoriler";
+"settings.section_display_footer" = "Her ızgarada satır başına kutu sayısını ayarlar.";
 "settings.about_chip" = "CPU";
 "settings.about_ram" = "RAM";
 "settings.language" = "Dil";
@@ -84,6 +110,7 @@
 "common.ok" = "Tamam";
 "common.cancel" = "İptal";
 
+"common.done" = "Tamam";
 /* ===== Catalog filter ===== */
 "filter.title" = "Filtreler";
 "filter.all_versions" = "Tüm iOS sürümleri";
@@ -98,6 +125,8 @@
 
 /* ===== Install screen actions (v1.8.7) ===== */
 "install.cancel_all" = "Tümünü iptal et";
+"install.pause_all" = "Tümünü duraklat";
+"install.resume_all" = "Tümünü sürdür";
 "install.empty" = "Henüz başlatılan bir yükleme yok";
 "install.cancelled_title" = "İptal Edildi";
 "install.cancelled_msg" = "%ld indirme iptal edildi.";
@@ -122,7 +151,9 @@
 "install.state.installing" = "Yerel olarak yükleniyor...";
 "install.state.installed_prefix" = "Yüklendi: %@";
 "install.state.cancelling" = "İptal ediliyor...";
+"install.state.paused" = "Duraklatıldı";
 "install.state.cancelled_user" = "Kullanıcı tarafından iptal edildi";
+"install.state.interrupted" = "Kesintiye uğradı (uygulama kapatıldı) — yeniden indirip dene.";
 
 /* ===== Install errors (v1.8.7) ===== */
 "install.error.failed_prefix" = "Başarısız: %@";
@@ -151,6 +182,7 @@
 "app.info_bundle_id" = "Bundle ID";
 "app.info_version" = "Sürüm";
 "app.info_min_ios" = "Min iOS";
+"app.info_project" = "Proje sayfası";
 "app.info_platform" = "Platform";
 "app.info_size" = "Boyut";
 "app.info_file" = "Dosya";
@@ -194,8 +226,9 @@
 "onboarding.ipainstaller_msg" = "IPA dosyalarını yüklemek için Cydia'dan « IPA Installer Console » paketine ihtiyacınız vardır (arama kısmına: appinst veya ipainstaller yazın). Bu paket olmadan hiçbir uygulama yerel olarak yüklenemez. Bu paketi yüklediniz mi?";
 "onboarding.ipainstaller_continue" = "Evet, devam et";
 "onboarding.ipainstaller_cancel" = "Henüz değil";
-"onboarding.catalog_quality_title" = "Katalog hakkında";
-"onboarding.catalog_quality_msg" = "Ana kaynak katalogdaki uygulamaların küçük bir kısmının başlığı veya simgesi hatalıdır — bu durum bizim kontrolümüz dışındadır (stuffed18.github.io sitesindeki bir veri sorunudur, uygulamadan kaynaklı değildir). Her uygulamanın altında gösterilen .ipa dosya adı, aslında yüklenecek olan şeydir. Lütfen yüklemeden önce uygulamanın istediğiniz uygulama olup olmadığını iki kez kontrol edin.";
+"onboarding.catalog_quality_title" = "Bir uygulama yüklemeden önce";
+"onboarding.catalog_quality_msg" = "Uygulama listesi herkese açık bir kaynaktan geldiği için bazı uygulamaların adı veya simgesi tam olarak eşleşmeyebilir. Yüklemeden önce, doğru uygulama olduğundan emin olmak için uygulamanın altında görünen dosya adını kontrol edin.";
+"onboarding.dont_show_again" = "Bir daha gösterme";
 "common.understood" = "Anladım";
 "filter.footer.sort" = "Artan / azalan sıralama arasında geçiş yapmak için seçili seçeneğe tekrar dokunun.";
 
@@ -257,12 +290,13 @@
 "settings.archive_save" = "Kaydet";
 
 /* ===== v1.3.1 — Configurable download folder + keep-IPA toggle + Filza launch ===== */
-"settings.section_download_footer" = "Paralel bağlantılar: archive.org için en ideal nokta 4'tür. Kaydetme klasörü: arşivlenen .ipa dosyalarının indirileceği yerdir. IPA'yı Koru: Yüklemeden sonra bir kopyasını arşivler (iOS 6-9 için geçerlidir; iOS 10 ve üzeri otomatik olarak kaydeder).";
+"settings.section_download_footer" = "Paralel bağlantılar: archive.org için en ideal nokta 4'tür. Kaydetme klasörü: arşivlenen .ipa dosyalarının indirileceği yerdir. IPA'yı Koru: Yüklemeden sonra bir kopyasını arşivler (iOS 5-9 için geçerlidir; iOS 10 ve üzeri otomatik olarak kaydeder).";
 "settings.download_folder" = "Kaydetme klasörü";
 "settings.download_folder_default" = "Varsayılan (sandbox)";
 "settings.download_folder_custom" = "Özel yol…";
 "settings.download_folder_custom_msg" = "Mutlak bir yol girin, örn: /var/mobile/Documents/AppDrop. Varsayılana dönmek için boş bırakın. Klasör ilk kaydetme işleminde oluşturulur.";
 "settings.keep_ipa" = "Yüklemeden sonra IPA'yı koru";
+"settings.allow_encrypted" = "Şifreli IPA'lara izin ver (gelişmiş)";
 "install.saved_at_suffix" = "%@ adresine kaydedildi";
 "install.saved_alert_title" = "IPA kaydedildi";
 "install.saved_alert_msg" = "Şuraya kaydedildi:\n%@\n\nYüklemek için dosyayı Filza ile açın. Eğer Filza bir imza hatası (0xe800B001) verirse, Cydia'dan “appinst” paketini yükleyin ve tekrar deneyin.";
@@ -362,10 +396,13 @@
 
 /* ===== Revival / Works today (issue #4) ===== */
 "categories.revival" = "Bugün çalışıyor";
-"categories.revival_sub" = "Hâlâ çalışan yamalı ve canlandırılmış uygulamalar";
+"categories.revival_sub" = "Eski iOS'ta hâlâ çalışan uygulamalar";
+"categories.modded" = "Modlu uygulamalar";
+"categories.modded_sub" = "Değiştirilmiş uygulama ve oyunlar";
+"modded.intro" = "Eski iOS için değiştirilmiş uygulama ve oyunlar.";
 "revival.title" = "Bugün Çalışanlar";
-"revival.intro" = "Eski iOS'ta bugün gerçekten çalışan uygulamalar — yamalı, canlandırılmış veya topluluk yapımı. Geri Bildirim'den öner.";
-"revival.empty" = "Cihazın için henüz bir şey yok — Geri Bildirim'den çalışan bir uygulama öner!";
+"revival.intro" = "Bugün eski iOS'ta gerçekten çalışan uygulamalar — yamalı, canlandırılmış veya topluluk yapımı.";
+"revival.empty" = "Cihazın için henüz bir şey yok.";
 "revival.install" = "Yükle";
 "revival.open" = "Aç";
 "revival.install_started" = "Yükleme başladı — Yükle sekmesine bakın.";
@@ -374,3 +411,98 @@
 "revival.beta" = "Beta";
 "revival.discontinued" = "Bırakıldı";
 "revival.update" = "v%@ sürümüne güncelle";
+"revival.open_page" = "Proje sayfasını aç";
+
+/* ── Koleksiyonlar / Favoriler (Phase 1) ── */
+"collections.favorites" = "Favoriler";
+"collections.section" = "Favoriler ve Klasörler";
+"categories.section" = "Kategoriler";
+"collections.empty" = "Henüz favori yok. Eklemek için bir uygulamanın sayfasındaki ☆ simgesine dokun.";
+"collections.select" = "Seç";
+"collections.select_all" = "Tümünü seç";
+"collections.select_none" = "Tüm seçimi kaldır";
+"collections.remove" = "Kaldır";
+"collections.download_n" = "İndir (%ld)";
+"collections.image" = "Görsel";
+"collections.image_title" = "Önizleme görseli";
+"collections.image_pick" = "Görsel olarak bir uygulama seç…";
+"collections.image_auto" = "Otomatik görsel (dönen)";
+"collections.image_hint" = "Görsel olarak sabitlemek için bir uygulamaya dokun";
+"collections.image_pinned_title" = "Görsel sabitlendi";
+"collections.image_pinned_msg" = "Bu uygulama her zaman koleksiyonun görseli olarak gösterilecek.";
+"collections.dl_started_title" = "İndirmeler başladı";
+"collections.dl_started_msg" = "%ld indirme başlatıldı.";
+
+/* ── Ana ekran: düzeni sıfırla (5c) ── */
+"home.reset" = "Sıfırla";
+"home.reset_title" = "Düzeni sıfırla?";
+"home.reset_msg" = "Ana ekranı otomatik düzene döndür (varsayılan sıra, sabitlenenler ve boyutlar).";
+
+/* ── Sonra indir (Phase 2) ── */
+"collections.later" = "Sonra indir";
+"collections.download_all" = "Tümünü indir";
+"later.added" = "\"Sonra indir\"e eklendi.";
+"later.removed" = "\"Sonra indir\"den kaldırıldı.";
+
+/* ── Çoklu seçim (Phase 3) ── */
+"later.short" = "Sonra";
+"select.added_fav" = "%lu öğe Favorilere eklendi";
+"select.added_later" = "%lu öğe \"Sonra indir\"e eklendi";
+
+/* ── Klasörler (Phase 4) ── */
+"folder.short" = "Klasör";
+"folder.add_title" = "Bir klasöre ekle";
+"folder.new" = "Yeni klasör";
+"folder.create" = "Oluştur";
+"folder.edit" = "Düzenle";
+"folder.rename" = "Yeniden adlandır";
+"folder.delete" = "Klasörü sil";
+"folder.delete_title" = "Klasör silinsin mi?";
+"folder.delete_title_named" = "\"%@\" silinsin mi?";
+"folder.delete_msg" = "Klasör silinecek. Zaten yüklü uygulamalar kaldırılmaz.";
+"select.added_folder" = "%lu öğe klasöre eklendi";
+
+
+/* v3.0 — Şifreli sürüm (FairPlay) uyarısı + şifresiz sürüm önerisi */
+"app.encrypted_warning" = "Bu sürüm şifreli (FairPlay) — kurulmaz: orijinal Apple kimliğine bağlı.";
+"app.encrypted_use_version" = "Şifresiz sürüm: %@ — açmak için dokun";
+
+/* v3.0 — badge version chiffrée (liste des versions) */
+"versions.encrypted" = "Şifreli — kurulmaz";
+
+/* v3.0 — chiffré : aucune alternative + ouverture auto de la version non chiffrée */
+"app.encrypted_none" = "Bu sürüm şifreli ve şifresiz bir sürüm yok.";
+
+/* v3.0 — Bir uygulama paylaş (denetlenen yükleme) */
+"upload.title" = "Bir uygulama paylaş";
+"upload.send" = "Gönder";
+"upload.share_button" = "＋ Bir uygulama paylaş";
+"upload.pick_title" = ".ipa seç";
+"upload.pick_shortcuts" = "Konumlar";
+"upload.pick_folders" = "Klasörler";
+"upload.pick_files" = ".ipa dosyaları";
+"upload.pick_empty" = "Burada .ipa yok.";
+"upload.pick_button" = ".ipa dosyası";
+"upload.pick_none" = "Dosya seçilmedi";
+"upload.section_file" = "Dosya";
+"upload.section_category" = "Kategori";
+"upload.section_details" = "Ayrıntılar";
+"upload.section_rights" = "Haklar";
+"upload.intro" = "Paylaşma hakkına sahip olduğun bir uygulamayı paylaş: kendi uygulaman, homebrew, açık kaynak, freeware, kamu malı.";
+"upload.legal" = "Göndererek bu uygulamayı paylaşma hakkına sahip olduğunu onaylarsın. Her gönderim yayımlanmadan önce denetlenir ve kaldırılabilir.";
+"upload.attest" = "Bu uygulamayı paylaşma hakkına sahip olduğumu onaylıyorum";
+"upload.name_ph" = "Uygulama adı";
+"upload.desc_ph" = "Açıklama (ne olduğu, neyin değiştiği…)";
+"upload.minios_ph" = "En düşük iOS (örn. 5.0)";
+"upload.version_ph" = "Sürüm (örn. 1.2)";
+"upload.mod_ph" = "Neyin değiştirildiği (varsa)";
+"upload.bid_ph" = "Paket kimliği (isteğe bağlı)";
+"upload.credit_ph" = "Adın / takma adın (isteğe bağlı)";
+"upload.sent_title" = "Teşekkürler!";
+"upload.sent" = "Uygulaman denetime gönderildi. Katkın için teşekkürler!";
+"upload.err_nofile" = "Önce bir .ipa dosyası seç.";
+"upload.err_noname" = "Uygulamaya bir ad ver.";
+"upload.err_attest" = "Bu uygulamayı paylaşma hakkına sahip olduğunu onaylamalısın.";
+"upload.err_toobig" = "Dosya çok büyük (en fazla %d MB).";
+"upload.err_read" = "Dosya okunamadı.";
+"upload.err_send" = "Gönderme başarısız";

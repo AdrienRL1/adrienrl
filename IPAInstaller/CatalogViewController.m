@@ -1,6 +1,8 @@
 #import "CatalogViewController.h"
 #import "Localization.h"
 #import "InstallManager.h"
+#import "CollectionStore.h"
+#import "FolderPicker.h"
 #import "CatalogFilter.h"
 #import "FilterViewController.h"
 #import "AppDetailViewController.h"
@@ -17,9 +19,8 @@ static const CGFloat kSelectionToolbarHeight = 44;
 // alert only ever shows once, not twice (once per surface).
 static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.shown";
 
-static inline BOOL kIsIPad(void) {
-    return UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad;
-}
+// v3.0: list vs grid is no longer an idiom check — it's driven by the density setting via
+// -[self useGrid] / +[AppRowCell tilesPerRowForWidth:]. (The old kIsIPad() helper is gone.)
 
 @interface CatalogViewController () <FilterViewControllerDelegate, UIAlertViewDelegate>
 @property (nonatomic, strong) UITableView *tableView;
@@ -41,9 +42,13 @@ static inline BOOL kIsIPad(void) {
 // This is what makes selection robust across far scrolling: the cells are
 // recycled but our backing store is independent.
 @property (nonatomic, assign) BOOL selectionMode;
+@property (nonatomic, copy)   NSString *savedTitle;   // restored when leaving selection mode
 @property (nonatomic, strong) NSMutableDictionary *selectedAppsByPk;
 @property (nonatomic, strong) UIToolbar *selectionToolbar;
 @property (nonatomic, strong) UIBarButtonItem *installSelectionItem;
+@property (nonatomic, strong) UIBarButtonItem *favSelectionItem;
+@property (nonatomic, strong) UIBarButtonItem *laterSelectionItem;
+@property (nonatomic, strong) UIBarButtonItem *dossierSelectionItem;
 
 // Pending batch when waiting for onboarding alert dismissal (so the user only
 // sees the alert once, not once per app, when bulk-installing).
@@ -56,6 +61,35 @@ static inline BOOL kIsIPad(void) {
 @implementation CatalogViewController
 
 #pragma mark - Lifecycle
+
+// Live theme re-apply (called by AppDelegate when the user switches theme — no restart).
+- (void)applyTheme {
+    self.view.backgroundColor = [IOS6Theme contentBackgroundColor];
+    self.tableView.backgroundColor = [IOS6Theme contentBackgroundColor];
+    self.tableView.separatorColor = [IOS6Theme separatorColor];
+    self.statusLabel.textColor = [IOS6Theme labelGray];        // loading / empty-state: refresh on live switch
+    self.statusLabel.backgroundColor = [UIColor clearColor];
+    [self themeSelectionToolbar];
+    [self.tableView reloadData];
+}
+
+// The bottom multi-select toolbar must follow the theme (it stayed light in dark mode). Same rule as
+// the themed nav bar: stock for default, dark/colour bar + light button tint otherwise.
+- (void)themeSelectionToolbar {
+    UIToolbar *tb = self.selectionToolbar;
+    if (!tb) return;
+    BOOL canBg = [tb respondsToSelector:@selector(setBackgroundImage:forToolbarPosition:barMetrics:)];
+    if ([IOS6Theme isDefaultTheme]) {
+        tb.barStyle = UIBarStyleDefault;
+        tb.tintColor = nil;
+        if (canBg) [tb setBackgroundImage:nil forToolbarPosition:UIToolbarPositionAny barMetrics:UIBarMetricsDefault];
+    } else {
+        tb.barStyle = UIBarStyleBlack;
+        tb.tintColor = [IOS6Theme navBarButtonTint];
+        UIImage *bg = [IOS6Theme navBarBackground];
+        if (bg && canBg) [tb setBackgroundImage:bg forToolbarPosition:UIToolbarPositionAny barMetrics:UIBarMetricsDefault];
+    }
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -88,10 +122,10 @@ static inline BOOL kIsIPad(void) {
     self.tableView.dataSource = self;
     self.tableView.delegate = self;
     self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    // iPhone: 76 — 2-line subtitle (meta + filename).
-    self.tableView.rowHeight = [AppRowCell gridRowHeight];
-    self.tableView.separatorStyle = kIsIPad() ? UITableViewCellSeparatorStyleNone
-                                              : UITableViewCellSeparatorStyleSingleLine;
+    // Row height + separators follow the density setting (list = 76 pt with separators, grid = none).
+    self.tableView.rowHeight = [AppRowCell gridRowHeightForWidth:self.tableView.bounds.size.width];
+    self.tableView.separatorStyle = [self useGrid] ? UITableViewCellSeparatorStyleNone
+                                                   : UITableViewCellSeparatorStyleSingleLine;
     self.tableView.backgroundColor = [IOS6Theme contentBackgroundColor];
     [self.view addSubview:self.tableView];
 
@@ -101,7 +135,8 @@ static inline BOOL kIsIPad(void) {
 
     self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, w, 36)];
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
-    self.statusLabel.textColor = [UIColor grayColor];
+    self.statusLabel.textColor = [IOS6Theme labelGray];
+    self.statusLabel.backgroundColor = [UIColor clearColor];   // iOS 6 table footers default to white
     self.statusLabel.font = [UIFont systemFontOfSize:12];
     self.tableView.tableFooterView = self.statusLabel;
 
@@ -113,14 +148,22 @@ static inline BOOL kIsIPad(void) {
     self.selectionToolbar.autoresizingMask = UIViewAutoresizingFlexibleWidth
                                            | UIViewAutoresizingFlexibleTopMargin;
     self.selectionToolbar.hidden = YES;
+    self.favSelectionItem = [[UIBarButtonItem alloc] initWithTitle:T(@"collections.favorites")
+        style:UIBarButtonItemStyleBordered target:self action:@selector(addSelectedToFavorites)];
+    self.laterSelectionItem = [[UIBarButtonItem alloc] initWithTitle:T(@"later.short")
+        style:UIBarButtonItemStyleBordered target:self action:@selector(addSelectedToLater)];
+    self.dossierSelectionItem = [[UIBarButtonItem alloc] initWithTitle:T(@"folder.short")
+        style:UIBarButtonItemStyleBordered target:self action:@selector(addSelectedToFolder)];
     self.installSelectionItem = [[UIBarButtonItem alloc]
         initWithTitle:[NSString stringWithFormat:T(@"catalog.install_n"), 0UL]
                 style:UIBarButtonItemStyleDone
                target:self action:@selector(installSelectedTapped)];
     UIBarButtonItem *flex = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
-                             target:nil action:nil];
-    self.selectionToolbar.items = @[flex, self.installSelectionItem, flex];
+        initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    // [Favoris] [Plus tard] [Dossier]  ⎵  [Installer (N)]
+    self.selectionToolbar.items = @[self.favSelectionItem, self.laterSelectionItem,
+                                    self.dossierSelectionItem, flex, self.installSelectionItem];
+    [self themeSelectionToolbar];
     [self.view addSubview:self.selectionToolbar];
 }
 
@@ -129,7 +172,7 @@ static inline BOOL kIsIPad(void) {
         // In selection mode: Cancel (left) + Done (right). No Filters/Refresh —
         // would be confusing because changing filters discards the selection.
         UIBarButtonItem *doneBtn = [[UIBarButtonItem alloc]
-            initWithBarButtonSystemItem:UIBarButtonSystemItemDone
+            initWithTitle:T(@"common.done") style:UIBarButtonItemStyleDone
                                  target:self action:@selector(exitSelectionMode)];
         self.navigationItem.rightBarButtonItems = @[doneBtn];
     } else {
@@ -303,6 +346,7 @@ static inline BOOL kIsIPad(void) {
 
 - (void)enterSelectionMode {
     self.selectionMode = YES;
+    self.savedTitle = self.navigationItem.title;   // restore it on exit
     [self refreshNavBar];
     [self updateSelectionToolbar];
     [self.tableView reloadData];
@@ -311,6 +355,7 @@ static inline BOOL kIsIPad(void) {
 - (void)exitSelectionMode {
     self.selectionMode = NO;
     [self.selectedAppsByPk removeAllObjects];
+    self.navigationItem.title = self.savedTitle;
     [self refreshNavBar];
     [self updateSelectionToolbar];
     [self.tableView reloadData];
@@ -331,9 +376,15 @@ static inline BOOL kIsIPad(void) {
 
 - (void)updateSelectionToolbar {
     NSUInteger n = self.selectedAppsByPk.count;
+    // Persistent count, always visible at the top while selecting.
+    if (self.selectionMode)
+        self.navigationItem.title = [NSString stringWithFormat:T(@"select.count"), (unsigned long)n];
     self.installSelectionItem.title = [NSString stringWithFormat:T(@"catalog.install_n"),
                                          (unsigned long)n];
     self.installSelectionItem.enabled = (n > 0);
+    self.favSelectionItem.enabled = (n > 0);
+    self.laterSelectionItem.enabled = (n > 0);
+    self.dossierSelectionItem.enabled = (n > 0);
     BOOL shouldShow = self.selectionMode;
     if (shouldShow == !self.selectionToolbar.hidden) {
         // Already in correct state — just refresh content insets if needed.
@@ -380,6 +431,34 @@ static inline BOOL kIsIPad(void) {
     if (self.selectionMode) [self exitSelectionMode];
 }
 
+- (void)addSelectedToFavorites {
+    NSArray *batch = [self.selectedAppsByPk.allValues copy];
+    if (!batch.count) return;
+    for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:CollectionFavoritesId];
+    self.statusLabel.text = [NSString stringWithFormat:T(@"select.added_fav"), (unsigned long)batch.count];
+    [self exitSelectionMode];
+}
+
+- (void)addSelectedToLater {
+    NSArray *batch = [self.selectedAppsByPk.allValues copy];
+    if (!batch.count) return;
+    for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:CollectionLaterId];
+    self.statusLabel.text = [NSString stringWithFormat:T(@"select.added_later"), (unsigned long)batch.count];
+    [self exitSelectionMode];
+}
+
+- (void)addSelectedToFolder {
+    NSArray *batch = [self.selectedAppsByPk.allValues copy];
+    if (!batch.count) return;
+    __weak typeof(self) ws = self;
+    [FolderPicker presentAddToFolderFrom:self completion:^(NSString *cid) {
+        if (!cid) return;
+        for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:cid];
+        ws.statusLabel.text = [NSString stringWithFormat:T(@"select.added_folder"), (unsigned long)batch.count];
+        [ws exitSelectionMode];
+    }];
+}
+
 #pragma mark - Quick install (single tap from list)
 
 // quickInstallApp:/quickInstallFromButton: were removed in v2.0.30 along with
@@ -407,8 +486,20 @@ static inline BOOL kIsIPad(void) {
     return [AppRowCell tilesPerRowForWidth:w];   // shared, density-driven (Settings slider)
 }
 
+// v3.0: list vs grid is decided by the density setting on BOTH idioms (iPhone defaults to a
+// single-column list, iPad to a grid). n==1 → list (CatalogAppCell); n≥2 → packed tile grid.
+- (BOOL)useGrid {
+    CGFloat w = self.tableView.bounds.size.width;
+    if (w < 1) w = [UIScreen mainScreen].bounds.size.width;
+    return [AppRowCell tilesPerRowForWidth:w] > 1;
+}
+
 - (void)gridDensityDidChange {
-    self.tableView.rowHeight = [AppRowCell gridRowHeight];
+    CGFloat w = self.tableView.bounds.size.width;
+    self.tableView.rowHeight = [AppRowCell gridRowHeightForWidth:w];
+    self.tableView.separatorStyle = [self useGrid] ? UITableViewCellSeparatorStyleNone
+                                                   : UITableViewCellSeparatorStyleSingleLine;
+    self.lastTPR = [AppRowCell tilesPerRowForWidth:w];   // keep the rotation guard in sync
     [self.tableView reloadData];   // new column count + row height from the density pref
 }
 
@@ -417,8 +508,8 @@ static inline BOOL kIsIPad(void) {
 }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    if (!kIsIPad()) return self.results.count;
     NSInteger n = [self tilesPerRowForWidth:tv.bounds.size.width];
+    if (n <= 1) return self.results.count;   // list: one app per row
     NSInteger rows = (NSInteger)(self.results.count + n - 1) / n;
     return rows;
 }
@@ -431,8 +522,8 @@ static inline BOOL kIsIPad(void) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    // ============ iPad: multi-tile row ============
-    if (kIsIPad()) {
+    // ============ Grid: multi-tile row (iPad always; iPhone when density > list) ============
+    if ([AppRowCell tilesPerRowForWidth:tv.bounds.size.width] > 1) {
         static NSString *rowId = @"catRow";
         AppRowCell *row = [tv dequeueReusableCellWithIdentifier:rowId];
         if (!row) {
@@ -452,8 +543,7 @@ static inline BOOL kIsIPad(void) {
         };
         row.onTileTap = ^(NSDictionary *app) {
             if (ws.selectionMode) {
-                [ws toggleSelectionForApp:app];
-                [ws.tableView reloadData];
+                [ws toggleSelectionForApp:app];   // tile already flipped its own check instantly (no reload)
             } else {
                 AppDetailViewController *vc = [[AppDetailViewController alloc] initWithApp:app];
                 [ws.navigationController pushViewController:vc animated:YES];
@@ -470,7 +560,7 @@ static inline BOOL kIsIPad(void) {
         return row;
     }
 
-    // ============ iPhone: single app per row, custom cell ============
+    // ============ List: single app per row, custom cell (iPhone default) ============
     // v2.0.29: switched to CatalogAppCell (custom UITableViewCell subclass) so
     // the install button lives in contentView, not accessoryView. Resolves the
     // iOS 6 bug where UIControl-in-accessoryView taps were stolen by the cell's
@@ -543,7 +633,7 @@ static inline BOOL kIsIPad(void) {
 }
 
 - (void)scrollViewWillBeginDecelerating:(UIScrollView *)sv {
-    if (kIsIPad()) [AppTileView setSuppressTileText:YES];   // fast fling → tiles draw card+icon only
+    if ([self useGrid]) [AppTileView setSuppressTileText:YES];   // fast fling → tiles draw card+icon only
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)sv willDecelerate:(BOOL)decel {
@@ -563,9 +653,9 @@ static inline BOOL kIsIPad(void) {
     [self flushPendingReload];
 }
 
-// Toggle row rasterization on the currently-visible iPad grid rows.
+// Toggle row rasterization on the currently-visible grid rows (no-op in list mode — no AppRowCells).
 - (void)setVisibleRowsRasterized:(BOOL)on {
-    if (!kIsIPad()) return;
+    if (![self useGrid]) return;
     for (UITableViewCell *c in [self.tableView visibleCells]) {
         if ([c isKindOfClass:[AppRowCell class]]) [(AppRowCell *)c setContentRasterized:on];
     }
@@ -579,8 +669,8 @@ static inline BOOL kIsIPad(void) {
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
-    
-    if (kIsIPad()) return;  // taps on iPad handled by AppTileView's onTap
+
+    if ([self useGrid]) return;  // grid taps handled by AppTileView's onTileTap; list taps fall through
     if (ip.row >= (NSInteger)self.results.count) return;
     NSDictionary *app = self.results[ip.row];
     if (self.selectionMode) {
@@ -598,11 +688,14 @@ static inline BOOL kIsIPad(void) {
 // and others (built on later scroll) with the new one — the "mixed rows per orientation" bug.
 - (void)viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
-    if (!kIsIPad()) return;
-    NSInteger n = [self tilesPerRowForWidth:self.tableView.bounds.size.width];
+    CGFloat w = self.tableView.bounds.size.width;
+    if (w < 1) return;
+    NSInteger n = [self tilesPerRowForWidth:w];
     if (n != self.lastTPR) {
         self.lastTPR = n;
-        self.tableView.rowHeight = [AppRowCell gridRowHeight];
+        self.tableView.rowHeight = [AppRowCell gridRowHeightForWidth:w];
+        self.tableView.separatorStyle = (n > 1) ? UITableViewCellSeparatorStyleNone
+                                                : UITableViewCellSeparatorStyleSingleLine;
         [self.tableView reloadData];
     }
 }

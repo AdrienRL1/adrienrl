@@ -25,6 +25,7 @@
 "catalog.end" = " — fin";
 "catalog.select" = "Sélectionner";
 "catalog.install_n" = "Installer (%lu)";
+"select.count" = "%lu sélectionnée(s)";
 "catalog.install_started_n" = "%lu installation(s) lancée(s)";
 
 /* ===== AI Chat screen ===== */
@@ -73,8 +74,33 @@
 "settings.about_device_ios" = "iOS de l'appareil";
 "settings.about_device_model" = "Modèle de l'appareil";
 "settings.section_display" = "Affichage";
+"settings.hide_ai_tab" = "Masquer l'onglet IA";
+"settings.theme" = "Thème";
+"theme.default" = "Défaut (bleu)";
+"theme.dark_gray" = "Sombre";
+"theme.dark_blue" = "Bleu nuit";
+"theme.section_light" = "Clair";
+"theme.section_dark" = "Mode sombre";
+"theme.graphite" = "Graphite";
+"theme.noir" = "Noir";
+"theme.slate" = "Ardoise";
+"theme.indigo" = "Indigo";
+"theme.purple" = "Violet";
+"theme.pink" = "Rose";
+"theme.red" = "Rouge";
+"theme.orange" = "Orange";
+"theme.green" = "Vert";
+"theme.teal" = "Turquoise";
+"theme.header" = "Couleur du thème";
+"theme.footer" = "S'applique instantanément à toute l'app. « Défaut » garde le look bleu iOS 6 classique.";
+"settings.theme_default" = "Défaut (bleu)";
+"settings.theme_graphite" = "Graphite";
+"settings.theme_apply_msg" = "Le thème s'applique au prochain lancement d'AppDrop.";
 "settings.grid_density" = "Apps par rangée";
-"settings.section_display_footer" = "Glisse pour afficher plus ou moins d'apps par rangée dans le catalogue et la recherche.";
+"settings.home_grid_density" = "Tuiles d'accueil par rangée";
+"settings.cols_list" = "Liste";
+"settings.show_favorites_home" = "Favoris sur l'Accueil";
+"settings.section_display_footer" = "Règle le nombre de tuiles par rangée dans chaque grille.";
 "settings.about_chip" = "Puce";
 "settings.about_ram" = "Mémoire (RAM)";
 "settings.language" = "Langue";
@@ -84,6 +110,7 @@
 "common.ok" = "OK";
 "common.cancel" = "Annuler";
 
+"common.done" = "OK";
 /* ===== Catalog filter ===== */
 "filter.title" = "Filtres";
 "filter.all_versions" = "Toutes versions iOS";
@@ -100,6 +127,8 @@
 
 /* ===== Install screen actions (v1.8.7) ===== */
 "install.cancel_all" = "Tout annuler";
+"install.pause_all" = "Tout mettre en pause";
+"install.resume_all" = "Tout reprendre";
 "install.empty" = "Aucune installation lancée";
 "install.cancelled_title" = "Annulé";
 "install.cancelled_msg" = "%ld téléchargement(s) annulé(s).";
@@ -124,7 +153,9 @@
 "install.state.installing" = "Installation locale...";
 "install.state.installed_prefix" = "Installé : %@";
 "install.state.cancelling" = "Annulation en cours...";
+"install.state.paused" = "En pause";
 "install.state.cancelled_user" = "Annulé par l'utilisateur";
+"install.state.interrupted" = "Interrompu (app fermée) — relance le téléchargement pour réessayer.";
 
 /* ===== Install errors (v1.8.7) ===== */
 "install.error.failed_prefix" = "Échec : %@";
@@ -153,10 +184,11 @@
 "app.info_bundle_id" = "Bundle ID";
 "app.info_version" = "Version";
 "app.info_min_ios" = "Min iOS";
+"app.info_project" = "Page du projet";
 "app.info_platform" = "Plateforme";
 "app.info_size" = "Taille";
 "app.info_file" = "Fichier";
-"app.info_mirror" = "Mirror";
+"app.info_mirror" = "Miroir";
 "app.info_url" = "URL complète";
 
 /* ===== Filter screen extras (v1.8.7) ===== */
@@ -183,7 +215,7 @@
 
 /* ===== Versions screen (v1.8.7) ===== */
 "versions.invalid_response" = "Réponse invalide";
-"versions.footer" = "Chaque ligne est un mirror différent. Choisissez selon la version d'iOS de votre app et la source.";
+"versions.footer" = "Chaque ligne est un miroir différent. Choisissez selon la version d'iOS de votre app et la source.";
 
 /* ===== CatalogFilter short labels (v1.8.7) ===== */
 "catalog.short.recent" = "récent";
@@ -196,16 +228,17 @@
 "onboarding.ipainstaller_msg" = "Pour installer des IPAs, tu dois avoir le paquet « IPA Installer Console » installé depuis Cydia (cherche : appinst ou ipainstaller). Sans lui, aucune app ne peut être installée localement. Tu l'as installé ?";
 "onboarding.ipainstaller_continue" = "Oui, continuer";
 "onboarding.ipainstaller_cancel" = "Pas encore";
-"onboarding.catalog_quality_title" = "À propos du catalogue";
-"onboarding.catalog_quality_msg" = "Le catalogue upstream contient une petite fraction d'apps avec un titre ou une icône incorrects — ce n'est pas de notre contrôle (problème de données chez stuffed18.github.io, pas dans l'app). Le nom du fichier .ipa affiché sous chaque app est ce qui sera réellement installé. Contre-vérifie avant d'installer si c'est bien l'app que tu veux.";
+"onboarding.catalog_quality_title" = "Avant d'installer une app";
+"onboarding.catalog_quality_msg" = "La liste d'apps vient d'une source publique, donc certaines apps peuvent afficher un nom ou une icône qui ne correspond pas tout à fait. Avant d'installer, regarde le nom du fichier indiqué sous l'app pour être sûr que c'est la bonne.";
+"onboarding.dont_show_again" = "Ne plus afficher";
 "common.understood" = "Compris";
 "filter.footer.sort" = "Tape à nouveau sur l'option sélectionnée pour basculer entre croissant et décroissant.";
 
 /* ===== v1.2 — Mirror retry on slow download ===== */
-"install.state.retrying_mirror" = "Mirror lent — nouvel essai (%d/%d)…";
+"install.state.retrying_mirror" = "Miroir lent — nouvel essai (%d/%d)…";
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
-"install.error.fairplay" = "Cette IPA est encore protégée par FairPlay — liée à l'Apple ID qui l'a achetée sur l'App Store, donc elle ne fonctionnera pas sur ton appareil. Essaie un autre mirror dans la liste des Versions (le catalogue a souvent plusieurs sources pour la même app).";
+"install.error.fairplay" = "Cette IPA est encore protégée par FairPlay — liée à l'Apple ID qui l'a achetée sur l'App Store, donc elle ne fonctionnera pas sur ton appareil. Essaie un autre miroir dans la liste des Versions (le catalogue a souvent plusieurs sources pour la même app).";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Téléchargement";
@@ -254,7 +287,7 @@
 /* ===== v1.2 — archive.org S3 login (optional, helps with throttling) ===== */
 "settings.section_archive" = "Compte archive.org";
 "settings.section_archive_footer" = "Optionnel. Réduit le throttling par IP. Clés à : archive.org/account/s3.php";
-"settings.archive_email" = "Email";
+"settings.archive_email" = "Courriel";
 "settings.archive_access_key" = "Clé d'accès";
 "settings.archive_secret_key" = "Clé secrète";
 "settings.archive_not_set" = "Non défini";
@@ -262,12 +295,13 @@
 "settings.archive_save" = "Enregistrer";
 
 /* ===== v1.3.1 — Dossier configurable + conserver l'IPA + ouverture Filza ===== */
-"settings.section_download_footer" = "Flux parallèles : 4 est le meilleur compromis pour archive.org. Dossier de sauvegarde : où atterrissent les .ipa archivés. Conserver l'IPA : garder une copie après installation (iOS 6-9 ; iOS 10+ sauvegarde automatiquement).";
+"settings.section_download_footer" = "Flux parallèles : 4 est le meilleur compromis pour archive.org. Dossier de sauvegarde : où atterrissent les .ipa archivés. Conserver l'IPA : garder une copie après installation (iOS 5-9 ; iOS 10+ sauvegarde automatiquement).";
 "settings.download_folder" = "Dossier de sauvegarde";
 "settings.download_folder_default" = "Par défaut (sandbox)";
 "settings.download_folder_custom" = "Chemin personnalisé…";
 "settings.download_folder_custom_msg" = "Entrez un chemin absolu, par ex. /var/mobile/Documents/AppDrop. Laissez vide pour revenir au défaut. Le dossier sera créé à la première sauvegarde.";
 "settings.keep_ipa" = "Conserver l'IPA après installation";
+"settings.allow_encrypted" = "Autoriser les IPA chiffrés (avancé)";
 "install.saved_at_suffix" = "sauvegardé sous %@";
 "install.saved_alert_title" = "IPA sauvegardé";
 "install.saved_alert_msg" = "Enregistré sous :\n%@\n\nOuvre-le dans Filza pour installer. Si Filza échoue avec une erreur de signature (0xe800B001), installe le paquet « appinst » depuis Cydia et réessaie.";
@@ -370,10 +404,13 @@
 
 /* ===== Revival / Works today (issue #4) ===== */
 "categories.revival" = "Fonctionne aujourd'hui";
-"categories.revival_sub" = "Apps patchées et revivals qui marchent encore";
+"categories.revival_sub" = "Apps qui marchent encore sur vieux iOS";
+"categories.modded" = "Apps modifiées";
+"categories.modded_sub" = "Apps et jeux modifiés";
+"modded.intro" = "Des apps et des jeux modifiés pour vieux iOS.";
 "revival.title" = "Fonctionne aujourd'hui";
-"revival.intro" = "Des apps qui marchent vraiment sur vieux iOS aujourd'hui — patchées, revivals ou communautaires. Propose-en via le Feedback.";
-"revival.empty" = "Rien ici pour ton appareil pour l'instant — propose une app qui marche via le Feedback !";
+"revival.intro" = "Des apps qui marchent vraiment sur vieux iOS aujourd'hui — patchées, revivals ou communautaires.";
+"revival.empty" = "Rien ici pour ton appareil pour l'instant.";
 "revival.install" = "Installer";
 "revival.open" = "Ouvrir";
 "revival.install_started" = "Installation démarrée — voir l'onglet Installer.";
@@ -382,3 +419,98 @@
 "revival.beta" = "Bêta";
 "revival.discontinued" = "Abandonné";
 "revival.update" = "Mettre à jour v%@";
+"revival.open_page" = "Ouvrir la page du projet";
+
+/* ── Collections / Favoris (Phase 1) ── */
+"collections.favorites" = "Favoris";
+"collections.section" = "Favoris et dossiers";
+"categories.section" = "Catégories";
+"collections.empty" = "Aucun favori pour l'instant. Touche ☆ sur la fiche d'une app pour l'ajouter ici.";
+"collections.select" = "Sélectionner";
+"collections.select_all" = "Tout sélectionner";
+"collections.select_none" = "Tout désélectionner";
+"collections.remove" = "Retirer";
+"collections.download_n" = "Télécharger (%ld)";
+"collections.image" = "Image";
+"collections.image_title" = "Image d'aperçu";
+"collections.image_pick" = "Choisir une app comme image…";
+"collections.image_auto" = "Image automatique (rotation)";
+"collections.image_hint" = "Touche une app pour la fixer comme image";
+"collections.image_pinned_title" = "Image fixée";
+"collections.image_pinned_msg" = "Cette app sera toujours affichée comme image de la collection.";
+"collections.dl_started_title" = "Téléchargements lancés";
+"collections.dl_started_msg" = "%ld téléchargement(s) lancé(s).";
+
+/* ── Accueil : réinitialiser la disposition (5c) ── */
+"home.reset" = "Réinitialiser";
+"home.reset_title" = "Réinitialiser la disposition ?";
+"home.reset_msg" = "Remettre l'Accueil dans sa disposition automatique (ordre, épinglés et tailles par défaut).";
+
+/* ── Télécharger plus tard (Phase 2) ── */
+"collections.later" = "Télécharger plus tard";
+"collections.download_all" = "Tout télécharger";
+"later.added" = "Ajouté à « Télécharger plus tard ».";
+"later.removed" = "Retiré de « Télécharger plus tard ».";
+
+/* ── Sélection multiple : actions (Phase 3) ── */
+"later.short" = "Plus tard";
+"select.added_fav" = "%lu ajouté(s) aux favoris";
+"select.added_later" = "%lu ajouté(s) à « Télécharger plus tard »";
+
+/* ── Dossiers (Phase 4) ── */
+"folder.short" = "Dossier";
+"folder.add_title" = "Ajouter à un dossier";
+"folder.new" = "Nouveau dossier";
+"folder.create" = "Créer";
+"folder.edit" = "Modifier";
+"folder.rename" = "Renommer";
+"folder.delete" = "Supprimer le dossier";
+"folder.delete_title" = "Supprimer le dossier ?";
+"folder.delete_title_named" = "Supprimer « %@ » ?";
+"folder.delete_msg" = "Le dossier sera supprimé. Les apps déjà installées ne sont pas désinstallées.";
+"select.added_folder" = "%lu ajouté(s) au dossier";
+
+
+/* v3.0 — Avertissement version chiffrée (FairPlay) + reco version déchiffrée */
+"app.encrypted_warning" = "Cette version est chiffrée (FairPlay) — elle ne s'installera pas : elle est liée au compte Apple d'origine.";
+"app.encrypted_use_version" = "Version non chiffrée : %@ — touchez pour l'ouvrir";
+
+/* v3.0 — badge version chiffrée (liste des versions) */
+"versions.encrypted" = "Chiffré — ne s'installera pas";
+
+/* v3.0 — chiffré : aucune alternative + ouverture auto de la version non chiffrée */
+"app.encrypted_none" = "Cette version est chiffrée et aucune version non chiffrée n'est disponible.";
+
+/* v3.0 — Partager une app (upload modéré) */
+"upload.title" = "Partager une app";
+"upload.send" = "Envoyer";
+"upload.share_button" = "＋ Partager une app";
+"upload.pick_title" = "Choisir un .ipa";
+"upload.pick_shortcuts" = "Emplacements";
+"upload.pick_folders" = "Dossiers";
+"upload.pick_files" = "Fichiers .ipa";
+"upload.pick_empty" = "Aucun .ipa ici.";
+"upload.pick_button" = "Fichier .ipa";
+"upload.pick_none" = "Aucun fichier choisi";
+"upload.section_file" = "Fichier";
+"upload.section_category" = "Catégorie";
+"upload.section_details" = "Détails";
+"upload.section_rights" = "Droits";
+"upload.intro" = "Partage une app que tu as le droit de partager : ta propre app, homebrew, open-source, freeware, domaine public.";
+"upload.legal" = "En envoyant, tu confirmes avoir le droit de partager cette app. Toute soumission est modérée avant publication et peut être retirée.";
+"upload.attest" = "Je confirme avoir le droit de partager cette app";
+"upload.name_ph" = "Nom de l'app";
+"upload.desc_ph" = "Description (ce que c'est, ce qui est modifié…)";
+"upload.minios_ph" = "iOS minimum (ex. 5.0)";
+"upload.version_ph" = "Version (ex. 1.2)";
+"upload.mod_ph" = "Ce qui est modifié (si applicable)";
+"upload.bid_ph" = "Identifiant (bundle id, optionnel)";
+"upload.credit_ph" = "Ton nom / pseudo (crédit, optionnel)";
+"upload.sent_title" = "Merci !";
+"upload.sent" = "Ton app a été envoyée pour modération. Merci de contribuer !";
+"upload.err_nofile" = "Choisis d'abord un fichier .ipa.";
+"upload.err_noname" = "Donne un nom à l'app.";
+"upload.err_attest" = "Tu dois confirmer que tu as le droit de partager cette app.";
+"upload.err_toobig" = "Fichier trop gros (max %d Mo).";
+"upload.err_read" = "Impossible de lire le fichier.";
+"upload.err_send" = "Échec de l'envoi";

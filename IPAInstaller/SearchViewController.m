@@ -11,8 +11,11 @@
 #import "FilterViewController.h"
 #import "CheckpointLog.h"
 #import "FeedbackViewController.h"
+#import "CollectionStore.h"
+#import "InstallManager.h"
+#import "FolderPicker.h"
 
-static inline BOOL kSearchIsIPad(void) { return UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad; }
+// v3.0: list vs grid is driven by the density setting via -[self useGrid], not an idiom check.
 
 static const CGFloat kIconSize = 44;
 static const NSInteger kPageLimit = 50;
@@ -38,9 +41,29 @@ static const NSInteger kPageLimit = 50;
 // iPad grid: rotation-reload guard (last tiles-per-row) + active-scroll flag (rasterize off while scrolling).
 @property (nonatomic, assign) NSInteger lastTPR;
 @property (nonatomic, assign) BOOL gridScrolling;
+// --- Phase 3: multi-select (mirrors CatalogViewController) ---
+@property (nonatomic, assign) BOOL selectionMode;
+@property (nonatomic, copy)   NSString *savedTitle;   // restored when leaving selection mode
+@property (nonatomic, strong) NSMutableDictionary *selectedAppsByPk;
+@property (nonatomic, strong) UIToolbar *selectionToolbar;
+@property (nonatomic, strong) UIBarButtonItem *installSelectionItem;
+@property (nonatomic, strong) UIBarButtonItem *favSelectionItem;
+@property (nonatomic, strong) UIBarButtonItem *laterSelectionItem;
+@property (nonatomic, strong) UIBarButtonItem *dossierSelectionItem;
 @end
 
 @implementation SearchViewController
+
+// Live theme re-apply (AppDelegate calls this on a theme switch — no restart).
+- (void)applyTheme {
+    self.view.backgroundColor = [IOS6Theme contentBackgroundColor];
+    self.tableView.backgroundColor = [IOS6Theme contentBackgroundColor];
+    self.tableView.separatorColor = [IOS6Theme separatorColor];
+    self.statusLabel.textColor = [IOS6Theme labelGray];
+    self.statusLabel.backgroundColor = [UIColor clearColor];
+    [IOS6Theme styleSearchBar:self.searchBar];
+    [self.tableView reloadData];
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -60,6 +83,7 @@ static const NSInteger kPageLimit = 50;
     self.searchBar.autocorrectionType = UITextAutocorrectionTypeNo;
     self.searchBar.delegate = self;
     self.searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [IOS6Theme styleSearchBar:self.searchBar];
 
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds
                                                    style:UITableViewStylePlain];
@@ -67,26 +91,26 @@ static const NSInteger kPageLimit = 50;
     self.tableView.delegate = self;
     self.tableView.tableHeaderView = self.searchBar;
     self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.tableView.rowHeight = [AppRowCell gridRowHeight];  // iPad: density-based tile rows
-    // iPad grid has no row separators (they'd draw weird lines between tile rows);
-    // iPhone keeps the normal single-line list separators.
-    self.tableView.separatorStyle = kSearchIsIPad()
+    self.tableView.rowHeight = [AppRowCell gridRowHeightForWidth:self.tableView.bounds.size.width];
+    // Grid rows have no separators (they'd draw weird lines between tiles); the single-column
+    // list keeps the normal single-line separators. v3.0: decided by the density setting on both idioms.
+    self.tableView.separatorStyle = [self useGrid]
         ? UITableViewCellSeparatorStyleNone : UITableViewCellSeparatorStyleSingleLine;
     self.tableView.backgroundColor = [IOS6Theme contentBackgroundColor];
     [self.view addSubview:self.tableView];
 
     self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, w, 36)];
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
-    self.statusLabel.textColor = [UIColor grayColor];
+    self.statusLabel.textColor = [IOS6Theme labelGray];
+    self.statusLabel.backgroundColor = [UIColor clearColor];   // iOS 6 footer views default to white
     self.statusLabel.font = [UIFont systemFontOfSize:12];
     self.statusLabel.text = T(@"search.hint_empty");
     self.tableView.tableFooterView = self.statusLabel;
 
-    // Filters — same screen as the Catalogue, applied to the search results.
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-        initWithTitle:T(@"catalog.filters")
-                style:UIBarButtonItemStyleBordered
-               target:self action:@selector(filtersTapped)];
+    // Nav bar: Filtres + Sélectionner (→ OK in selection mode) + a bottom selection toolbar.
+    self.selectedAppsByPk = [NSMutableDictionary dictionary];
+    [self buildSelectionToolbar];
+    [self refreshSearchNav];
     // Persistent Feedback button on the Search-tab root (left). Category-result screens
     // are pushed and need their Back button there, so skip them.
     if (self.categoryFilter.length == 0) [self installFeedbackBarButton];
@@ -106,6 +130,138 @@ static const NSInteger kPageLimit = 50;
     if (self.currentQuery.length == 0 && self.categoryFilter.length == 0) {
         [self.searchBar becomeFirstResponder];
     }
+}
+
+#pragma mark - Multi-select (Phase 3)
+
+- (void)buildSelectionToolbar {
+    CGRect b = self.view.bounds;
+    self.selectionToolbar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, b.size.height - 44, b.size.width, 44)];
+    self.selectionToolbar.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    self.selectionToolbar.hidden = YES;
+    self.favSelectionItem = [[UIBarButtonItem alloc] initWithTitle:T(@"collections.favorites")
+        style:UIBarButtonItemStyleBordered target:self action:@selector(addSelectedToFavorites)];
+    self.laterSelectionItem = [[UIBarButtonItem alloc] initWithTitle:T(@"later.short")
+        style:UIBarButtonItemStyleBordered target:self action:@selector(addSelectedToLater)];
+    self.dossierSelectionItem = [[UIBarButtonItem alloc] initWithTitle:T(@"folder.short")
+        style:UIBarButtonItemStyleBordered target:self action:@selector(addSelectedToFolder)];
+    self.installSelectionItem = [[UIBarButtonItem alloc]
+        initWithTitle:[NSString stringWithFormat:T(@"catalog.install_n"), 0UL]
+                style:UIBarButtonItemStyleDone target:self action:@selector(installSelectedTapped)];
+    UIBarButtonItem *flex = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    self.selectionToolbar.items = @[self.favSelectionItem, self.laterSelectionItem,
+                                    self.dossierSelectionItem, flex, self.installSelectionItem];
+    [self themeSelectionToolbar];
+    [self.view addSubview:self.selectionToolbar];
+}
+
+// Bottom multi-select toolbar must follow the theme (stayed light in dark mode). Same rule as the
+// themed nav bar: stock for default, dark/colour bar + light button tint otherwise.
+- (void)themeSelectionToolbar {
+    UIToolbar *tb = self.selectionToolbar;
+    if (!tb) return;
+    BOOL canBg = [tb respondsToSelector:@selector(setBackgroundImage:forToolbarPosition:barMetrics:)];
+    if ([IOS6Theme isDefaultTheme]) {
+        tb.barStyle = UIBarStyleDefault;
+        tb.tintColor = nil;
+        if (canBg) [tb setBackgroundImage:nil forToolbarPosition:UIToolbarPositionAny barMetrics:UIBarMetricsDefault];
+    } else {
+        tb.barStyle = UIBarStyleBlack;
+        tb.tintColor = [IOS6Theme navBarButtonTint];
+        UIImage *bg = [IOS6Theme navBarBackground];
+        if (bg && canBg) [tb setBackgroundImage:bg forToolbarPosition:UIToolbarPositionAny barMetrics:UIBarMetricsDefault];
+    }
+}
+
+- (void)refreshSearchNav {
+    if (self.selectionMode) {
+        self.navigationItem.rightBarButtonItems = @[[[UIBarButtonItem alloc]
+            initWithTitle:T(@"common.done") style:UIBarButtonItemStyleDone target:self action:@selector(exitSelectionMode)]];
+    } else {
+        UIBarButtonItem *filters = [[UIBarButtonItem alloc] initWithTitle:T(@"catalog.filters")
+            style:UIBarButtonItemStyleBordered target:self action:@selector(filtersTapped)];
+        UIBarButtonItem *select = [[UIBarButtonItem alloc] initWithTitle:T(@"catalog.select")
+            style:UIBarButtonItemStyleBordered target:self action:@selector(enterSelectionMode)];
+        self.navigationItem.rightBarButtonItems = @[filters, select];
+    }
+}
+
+- (void)enterSelectionMode {
+    self.selectionMode = YES;
+    self.savedTitle = self.navigationItem.title;
+    if ([self.searchBar isFirstResponder]) [self.searchBar resignFirstResponder];
+    [self refreshSearchNav]; [self updateSelectionToolbar]; [self.tableView reloadData];
+}
+- (void)exitSelectionMode {
+    self.selectionMode = NO;
+    [self.selectedAppsByPk removeAllObjects];
+    self.navigationItem.title = self.savedTitle;
+    [self refreshSearchNav]; [self updateSelectionToolbar]; [self.tableView reloadData];
+}
+- (void)toggleSelectionForApp:(NSDictionary *)app {
+    NSNumber *pk = app[@"id"]; if (!pk) return;
+    if ([self.selectedAppsByPk objectForKey:pk]) [self.selectedAppsByPk removeObjectForKey:pk];
+    else                                          [self.selectedAppsByPk setObject:[app copy] forKey:pk];
+    [self updateSelectionToolbar];
+    // Grid: the tapped tile already flipped its own check instantly (no reload → snappier).
+    // List: the row's checkmark accessory needs a refresh.
+    if (![self useGrid]) [self.tableView reloadData];
+}
+- (void)updateSelectionToolbar {
+    NSUInteger n = self.selectedAppsByPk.count;
+    if (self.selectionMode)
+        self.navigationItem.title = [NSString stringWithFormat:T(@"select.count"), (unsigned long)n];
+    self.installSelectionItem.title = [NSString stringWithFormat:T(@"catalog.install_n"), (unsigned long)n];
+    self.installSelectionItem.enabled = (n > 0);
+    self.favSelectionItem.enabled = (n > 0);
+    self.laterSelectionItem.enabled = (n > 0);
+    self.dossierSelectionItem.enabled = (n > 0);
+    BOOL show = self.selectionMode;
+    if (show != !self.selectionToolbar.hidden) {
+        self.selectionToolbar.hidden = !show;
+        UIEdgeInsets ci = self.tableView.contentInset; ci.bottom = show ? 44 : 0; self.tableView.contentInset = ci;
+        UIEdgeInsets si = self.tableView.scrollIndicatorInsets; si.bottom = show ? 44 : 0; self.tableView.scrollIndicatorInsets = si;
+    }
+}
+- (void)installSelectedTapped {
+    NSArray *batch = [self.selectedAppsByPk.allValues copy];
+    if (!batch.count) return;
+    NSUInteger started = 0;
+    for (NSDictionary *app in batch) {
+        NSString *url = app[@"url"];
+        if (![url isKindOfClass:[NSString class]] || !url.length) continue;
+        if ([[InstallManager shared] hasActiveJobForURL:url]) continue;
+        [[InstallManager shared] startInstallWithURL:url completion:^(NSString *j, NSError *e) {}];
+        started++;
+    }
+    self.statusLabel.text = [NSString stringWithFormat:T(@"catalog.install_started_n"), (unsigned long)started];
+    [self exitSelectionMode];
+}
+- (void)addSelectedToFavorites {
+    NSArray *batch = [self.selectedAppsByPk.allValues copy];
+    if (!batch.count) return;
+    for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:CollectionFavoritesId];
+    self.statusLabel.text = [NSString stringWithFormat:T(@"select.added_fav"), (unsigned long)batch.count];
+    [self exitSelectionMode];
+}
+- (void)addSelectedToLater {
+    NSArray *batch = [self.selectedAppsByPk.allValues copy];
+    if (!batch.count) return;
+    for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:CollectionLaterId];
+    self.statusLabel.text = [NSString stringWithFormat:T(@"select.added_later"), (unsigned long)batch.count];
+    [self exitSelectionMode];
+}
+- (void)addSelectedToFolder {
+    NSArray *batch = [self.selectedAppsByPk.allValues copy];
+    if (!batch.count) return;
+    __weak typeof(self) ws = self;
+    [FolderPicker presentAddToFolderFrom:self completion:^(NSString *cid) {
+        if (!cid) return;
+        for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:cid];
+        ws.statusLabel.text = [NSString stringWithFormat:T(@"select.added_folder"), (unsigned long)batch.count];
+        [ws exitSelectionMode];
+    }];
 }
 
 #pragma mark - UISearchBarDelegate
@@ -244,8 +400,8 @@ static const NSInteger kPageLimit = 50;
 #pragma mark - UITableView
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    if (!kSearchIsIPad()) return self.results.count;
     NSInteger n = [AppRowCell tilesPerRowForWidth:tv.bounds.size.width];
+    if (n <= 1) return self.results.count;   // list: one app per row
     return (NSInteger)(self.results.count + n - 1) / n;  // ceil — tiles packed per row
 }
 
@@ -257,8 +413,8 @@ static const NSInteger kPageLimit = 50;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    // ===== iPad: multi-tile grid row (same component as the Catalogue) =====
-    if (kSearchIsIPad()) {
+    // ===== Grid: multi-tile row (iPad always; iPhone when density > list) =====
+    if ([AppRowCell tilesPerRowForWidth:tv.bounds.size.width] > 1) {
         static NSString *rowId = @"searchRow";
         AppRowCell *row = [tv dequeueReusableCellWithIdentifier:rowId];
         if (!row) row = [[AppRowCell alloc] initWithStyle:UITableViewCellStyleDefault
@@ -266,9 +422,14 @@ static const NSInteger kPageLimit = 50;
         NSInteger n = [AppRowCell tilesPerRowForWidth:tv.bounds.size.width];
         row.tilesPerRow = n;
         [row setContentRasterized:!self.gridScrolling];   // rasterize at rest, plain while scrolling
-        row.selectionMode = NO;
+        row.selectionMode = self.selectionMode;
         __weak typeof(self) ws = self;
+        row.isAppSelectedBlock = ^BOOL(NSDictionary *app) {
+            NSNumber *pk = app[@"id"];
+            return pk && ws.selectedAppsByPk[pk] != nil;
+        };
         row.onTileTap = ^(NSDictionary *app) {
+            if (ws.selectionMode) { [ws toggleSelectionForApp:app]; return; }
             if ([ws.searchBar isFirstResponder]) [ws.searchBar resignFirstResponder];
             AppDetailViewController *vc = [[AppDetailViewController alloc] initWithApp:app];
             [ws.navigationController pushViewController:vc animated:YES];
@@ -301,7 +462,12 @@ static const NSInteger kPageLimit = 50;
     cell.appSubtitleLabel.text = fname.length
         ? [NSString stringWithFormat:@"%@\n%@", metaLine, fname]
         : metaLine;
-    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    if (self.selectionMode) {
+        NSNumber *pk = app[@"id"];
+        cell.accessoryType = (pk && self.selectedAppsByPk[pk]) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    } else {
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
     cell.selectionStyle = UITableViewCellSelectionStyleBlue;
 
     NSString *iconUrl = app[@"icon"];
@@ -330,11 +496,16 @@ static const NSInteger kPageLimit = 50;
 }
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
-    if (kSearchIsIPad()) return;   // iPad taps are handled by AppRowCell tiles (onTileTap)
+    if ([self useGrid]) return;   // grid taps are handled by AppRowCell tiles (onTileTap)
     [tv deselectRowAtIndexPath:ip animated:YES];
     if ([self.searchBar isFirstResponder]) [self.searchBar resignFirstResponder];
     if (ip.row >= (NSInteger)self.results.count) return;
     NSDictionary *app = self.results[ip.row];
+    if (self.selectionMode) {
+        [self toggleSelectionForApp:app];
+        [tv reloadRowsAtIndexPaths:@[ip] withRowAnimation:UITableViewRowAnimationNone];
+        return;
+    }
     AppDetailViewController *vc = [[AppDetailViewController alloc] initWithApp:app];
     [self.navigationController pushViewController:vc animated:YES];
 }
@@ -359,7 +530,7 @@ static const NSInteger kPageLimit = 50;
 }
 
 - (void)scrollViewWillBeginDecelerating:(UIScrollView *)sv {
-    if (kSearchIsIPad()) [AppTileView setSuppressTileText:YES];   // fast fling → tiles draw card+icon only
+    if ([self useGrid]) [AppTileView setSuppressTileText:YES];   // fast fling → tiles draw card+icon only
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)sv willDecelerate:(BOOL)decel {
@@ -379,9 +550,9 @@ static const NSInteger kPageLimit = 50;
     [self flushPendingReload];
 }
 
-// Toggle row rasterization on the currently-visible iPad grid rows.
+// Toggle row rasterization on the currently-visible grid rows (no-op in list mode — no AppRowCells).
 - (void)setVisibleRowsRasterized:(BOOL)on {
-    if (!kSearchIsIPad()) return;
+    if (![self useGrid]) return;
     for (UITableViewCell *c in [self.tableView visibleCells]) {
         if ([c isKindOfClass:[AppRowCell class]]) [(AppRowCell *)c setContentRasterized:on];
     }
@@ -420,21 +591,36 @@ static const NSInteger kPageLimit = 50;
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
+// v3.0: list vs grid is decided by the density setting on BOTH idioms (iPhone defaults to a
+// single-column list, iPad to a grid). n==1 → list (CatalogAppCell); n≥2 → packed tile grid.
+- (BOOL)useGrid {
+    CGFloat w = self.tableView.bounds.size.width;
+    if (w < 1) w = [UIScreen mainScreen].bounds.size.width;
+    return [AppRowCell tilesPerRowForWidth:w] > 1;
+}
+
 - (void)gridDensityDidChange {
-    self.tableView.rowHeight = [AppRowCell gridRowHeight];
+    CGFloat w = self.tableView.bounds.size.width;
+    self.tableView.rowHeight = [AppRowCell gridRowHeightForWidth:w];
+    self.tableView.separatorStyle = [self useGrid] ? UITableViewCellSeparatorStyleNone
+                                                   : UITableViewCellSeparatorStyleSingleLine;
+    self.lastTPR = [AppRowCell tilesPerRowForWidth:w];   // keep the rotation guard in sync
     [self.tableView reloadData];   // new column count + row height from the density pref
 }
 
 // Rotation / bounds-change fix: reload when the column count actually changes (at the FINAL
 // width) so all rows use the new tilesPerRow + row height — otherwise some rows keep the old
-// column count while later-built ones use the new one (mixed rows after rotating the iPad).
+// column count while later-built ones use the new one (mixed rows after rotating).
 - (void)viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
-    if (!kSearchIsIPad()) return;
-    NSInteger n = [AppRowCell tilesPerRowForWidth:self.tableView.bounds.size.width];
+    CGFloat w = self.tableView.bounds.size.width;
+    if (w < 1) return;
+    NSInteger n = [AppRowCell tilesPerRowForWidth:w];
     if (n != self.lastTPR) {
         self.lastTPR = n;
-        self.tableView.rowHeight = [AppRowCell gridRowHeight];
+        self.tableView.rowHeight = [AppRowCell gridRowHeightForWidth:w];
+        self.tableView.separatorStyle = (n > 1) ? UITableViewCellSeparatorStyleNone
+                                                : UITableViewCellSeparatorStyleSingleLine;
         [self.tableView reloadData];
     }
 }

@@ -3,6 +3,8 @@
 #import "JobCell.h"
 #import "IOS6Theme.h"
 #import "Localization.h"
+#import "CollectionViewController.h"
+#import "CollectionStore.h"
 
 // Sort rank for the jobs list: active downloads on top, then waiting, then finished/failed.
 static int JobSortRank(InstallJob *j) {
@@ -12,15 +14,56 @@ static int JobSortRank(InstallJob *j) {
     return 2;   // completed / failed / cancelled
 }
 
+// v3.0: "Download later" nav glyph — a down arrow dropping into an open tray (replaces the 📥 emoji).
+// Drawn as a solid alpha mask so the iOS 5/6 nav bar tints + embosses it like a stock bar glyph,
+// which keeps it correct under every theme (it adopts the bar's button tint automatically).
+static UIImage *ADDownloadLaterNavGlyph(void) {
+    CGSize s = CGSizeMake(23, 23);
+    UIGraphicsBeginImageContextWithOptions(s, NO, 0.0);   // device scale → crisp on Retina
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    [[UIColor blackColor] set];                            // colour is irrelevant; only the alpha shape matters
+    CGContextSetLineWidth(ctx, 2.0);
+    CGContextSetLineCap(ctx, kCGLineCapRound);
+    CGContextSetLineJoin(ctx, kCGLineJoinRound);
+    // Down arrow (shaft + head).
+    CGContextMoveToPoint(ctx, 11.5, 2.5);
+    CGContextAddLineToPoint(ctx, 11.5, 13.5);
+    CGContextStrokePath(ctx);
+    CGContextMoveToPoint(ctx, 6.5, 9.0);
+    CGContextAddLineToPoint(ctx, 11.5, 14.0);
+    CGContextAddLineToPoint(ctx, 16.5, 9.0);
+    CGContextStrokePath(ctx);
+    // Open tray catching it.
+    CGContextMoveToPoint(ctx, 4.0, 15.5);
+    CGContextAddLineToPoint(ctx, 4.0, 19.5);
+    CGContextAddLineToPoint(ctx, 19.0, 19.5);
+    CGContextAddLineToPoint(ctx, 19.0, 15.5);
+    CGContextStrokePath(ctx);
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return img;
+}
+
 @interface RootViewController () <UITableViewDataSource, UITableViewDelegate, UITextFieldDelegate>
 @property (nonatomic, strong) UITextField *urlField;
 @property (nonatomic, strong) UIButton *installButton;
 @property (nonatomic, strong) UITableView *jobsTable;
 @property (nonatomic, strong) UIView *headerView;
 @property (nonatomic, strong) NSArray *jobs;
+@property (nonatomic, copy) NSString *jobsSignature;  // jobId|state per row — detects structural vs progress-only change
 @end
 
 @implementation RootViewController
+
+// Live theme re-apply (AppDelegate calls this on a theme switch — no restart).
+- (void)applyTheme {
+    self.view.backgroundColor = [IOS6Theme linenColor];
+    self.jobsTable.backgroundColor = [IOS6Theme linenColor];
+    self.jobsTable.separatorColor = [IOS6Theme separatorColor];
+    if (self.installButton) [IOS6Theme styleButton:self.installButton];
+    [IOS6Theme styleTextField:self.urlField];
+    [self.jobsTable reloadData];
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -33,7 +76,12 @@ static int JobSortRank(InstallJob *j) {
                                                                   style:UIBarButtonItemStyleBordered
                                                                  target:self
                                                                  action:@selector(clearDoneTapped)];
-    self.navigationItem.rightBarButtonItem = clearBtn;
+    // v3.0: "Download later" shortcut lives in the top-right nav bar (download glyph, rightmost), next to Vider.
+    UIBarButtonItem *laterBtn = [[UIBarButtonItem alloc] initWithImage:ADDownloadLaterNavGlyph()
+                                                                  style:UIBarButtonItemStylePlain
+                                                                 target:self
+                                                                 action:@selector(openLaterTapped)];
+    self.navigationItem.rightBarButtonItems = @[laterBtn, clearBtn];
 
     [self buildHeader];
     [self buildTable];
@@ -48,19 +96,22 @@ static int JobSortRank(InstallJob *j) {
 // Show/hide the "Tout annuler" left button depending on whether any job is active.
 // Called every time the jobs list changes.
 - (void)refreshLeftBarButton {
-    if ([[InstallManager shared] hasActiveJobs]) {
-        if (!self.navigationItem.leftBarButtonItem) {
-            UIBarButtonItem *cancelAll = [[UIBarButtonItem alloc] initWithTitle:T(@"install.cancel_all")
-                                                                          style:UIBarButtonItemStyleBordered
-                                                                         target:self
-                                                                         action:@selector(cancelAllTapped)];
-            // Red tint to flag it as a destructive-ish action.
-            cancelAll.tintColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.15 alpha:1.0];
-            self.navigationItem.leftBarButtonItem = cancelAll;
-        }
+    BOOL active = [[InstallManager shared] hasActiveJobs];   // includes paused (non-terminal)
+    BOOL paused = [[InstallManager shared] hasPausedJobs];
+    if (!active && !paused) { self.navigationItem.leftBarButtonItems = nil; return; }
+    UIBarButtonItem *cancelAll = [[UIBarButtonItem alloc] initWithTitle:T(@"install.cancel_all")
+        style:UIBarButtonItemStyleBordered target:self action:@selector(cancelAllTapped)];
+    cancelAll.tintColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.15 alpha:1.0];   // destructive-ish
+    NSMutableArray *items = [NSMutableArray arrayWithObject:cancelAll];
+    // Resume-all if anything is paused; otherwise Pause-all when downloads are active.
+    if (paused) {
+        [items addObject:[[UIBarButtonItem alloc] initWithTitle:T(@"install.resume_all")
+            style:UIBarButtonItemStyleBordered target:self action:@selector(resumeAllTapped)]];
     } else {
-        self.navigationItem.leftBarButtonItem = nil;
+        [items addObject:[[UIBarButtonItem alloc] initWithTitle:T(@"install.pause_all")
+            style:UIBarButtonItemStyleBordered target:self action:@selector(pauseAllTapped)]];
     }
+    self.navigationItem.leftBarButtonItems = items;
 }
 
 - (void)dealloc {
@@ -76,9 +127,9 @@ static int JobSortRank(InstallJob *j) {
     UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(15, 10, w - 30, 18)];
     label.text = T(@"install.url_label");
     label.font = [UIFont boldSystemFontOfSize:13];
-    label.textColor = [UIColor colorWithRed:0.22 green:0.27 blue:0.40 alpha:1.0];
+    label.textColor = [IOS6Theme titleColor];
     label.backgroundColor = [UIColor clearColor];
-    label.shadowColor = [UIColor colorWithWhite:1.0 alpha:0.6];
+    label.shadowColor = [IOS6Theme embossShadowColor];
     label.shadowOffset = CGSizeMake(0, 1);
     label.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [self.headerView addSubview:label];
@@ -94,6 +145,7 @@ static int JobSortRank(InstallJob *j) {
     self.urlField.delegate = self;
     self.urlField.clearButtonMode = UITextFieldViewModeWhileEditing;
     self.urlField.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [IOS6Theme styleTextField:self.urlField];   // stock rounded (default) / dark field (dark themes)
     [self.headerView addSubview:self.urlField];
 
     self.installButton = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -105,6 +157,12 @@ static int JobSortRank(InstallJob *j) {
                            action:@selector(installTapped)
                  forControlEvents:UIControlEventTouchUpInside];
     [self.headerView addSubview:self.installButton];
+}
+
+// v3.0: open the built-in "Download later" collection (apps the user saved to grab later).
+- (void)openLaterTapped {
+    CollectionViewController *vc = [[CollectionViewController alloc] initWithCollectionId:CollectionLaterId];
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)buildTable {
@@ -129,7 +187,27 @@ static int JobSortRank(InstallJob *j) {
         NSDate *da = a.startedAt ?: [NSDate distantPast], *db = b.startedAt ?: [NSDate distantPast];
         return [da compare:db];
     }];
-    [self.jobsTable reloadData];
+
+    // A download posts a "changed" notification on every received chunk (many/sec). If we
+    // reloadData on each one, a reload landing mid-touch tears the cell out from under the
+    // user's finger and the row tap (pause/resume) never fires. So: only reloadData when the
+    // job set/order/state actually changed (structural); for progress-only ticks, update the
+    // visible cells in place — which leaves touch tracking intact so the tap registers.
+    NSMutableString *sig = [NSMutableString string];
+    for (InstallJob *j in self.jobs) [sig appendFormat:@"%@|%@;", j.jobId ?: @"", j.state ?: @""];
+    BOOL structural = ![sig isEqualToString:self.jobsSignature ?: @""];
+    self.jobsSignature = sig;
+
+    if (structural) {
+        [self.jobsTable reloadData];
+    } else {
+        for (NSIndexPath *ip in [self.jobsTable indexPathsForVisibleRows]) {
+            if (ip.row >= (NSInteger)self.jobs.count) continue;
+            UITableViewCell *cell = [self.jobsTable cellForRowAtIndexPath:ip];
+            if ([cell isKindOfClass:[JobCell class]])
+                [(JobCell *)cell configureWithJob:self.jobs[ip.row]];
+        }
+    }
     [self refreshLeftBarButton];
 }
 
@@ -146,6 +224,20 @@ static int JobSortRank(InstallJob *j) {
                                        cancelButtonTitle:T(@"common.ok")
                                        otherButtonTitles:nil];
     [a show];
+}
+
+- (void)pauseAllTapped { [[InstallManager shared] pauseAllActiveJobs]; }
+- (void)resumeAllTapped { [[InstallManager shared] resumeAllPausedJobs]; }
+
+// Tap a job row to pause (if downloading/queued) or resume (if paused). Per-job control —
+// iOS 6's single swipe button is already used for cancel/delete, so the tap toggles pause.
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.row >= (NSInteger)self.jobs.count) return;
+    InstallJob *job = self.jobs[ip.row];
+    NSString *s = job.state ?: @"";
+    if ([s isEqualToString:@"downloading"] || [s isEqualToString:@"queued"]) [[InstallManager shared] pauseJob:job.jobId];
+    else if ([s isEqualToString:@"paused"]) [[InstallManager shared] resumeJob:job.jobId];
 }
 
 - (void)installTapped {
@@ -256,6 +348,15 @@ static int JobSortRank(InstallJob *j) {
     return MAX((NSInteger)self.jobs.count, 1);
 }
 
+// "Installations (N)" header + any footer: clear the backdrop + recolour the label (iOS 6's default
+// dark blue-grey is unreadable on dark; the backdrop can render black after the texture is removed).
+- (void)tableView:(UITableView *)tv willDisplayHeaderView:(UIView *)view forSection:(NSInteger)s {
+    [IOS6Theme styleGroupedHeaderFooter:view];
+}
+- (void)tableView:(UITableView *)tv willDisplayFooterView:(UIView *)view forSection:(NSInteger)s {
+    [IOS6Theme styleGroupedHeaderFooter:view];
+}
+
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
     // Live counter: "N downloading · M waiting" (only the non-zero parts). Falls back to the
     // total count when nothing is active/waiting (all finished, or empty).
@@ -283,10 +384,11 @@ static int JobSortRank(InstallJob *j) {
             cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault
                                           reuseIdentifier:@"empty"];
             cell.textLabel.textAlignment = NSTextAlignmentCenter;
-            cell.textLabel.textColor = [UIColor grayColor];
             cell.textLabel.font = [UIFont systemFontOfSize:13];
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         }
+        cell.backgroundColor = [IOS6Theme cellColor];
+        cell.textLabel.textColor = [IOS6Theme labelGray];
         cell.textLabel.text = T(@"install.empty");
         return cell;
     }

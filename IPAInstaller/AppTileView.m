@@ -4,8 +4,6 @@
 #import "IconLoader.h"
 #import "IOS6Theme.h"
 
-static UIImage *_sharedCheckOn = nil;
-static UIImage *_sharedCheckOff = nil;
 static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw card+icon, skip text
 
 @interface AppTileView ()
@@ -14,6 +12,9 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 // the key to smooth scrolling: text/card are drawn once per app, never re-rendered per icon.
 @property (nonatomic, strong) UIImageView *iconView;
 @property (nonatomic, copy)   NSString *currentIconUrl;
+// Selection check, an OVERLAY above the icon (so it stays visible even on tiny dense tiles where
+// the icon fills the card). Updated imperatively → reliably reflects the selected state.
+@property (nonatomic, strong) UIImageView *selectionBadge;
 @end
 
 @implementation AppTileView
@@ -33,7 +34,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     if (size.width < 2 || size.height < 2) return nil;
     static NSMutableDictionary *cache = nil;
     if (!cache) cache = [NSMutableDictionary dictionary];
-    NSString *k = [NSString stringWithFormat:@"%.0fx%.0f", size.width, size.height];
+    NSString *k = [NSString stringWithFormat:@"%@|%.0fx%.0f", [IOS6Theme currentThemeID], size.width, size.height];
     UIImage *hit = cache[k];
     if (hit) return hit;
     UIGraphicsBeginImageContextWithOptions(size, YES, [UIScreen mainScreen].scale);
@@ -41,10 +42,10 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     UIRectFill(CGRectMake(0, 0, size.width, size.height));
     UIBezierPath *card = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0.5, 0.5, size.width - 1, size.height - 1)
                                                     cornerRadius:12];
-    [[UIColor whiteColor] setFill];
+    [[IOS6Theme cellColor] setFill];
     [card fill];
     card.lineWidth = 1.0;
-    [[UIColor colorWithRed:0.78 green:0.80 blue:0.84 alpha:1.0] setStroke];
+    [[IOS6Theme separatorColor] setStroke];
     [card stroke];
     UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -52,39 +53,54 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     return img;
 }
 
+// Both states FOLLOW THE THEME accent and are cached per theme id (cheap: regenerated only when
+// the user switches theme). ON = accent-filled disc + white ring + white check; OFF = white disc +
+// accent ring. The white ring/disc keep the badge legible on top of ANY app icon.
 + (UIImage *)checkGlyphOn {
-    if (_sharedCheckOn) return _sharedCheckOn;
-    CGFloat size = 26;
+    static NSMutableDictionary *cache = nil;
+    if (!cache) cache = [NSMutableDictionary dictionary];
+    NSString *k = [IOS6Theme currentThemeID] ?: @"_";
+    UIImage *hit = cache[k];
+    if (hit) return hit;
+    CGFloat size = 28;
     UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, [UIScreen mainScreen].scale);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
-    CGContextSetRGBFillColor(ctx, 0.13, 0.55, 0.96, 1.0);
-    [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(1, 1, size-2, size-2)] fill];
-    CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 1);
-    CGContextSetLineWidth(ctx, 2.5);
+    [[UIColor whiteColor] setFill];                                   // white ring for contrast
+    [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(0.5, 0.5, size-1, size-1)] fill];
+    [[IOS6Theme primaryBlue] setFill];                               // themed accent fill
+    [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(2, 2, size-4, size-4)] fill];
+    CGContextSetRGBStrokeColor(ctx, 1, 1, 1, 1);                      // white check
+    CGContextSetLineWidth(ctx, 2.6);
     CGContextSetLineCap(ctx, kCGLineCapRound);
     CGContextSetLineJoin(ctx, kCGLineJoinRound);
-    CGContextMoveToPoint(ctx, 7, 13);
-    CGContextAddLineToPoint(ctx, 12, 18);
-    CGContextAddLineToPoint(ctx, 20, 9);
+    CGContextMoveToPoint(ctx, 8, 14);
+    CGContextAddLineToPoint(ctx, 12.5, 19);
+    CGContextAddLineToPoint(ctx, 21, 9.5);
     CGContextStrokePath(ctx);
-    _sharedCheckOn = UIGraphicsGetImageFromCurrentImageContext();
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
-    return _sharedCheckOn;
+    cache[k] = img;
+    return img;
 }
 
 + (UIImage *)checkGlyphOff {
-    if (_sharedCheckOff) return _sharedCheckOff;
-    CGFloat size = 26;
+    static NSMutableDictionary *cache = nil;
+    if (!cache) cache = [NSMutableDictionary dictionary];
+    NSString *k = [IOS6Theme currentThemeID] ?: @"_";
+    UIImage *hit = cache[k];
+    if (hit) return hit;
+    CGFloat size = 28;
     UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, [UIScreen mainScreen].scale);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
-    CGContextSetRGBFillColor(ctx, 1, 1, 1, 0.85);
+    CGContextSetRGBFillColor(ctx, 1, 1, 1, 0.92);                    // bright disc, visible on any icon
     [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(1, 1, size-2, size-2)] fill];
-    CGContextSetRGBStrokeColor(ctx, 0.55, 0.58, 0.62, 1.0);
-    CGContextSetLineWidth(ctx, 1.5);
-    CGContextStrokeEllipseInRect(ctx, CGRectMake(2, 2, size-4, size-4));
-    _sharedCheckOff = UIGraphicsGetImageFromCurrentImageContext();
+    CGContextSetStrokeColorWithColor(ctx, [IOS6Theme primaryBlue].CGColor);   // themed ring
+    CGContextSetLineWidth(ctx, 2.0);
+    CGContextStrokeEllipseInRect(ctx, CGRectMake(2.5, 2.5, size-5, size-5));
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
-    return _sharedCheckOff;
+    cache[k] = img;
+    return img;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -97,8 +113,17 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
         self.iconView = [[UIImageView alloc] init];
         self.iconView.contentMode = UIViewContentModeScaleAspectFit;
         self.iconView.opaque = YES;
-        self.iconView.backgroundColor = [UIColor whiteColor];   // matches the white card → no blend
+        self.iconView.backgroundColor = [IOS6Theme cellColor];   // matches the card → no blend
         [self addSubview:self.iconView];
+
+        // Selection check overlay — ABOVE the icon, hidden until selection mode. Not interactive so
+        // a tap anywhere on the tile (including the badge) still toggles selection. Given a real
+        // default frame so it's never zero-sized (it's resized to the tile in layoutSubviews).
+        self.selectionBadge = [[UIImageView alloc] initWithFrame:CGRectMake(5, 5, 26, 26)];
+        self.selectionBadge.contentMode = UIViewContentModeScaleAspectFit;
+        self.selectionBadge.userInteractionEnabled = NO;
+        self.selectionBadge.hidden = YES;
+        [self addSubview:self.selectionBadge];
 
         UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
                                         initWithTarget:self action:@selector(tapped)];
@@ -117,7 +142,15 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    if (self.bounds.size.width >= 2) self.iconView.frame = [self iconFrameForWidth:self.bounds.size.width];
+    CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
+    if (w < 2 || h < 2) return;
+    CGRect ic = [self iconFrameForWidth:w];
+    self.iconView.frame = ic;
+
+    // Selection badge: top-left corner, scaled to the tile, kept above the icon.
+    CGFloat bs = MAX(18, MIN(28, w * 0.28));
+    self.selectionBadge.frame = CGRectMake(5, 5, bs, bs);
+    if (!self.selectionBadge.hidden) [self bringSubviewToFront:self.selectionBadge];
 }
 
 - (void)setApp:(NSDictionary *)app {
@@ -149,15 +182,27 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 }
 
 - (void)setSelectionMode:(BOOL)selectionMode {
-    if (_selectionMode == selectionMode) return;
     _selectionMode = selectionMode;
-    [self setNeedsDisplay];
+    [self updateSelectionBadge];
 }
 
 - (void)setTileSelected:(BOOL)tileSelected {
-    if (_tileSelected == tileSelected) return;
     _tileSelected = tileSelected;
-    if (self.selectionMode) [self setNeedsDisplay];
+    [self updateSelectionBadge];
+}
+
+// Imperative update of the overlay badge — independent of drawRect, so the filled/empty state is
+// always correct the instant selection changes (and visible above the icon at any density).
+- (void)updateSelectionBadge {
+    if (!self.selectionMode) { self.selectionBadge.hidden = YES; return; }
+    self.selectionBadge.image = self.tileSelected ? [AppTileView checkGlyphOn] : [AppTileView checkGlyphOff];
+    // Set the frame NOW (don't wait for layoutSubviews, which may not re-run on a reused cell), so
+    // the badge is never left zero-sized → invisible.
+    CGFloat w = self.bounds.size.width;
+    if (w >= 2) { CGFloat bs = MAX(18, MIN(28, w * 0.28)); self.selectionBadge.frame = CGRectMake(5, 5, bs, bs); }
+    self.selectionBadge.hidden = NO;
+    [self bringSubviewToFront:self.selectionBadge];
+    [self setNeedsLayout];
 }
 
 - (void)drawRect:(CGRect)rect {
@@ -182,7 +227,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     NSString *title = self.app[@"title"] ?: @"";
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    [[UIColor colorWithRed:0.13 green:0.18 blue:0.32 alpha:1.0] set];
+    [[IOS6Theme titleColor] set];
     if (compact) {
         UIFont *tf = [UIFont boldSystemFontOfSize:(tiny ? 10 : 11)];
         CGRect tr = CGRectMake(2, tY, w - 4, 14);
@@ -200,21 +245,27 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
         NSString *sizeStr = size > 0 ? [AppTileView humanSize:size] : @"?";
         NSString *sub = [NSString stringWithFormat:@"v%@ • iOS %@ • %@",
                            self.app[@"version"] ?: @"?", self.app[@"minOS"] ?: @"?", sizeStr];
-        [[UIColor grayColor] set];
+        [[IOS6Theme labelGray] set];
         [sub drawInRect:CGRectMake(6, h - 18, w - 12, 14)
                withFont:[UIFont systemFontOfSize:10] lineBreakMode:NSLineBreakByTruncatingTail
               alignment:NSTextAlignmentCenter];
     }
 #pragma clang diagnostic pop
-
-    if (self.selectionMode) {
-        UIImage *g = self.tileSelected ? [AppTileView checkGlyphOn] : [AppTileView checkGlyphOff];
-        [g drawInRect:CGRectMake(6, 6, 26, 26)];
-    }
+    // The selection check is drawn by the `selectionBadge` overlay (above the icon), not here —
+    // so it stays visible on dense tiles where the icon covers the top-left corner.
 }
 
 - (void)tapped {
     if (!self.onTap || !self.app) return;
+    // Selection mode: instant feedback. Flip the check NOW (optimistic) and fire onTap immediately —
+    // no 0.18s press animation to wait through. The controller records it + reloads to confirm
+    // (same value → no flicker).
+    if (self.selectionMode) {
+        self.tileSelected = !self.tileSelected;
+        self.onTap(self.app);
+        return;
+    }
+    // Normal browse: brief press flash, then open the detail screen.
     self.alpha = 0.5;
     NSDictionary *appCopy = self.app;
     void (^onTap)(NSDictionary *) = [self.onTap copy];
