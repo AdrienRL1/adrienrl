@@ -13,6 +13,7 @@
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel *statusLabel;
 @property (nonatomic, strong) NSArray *versions;
+@property (nonatomic, strong) NSArray *explicitVersions;       // #171: pre-supplied list (Works Today / Modded)
 @property (nonatomic, strong) NSMutableDictionary *encByURL;   // url -> @(MachOInspectionResult)
 @property (nonatomic, strong) NSMutableSet *encInflight;       // urls currently being probed
 @property (nonatomic, assign) BOOL pendingReload;             // a probe resolved mid-scroll → reload when it settles (#151)
@@ -23,6 +24,15 @@
 - (instancetype)initWithBundleId:(NSString *)bundleId title:(NSString *)title {
     if ((self = [super init])) {
         _bundleId = [bundleId copy];
+        _appTitle = [title copy];
+    }
+    return self;
+}
+
+// #171: Works Today / Modded grouped versions — supplied directly (not in the SQLite catalogue).
+- (instancetype)initWithVersions:(NSArray *)versions title:(NSString *)title {
+    if ((self = [super init])) {
+        _explicitVersions = [versions copy];
         _appTitle = [title copy];
     }
     return self;
@@ -81,6 +91,16 @@
 - (void)loadVersions {
     [self.spinner startAnimating];
     self.statusLabel.text = T(@"catalog.loading_more");
+
+    // #171: pre-supplied list (Works Today / Modded) — show it directly, no catalogue/backend query.
+    if (self.explicitVersions) {
+        self.versions = self.explicitVersions;
+        [self.spinner stopAnimating];
+        self.statusLabel.text = [NSString stringWithFormat:T(@"versions.count"), (unsigned long)self.versions.count];
+        [self.tableView reloadData];
+        [self probeVisibleRows];   // lazily badge any encrypted mirrors
+        return;
+    }
 
     if ([[InstallManager shared] autonomousMode]) {
         if (![[LocalCatalog shared] isReady]) {
@@ -256,7 +276,7 @@ static const NSUInteger kMaxConcurrentEncProbes = 3;
     if (encrypted)        tag = [T(@"versions.encrypted") stringByAppendingString:@"  "];
     else if (!compatible) tag = [T(@"versions.incompatible") stringByAppendingString:@"  "];
     cell.detailTextLabel.text = [NSString stringWithFormat:@"%@min iOS %@ • %@\n%@",
-                                  tag, v[@"minOS"] ?: @"?", host, fileName];
+                                  tag, ADDisplayIOS(v[@"minOS"]), host, fileName];
     cell.detailTextLabel.font = [UIFont systemFontOfSize:10];
     BOOL warn = encrypted || !compatible;
     cell.detailTextLabel.textColor = !warn

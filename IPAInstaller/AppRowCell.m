@@ -15,7 +15,7 @@
 + (NSInteger)gridColumns {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     BOOL pad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
-    NSInteger def = pad ? 4 : 1;
+    NSInteger def = pad ? 5 : 1;   // #171: iPad defaults to 5 apps/row (was 4)
     NSInteger n = ([d objectForKey:@"IPAInstall.GridColumns"] != nil)
         ? [d integerForKey:@"IPAInstall.GridColumns"] : def;
     if (n < 1)  n = 1;
@@ -25,11 +25,25 @@
 
 + (NSInteger)tilesPerRowForWidth:(CGFloat)w {
     if (w < 1) w = [UIScreen mainScreen].bounds.size.width;
-    NSInteger n = [self gridColumns];
+    NSInteger base = [self gridColumns];   // the count the user picked, defined at PORTRAIT width
     BOOL pad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+    NSInteger floorCols = pad ? 2 : 1;     // iPad is always a grid (≥2); iPhone can be a 1-col list
+    NSInteger n;
+    if (base <= 1 && !pad) {
+        // Explicit single-column LIST stays a list in BOTH orientations (no jarring list→grid flip).
+        n = 1;
+    } else {
+        // Scale the column count with the ACTUAL width so the TILE SIZE stays ~constant across
+        // rotation (e.g. portrait 4-up → landscape ~7-up), instead of a FIXED count that looks
+        // sparse in landscape and cramped again back in portrait (the rotation bug). Reference =
+        // the device's portrait width.
+        CGFloat portraitW = MIN([UIScreen mainScreen].bounds.size.width,
+                                [UIScreen mainScreen].bounds.size.height);
+        if (portraitW < 1) portraitW = w;
+        n = (NSInteger)((CGFloat)base * (w / portraitW) + 0.5f);   // round to nearest
+    }
     // Never make tiles absurdly small for the width: cap at however many ~76 pt tiles fit.
     NSInteger maxFit = (NSInteger)(w / 76.0);
-    NSInteger floorCols = pad ? 2 : 1;   // iPad is always a grid (≥2); iPhone can be a 1-col list
     if (maxFit < floorCols) maxFit = floorCols;
     if (n < floorCols) n = floorCols;
     if (n > maxFit) n = maxFit;
@@ -102,6 +116,7 @@
     for (NSInteger i = 0; i < self.tilesPerRow; i++) {
         AppTileView *t = self.tiles[i];
         t.selectionMode = self.selectionMode;
+        t.columnCount = self.tilesPerRow;   // #171: lets the tile drop the meta line at high column counts
         NSDictionary *appI = (i < (NSInteger)apps.count) ? apps[i] : nil;
         // Pull selection state from the controller's block (source of truth).
         // This re-runs on every reuse, so far-away selections are reflected

@@ -2,7 +2,7 @@
 
 "tab.catalog" = "Katalog";
 "tab.search" = "Suche";
-"search.placeholder" = "157.000 alte Apps durchsuchen...";
+"search.placeholder" = "43.000+ Apps durchsuchen...";
 "search.hint_empty" = "Tippen, um den Katalog zu durchsuchen";
 "search.searching" = "Suchen...";
 "search.no_results" = "Keine passenden Apps gefunden";
@@ -118,6 +118,7 @@
 
 "common.ok" = "OK";
 "common.cancel" = "Abbrechen";
+"common.ios_unknown" = "unbekannt";
 
 "common.done" = "Fertig";
 "filter.title" = "Filter";
@@ -311,6 +312,7 @@
 "settings.download_folder_custom_msg" = "Absoluten Pfad eingeben, z. B. /var/mobile/Documents/AppDrop. Leer lassen, um zum Standard zurückzukehren. Der Ordner wird beim ersten Speichern erstellt.";
 "settings.keep_ipa" = "IPA nach Installation behalten";
 "settings.allow_encrypted" = "Verschlüsselte IPAs zulassen (erweitert)";
+"settings.auto_switch_mirror" = "Langsamen Mirror autom. wechseln";
 "install.saved_at_suffix" = "gespeichert unter %@";
 "install.saved_alert_title" = "IPA gespeichert";
 "install.saved_alert_msg" = "Gespeichert unter:\n%@\n\nIn Filza öffnen zum Installieren. Falls Filza mit Signaturfehler (0xe800B001) scheitert, das Paket „appinst“ aus Cydia installieren und erneut versuchen.";
@@ -376,7 +378,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "Willkommen bei AppDrop";
-"categories.welcome_sub" = "Durchsuche %@ klassische iOS-Apps & -Spiele";
+"categories.welcome_sub" = "Durchsuche %@ iOS-Apps & -Spiele";
 "categories.napps" = "%@ Apps";
 
 /* v1.7 support/donate */

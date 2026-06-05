@@ -361,10 +361,19 @@ static UIImage *AppDropModdedGlyph(void) {
     return n;
 }
 + (NSInteger)homeColumnsForWidth:(CGFloat)w {
-    NSInteger cols = [self homeColumns];
-    // Cap at however many ~76 pt tiles fit, so a high pick on a narrow phone doesn't make them tiny.
+    if (w < 1) w = [UIScreen mainScreen].bounds.size.width;
+    NSInteger base = [self homeColumns];   // the count the user picked, defined at PORTRAIT width
+    // #171: scale the column count with the ACTUAL width so the Accueil TILE SIZE stays ~constant
+    // across rotation (e.g. portrait 2-up → landscape ~4-up), the same fix as the catalogue grid —
+    // instead of a fixed count that's sparse in landscape and cramped again back in portrait.
+    CGFloat portraitW = MIN([UIScreen mainScreen].bounds.size.width,
+                            [UIScreen mainScreen].bounds.size.height);
+    if (portraitW < 1) portraitW = w;
+    NSInteger cols = (NSInteger)((CGFloat)base * (w / portraitW) + 0.5f);   // round to nearest
+    // Cap at however many ~76 pt tiles fit, so it never makes the big widget tiles tiny.
     NSInteger maxFit = (NSInteger)floorf(w / 76.0f);
     if (maxFit < 2) maxFit = 2;
+    if (cols < 2) cols = 2;            // Accueil tiles are big widgets — never a single column
     if (cols > maxFit) cols = maxFit;
     return cols;
 }

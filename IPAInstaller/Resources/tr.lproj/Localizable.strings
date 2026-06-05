@@ -3,7 +3,7 @@
 /* ===== Tab bar ===== */
 "tab.catalog" = "Katalog";
 "tab.search" = "Ara";
-"search.placeholder" = "157.000 nostaljik uygulama içinde ara...";
+"search.placeholder" = "43.000+ uygulama içinde ara...";
 "search.hint_empty" = "Katalogda aramak için yazın";
 "search.searching" = "Aranıyor...";
 "search.no_results" = "Eşleşen uygulama bulunamadı";
@@ -125,6 +125,7 @@
 /* ===== Common buttons ===== */
 "common.ok" = "Tamam";
 "common.cancel" = "İptal";
+"common.ios_unknown" = "bilinmiyor";
 
 "common.done" = "Tamam";
 /* ===== Catalog filter ===== */
@@ -314,6 +315,7 @@
 "settings.download_folder_custom_msg" = "Mutlak bir yol girin, örn: /var/mobile/Documents/AppDrop. Varsayılana dönmek için boş bırakın. Klasör ilk kaydetme işleminde oluşturulur.";
 "settings.keep_ipa" = "Yüklemeden sonra IPA'yı koru";
 "settings.allow_encrypted" = "Şifreli IPA'lara izin ver (gelişmiş)";
+"settings.auto_switch_mirror" = "Yavaş aynayı otomatik değiştir";
 "install.saved_at_suffix" = "%@ adresine kaydedildi";
 "install.saved_alert_title" = "IPA kaydedildi";
 "install.saved_alert_msg" = "Şuraya kaydedildi:\n%@\n\nYüklemek için dosyayı Filza ile açın. Eğer Filza bir imza hatası (0xe800B001) verirse, Cydia'dan “appinst” paketini yükleyin ve tekrar deneyin.";
@@ -333,7 +335,7 @@
 "categories.all_in_cat" = "Tümü";
 "categories.napps" = "%@ uygulama";
 "categories.welcome" = "AppDrop'a Hoş Geldiniz";
-"categories.welcome_sub" = "%@ nostaljik iOS uygulaması ve oyununa göz atın";
+"categories.welcome_sub" = "%@ iOS uygulaması ve oyununa göz atın";
 
 "app.picked_compatible" = "iOS'unuzla uyumlu en son sürüm gösteriliyor — daha yeni sürümler daha güncel bir iOS gerektirir.";
 "app.verdict.perfect" = "%@ cihazınızla uyumlu";

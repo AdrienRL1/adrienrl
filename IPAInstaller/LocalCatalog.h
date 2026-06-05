@@ -89,6 +89,9 @@ extern NSString *const LocalCatalogDidUpdateNotification;
 
 // All entries for a given bundle id (newest version first).
 - (NSArray *)versionsForBundleId:(NSString *)bundleId;
+// #120: one icon URL for a bundle id (single LIMIT-1 query) — much cheaper than versionsForBundleId
+// when the caller only needs an icon (the Works Today / Modded list).
+- (NSString *)iconURLForBundleId:(NSString *)bundleId;
 
 // v1.7: the latest version of an app that this device can actually run (min iOS <=
 // device iOS). Returns nil if no version is compatible. Used so "Install" grabs the

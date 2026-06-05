@@ -540,8 +540,15 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     static const int kMaxMirrorAttempts = 3;
     static const double kSlowThresholdBytesPerSec = 100.0 * 1024.0;  // 100 KB/s
     static const NSTimeInterval kSlowCheckWindow = 30.0;             // observe over 30s
+    // #171 (AndryTheBeast): past this fraction, leave a slow-but-still-MOVING mirror alone to finish
+    // the last few % — switching near the end re-probes/re-splits and threw away progress ("at 97%
+    // it jumps to another mirror and I lose half the download"). A truly STALLED mirror (< kStall)
+    // is still abandoned, so a dead connection can't hang at 99% forever.
+    static const double kNoSwitchPastFraction = 0.90;
+    static const double kStallBytesPerSec     = 2.0 * 1024.0;        // < 2 KB/s ≈ dead connection
 
     __block long long lastReceived = 0;
+    __block long long lastTotal = 0;   // #171: latest known total size, for the near-done guard below
     __block NSDate *lastTick = [NSDate date];
     // Slow-mirror detection state. We sample the byte counter every kSlowCheckWindow
     // seconds; if avg throughput in that window is under the threshold AND we have
@@ -561,6 +568,13 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     if (streams <= 0) streams = 4;
     if (streams > 8) streams = 8;
 
+    // #171 (AndryTheBeast, level 2): let the user turn OFF the automatic slow-mirror switching
+    // entirely (default ON). When OFF, AppDrop stays on the current mirror no matter how slow; the
+    // user switches manually by pausing + resuming (resume re-requests the URL → a fresh node).
+    NSUserDefaults *prefs = [NSUserDefaults standardUserDefaults];
+    BOOL autoSwitchMirror = ([prefs objectForKey:@"IPAInstall.AutoSwitchMirror"] == nil)
+                            ? YES : [prefs boolForKey:@"IPAInstall.AutoSwitchMirror"];
+
     __weak InstallJob *weakJob = job;
     [ParallelDownloader downloadURL:job.url
                               toFile:localPath
@@ -572,20 +586,25 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         // ticks below keep overwriting the "paused" UI, so the user sees the download "restart".
         if (!j || j.cancelRequested || j.pauseRequested) return YES;
         if (spaceAbort) return YES;   // #169: not enough free disk to download + install
-        // Only consider slow-mirror abort if we still have retry budget — otherwise
-        // there's no point dropping the connection.
-        if (attempt < kMaxMirrorAttempts - 1) {
+        // Only consider slow-mirror abort if the user left auto-switch ON (#171 level 2) AND we
+        // still have retry budget — otherwise there's no point dropping the connection.
+        if (autoSwitchMirror && attempt < kMaxMirrorAttempts - 1) {
             NSTimeInterval elapsed = -[windowStart timeIntervalSinceNow];
             if (elapsed >= kSlowCheckWindow) {
                 long long delta = lastReceived - windowStartBytes;
                 double bps = elapsed > 0 ? delta / elapsed : 0;
-                if (bps < kSlowThresholdBytesPerSec) {
+                // #171: near the end, keep a slow-but-still-MOVING mirror (let it finish the last
+                // few %); only abandon it if it's effectively dead (< kStallBytesPerSec).
+                BOOL nearEnd = (lastTotal > 0 &&
+                                lastReceived >= (long long)((double)lastTotal * kNoSwitchPastFraction));
+                BOOL keepSlowMirror = nearEnd && (bps >= kStallBytesPerSec);
+                if (bps < kSlowThresholdBytesPerSec && !keepSlowMirror) {
                     NSLog(@"[InstallManager] Mirror slow (%.1f KB/s avg over %.0fs) — abort to retry (attempt %d/%d)",
                           bps / 1024.0, elapsed, attempt + 1, kMaxMirrorAttempts);
                     slowAbort = YES;
                     return YES;
                 }
-                // Healthy speed — reset the window and keep going.
+                // Healthy speed (or a near-done mirror we're letting finish) — reset the window.
                 windowStart = [NSDate date];
                 windowStartBytes = lastReceived;
             }
@@ -609,6 +628,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         NSTimeInterval dt = [now timeIntervalSinceDate:lastTick];
         double bps = dt > 0 ? (received - lastReceived) / dt : 0;
         lastReceived = received;
+        lastTotal = total;
         lastTick = now;
         dispatch_async(dispatch_get_main_queue(), ^{
             InstallJob *j = weakJob;

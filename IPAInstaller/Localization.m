@@ -16,6 +16,18 @@ NSString *AppDropT(NSString *key) {
     return key;
 }
 
+// #171 (feedback #119): "min iOS 0.0.0" reads as a bug. A nil/empty or all-zero version means the
+// catalog has no real minimum → show a localized "unknown" instead.
+NSString *ADDisplayIOS(NSString *minOS) {
+    if (![minOS isKindOfClass:[NSString class]] || minOS.length == 0) return AppDropT(@"common.ios_unknown");
+    BOOL allZero = YES;
+    for (NSUInteger i = 0; i < minOS.length; i++) {
+        unichar c = [minOS characterAtIndex:i];
+        if (c != '0' && c != '.') { allZero = NO; break; }
+    }
+    return allZero ? AppDropT(@"common.ios_unknown") : minOS;
+}
+
 // Hand-rolled .strings parser. iOS 6's Foundation parsers (propertyListFromStringsFileFormat
 // AND dictionaryWithContentsOfFile, in BOTH text and binary form) return an EMPTY dict for
 // some perfectly-valid files — notably Turkish — which caused "Turkish shows English"

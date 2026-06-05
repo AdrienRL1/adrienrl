@@ -272,7 +272,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
         // Validate the new DB opens BEFORE discarding the live one.
         sqlite3 *newdb = NULL;
         if (sqlite3_open_v2([dbTmp UTF8String], &newdb,
-                            SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, NULL) != SQLITE_OK) {
+                            SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, NULL) != SQLITE_OK) {
             if (newdb) sqlite3_close(newdb);
             [fm removeItemAtPath:dbTmp error:NULL];
             @synchronized (self) { self.updateInFlight = NO; }
@@ -283,7 +283,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
         [fm removeItemAtPath:cached error:NULL];
         [fm moveItemAtPath:dbTmp toPath:cached error:NULL];
 
-        sqlite3_exec(newdb, "PRAGMA mmap_size = 268435456", NULL, NULL, NULL);
+        sqlite3_exec(newdb, "PRAGMA mmap_size = 0", NULL, NULL, NULL);   // #171: no mmap → no 0xdead10cc suspend-kill
         sqlite3_exec(newdb, "PRAGMA cache_size = -8000",    NULL, NULL, NULL);
         sqlite3_exec(newdb, "PRAGMA temp_store = MEMORY",   NULL, NULL, NULL);
 
@@ -349,9 +349,15 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
         }
         _dbPath = [path copy];
 
+        // #171: FULLMUTEX (was NOMUTEX). Several read methods (versionsForBundleId, categoryCounts,
+        // iconPoolForCategory, uniqueAppCount…) run sqlite3_* on the CALLING thread — often the main
+        // thread (e.g. RevivalCatalog.appDicts looks up icons). A NOMUTEX connection used from the
+        // main thread WHILE _searchQueue runs a search = concurrent access to a single-thread handle
+        // → EXC_BAD_ACCESS inside libsqlite3 (the SIGSEGV auto-crashes #110/#131/#134). FULLMUTEX
+        // makes SQLite serialize access with its own per-connection mutex, so it's crash-safe.
         sqlite3 *db = NULL;
         int rc = sqlite3_open_v2([_dbPath UTF8String], &db,
-                                   SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX,
+                                   SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
                                    NULL);
         if (rc != SQLITE_OK) {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -364,8 +370,12 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
             if (db) sqlite3_close(db);
             return;
         }
-        // mmap-backed reads for faster random access on large pages
-        sqlite3_exec(db, "PRAGMA mmap_size = 268435456", NULL, NULL, NULL);  // 256 MB max mmap window
+        // #171: mmap_size MUST stay 0. A memory-mapped file in Library/Caches held across app
+        // SUSPENSION makes iOS kill the app with 0xdead10cc ("was suspended with locked system
+        // files: appdrop_catalog.db") — the #1 source of auto crash reports on iOS 5/6/7. A readonly
+        // connection holds no lock between queries, so dropping mmap removes the only thing iOS sees
+        // held across suspension. Indexed queries stay fast via the page cache below.
+        sqlite3_exec(db, "PRAGMA mmap_size = 0", NULL, NULL, NULL);          // no mmap → no 0xdead10cc
         sqlite3_exec(db, "PRAGMA cache_size = -8000", NULL, NULL, NULL);     // 8 MB page cache
         sqlite3_exec(db, "PRAGMA temp_store = MEMORY", NULL, NULL, NULL);
 
@@ -839,7 +849,7 @@ static NSString *iconURLForImgPk(long imgPk) {
     if (![ov isKindOfClass:[NSDictionary class]] || ov.count == 0) return;
 
     sqlite3 *wdb = NULL;
-    if (sqlite3_open_v2([_dbPath UTF8String], &wdb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, NULL) != SQLITE_OK) {
+    if (sqlite3_open_v2([_dbPath UTF8String], &wdb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, NULL) != SQLITE_OK) {
         if (wdb) sqlite3_close(wdb);
         return;   // read-only file (e.g. a bundled DB) → can't apply; harmless
     }
@@ -914,7 +924,7 @@ static NSString *iconURLForImgPk(long imgPk) {
     }
 
     sqlite3 *wdb = NULL;
-    if (sqlite3_open_v2([_dbPath UTF8String], &wdb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, NULL) != SQLITE_OK) {
+    if (sqlite3_open_v2([_dbPath UTF8String], &wdb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, NULL) != SQLITE_OK) {
         if (wdb) sqlite3_close(wdb);
         return;   // read-only DB → can't merge; harmless
     }
@@ -1069,6 +1079,30 @@ static NSString *iconURLForImgPk(long imgPk) {
     }
     sqlite3_finalize(st);
     return out;
+}
+
+// #120: lightweight icon lookup. The Works Today / Modded list (RevivalCatalog/ModdedCatalog
+// appDicts) only needs ONE icon URL per bundle id — it used versionsForBundleId, which builds a
+// full dict for EVERY version (dozens for e.g. com.burbn.instagram = Retrogram), on the MAIN thread
+// → the "app freezes momentarily when loading icons" report. This does a single LIMIT-1 query and
+// derives the icon URL straight from img_pk (no per-version dict building).
+- (NSString *)iconURLForBundleId:(NSString *)bundleId {
+    if (!self.loaded || !bundleId.length || !self.db) return nil;
+    NSString *icon = nil;
+    sqlite3_stmt *st = NULL;
+    if (sqlite3_prepare_v2(self.db,
+            "SELECT img_pk FROM entries WHERE bid=?1 AND img_pk>0 ORDER BY version DESC, pk DESC LIMIT 1",
+            -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, [bundleId UTF8String], -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            long imgPk = sqlite3_column_int(st, 0);
+            if (imgPk > 0)
+                icon = [NSString stringWithFormat:@"https://stuffed18.github.io/ipa-archive-updated/data/%ld/%ld.jpg",
+                          imgPk / 1000, imgPk];
+        }
+    }
+    sqlite3_finalize(st);
+    return icon;
 }
 
 // Map the current app language to its stored description column ("fr" -> "desc_fr").

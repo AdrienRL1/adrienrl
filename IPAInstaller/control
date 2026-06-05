@@ -1,8 +1,8 @@
 Package: ca.adrien.appdrop
 Name: AppDrop
-Version: 3.1
+Version: 3.1.1
 Architecture: iphoneos-arm
-Description: Browse 43,000+ vintage iOS apps by category and install them on iOS 5-10. Fully iPad-optimized. v3.1: suggest-a-category, automatic crash reports, encrypted-IPA & low-storage install guards, plus fixes for iOS 9 installs, the iPad 1 catalog hang, download resume & dark-mode readability. (17 themes + dark mode, Favorites & folders, app sharing, 8 languages.)
+Description: Browse 43,000+ iOS apps by category and install them on iOS 5-10. Fully iPad-optimized. v3.1: suggest-a-category, automatic crash reports, encrypted-IPA & low-storage install guards, plus fixes for iOS 9 installs, the iPad 1 catalog hang, download resume & dark-mode readability. (17 themes + dark mode, Favorites & folders, app sharing, 8 languages.)
 Homepage: https://github.com/AdrienRL1/AppDrop
 Depiction: https://adrienrl1.github.io/cydia/depiction.html
 Icon: https://adrienrl1.github.io/cydia/PackageIcon.png

@@ -2,7 +2,7 @@
 
 "tab.catalog" = "目录";
 "tab.search" = "搜索";
-"search.placeholder" = "搜索 157,000 个老应用...";
+"search.placeholder" = "搜索 43,000+ 个应用...";
 "search.hint_empty" = "输入以搜索目录";
 "search.searching" = "搜索中...";
 "search.no_results" = "未找到匹配应用";
@@ -118,6 +118,7 @@
 
 "common.ok" = "好";
 "common.cancel" = "取消";
+"common.ios_unknown" = "未知";
 
 "common.done" = "完成";
 "filter.title" = "筛选";
@@ -311,6 +312,7 @@
 "settings.download_folder_custom_msg" = "输入绝对路径,例如 /var/mobile/Documents/AppDrop。留空可恢复默认。文件夹将在首次保存时创建。";
 "settings.keep_ipa" = "安装后保留 IPA";
 "settings.allow_encrypted" = "允许加密的 IPA（高级）";
+"settings.auto_switch_mirror" = "镜像慢时自动切换";
 "install.saved_at_suffix" = "已保存至 %@";
 "install.saved_alert_title" = "IPA 已保存";
 "install.saved_alert_msg" = "保存至:\n%@\n\n在 Filza 中打开以进行安装。如果 Filza 报签名错误 (0xe800B001),请从 Cydia 安装“appinst”包后重试。";
@@ -376,7 +378,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "欢迎使用 AppDrop";
-"categories.welcome_sub" = "浏览 %@ 款经典 iOS 应用和游戏";
+"categories.welcome_sub" = "浏览 %@ 款 iOS 应用和游戏";
 "categories.napps" = "%@ 款";
 
 /* v1.7 support/donate */

@@ -3,7 +3,7 @@
 /* ===== Tab bar ===== */
 "tab.catalog" = "Catalog";
 "tab.search" = "Search";
-"search.placeholder" = "Search 157,000 vintage apps...";
+"search.placeholder" = "Search 43,000+ apps...";
 "search.hint_empty" = "Type to search the catalog";
 "search.searching" = "Searching...";
 "search.no_results" = "No matching apps found";
@@ -125,6 +125,7 @@
 /* ===== Common buttons ===== */
 "common.ok" = "OK";
 "common.cancel" = "Cancel";
+"common.ios_unknown" = "unknown";
 
 "common.done" = "Done";
 /* ===== Catalog filter ===== */
@@ -319,6 +320,7 @@
 "settings.download_folder_custom_msg" = "Enter an absolute path, e.g. /var/mobile/Documents/AppDrop. Leave empty to revert to the default. The folder is created on first save.";
 "settings.keep_ipa" = "Keep IPA after install";
 "settings.allow_encrypted" = "Allow encrypted IPAs (advanced)";
+"settings.auto_switch_mirror" = "Auto-switch slow mirrors";
 "install.saved_at_suffix" = "saved at %@";
 "install.saved_alert_title" = "IPA saved";
 "install.saved_alert_msg" = "Saved to:\n%@\n\nOpen it in Filza to install. If Filza fails with a signature error (0xe800B001), install the “appinst” package from Cydia and retry.";
@@ -384,7 +386,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "Welcome to AppDrop";
-"categories.welcome_sub" = "Browse %@ vintage iOS apps & games";
+"categories.welcome_sub" = "Browse %@ iOS apps & games";
 "categories.napps" = "%@ apps";
 
 /* v1.7 support/donate */

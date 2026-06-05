@@ -302,7 +302,7 @@ static const CGFloat kToolbarH = 44.0;
     long long size = [app[@"size"] longLongValue];
     NSString *sizeStr = size > 0 ? [self humanSize:size] : @"?";
     cell.appSubtitleLabel.text = [NSString stringWithFormat:@"v%@ — min iOS %@ — %@",
-                                   app[@"version"] ?: @"?", app[@"minOS"] ?: @"?", sizeStr];
+                                   app[@"version"] ?: @"?", ADDisplayIOS(app[@"minOS"]), sizeStr];
 
     NSString *key = [CollectionStore keyForApp:app];
     if (self.selecting) {

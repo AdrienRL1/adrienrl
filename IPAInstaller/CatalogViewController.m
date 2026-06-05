@@ -600,7 +600,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
     NSString *sizeStr = size > 0 ? [self humanSize:size] : @"?";
     NSString *fname = app[@"fileName"] ?: @"";
     NSString *metaLine = [NSString stringWithFormat:@"v%@ — min iOS %@ — %@",
-                          app[@"version"] ?: @"?", app[@"minOS"] ?: @"?", sizeStr];
+                          app[@"version"] ?: @"?", ADDisplayIOS(app[@"minOS"]), sizeStr];
     cell.appSubtitleLabel.text = fname.length
         ? [NSString stringWithFormat:@"%@\n%@", metaLine, fname]
         : metaLine;

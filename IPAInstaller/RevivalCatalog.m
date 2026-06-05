@@ -131,6 +131,50 @@ static NSString *ADLocalizedNotes(NSDictionary *e) {
     return [n isKindOfClass:[NSString class]] ? n : @"";
 }
 
+// Normalize a display name to a grouping key: lowercase, keep only a–z / 0–9 ("Discord!" → "discord").
+static NSString *ADRevivalNameKey(NSString *name) {
+    NSString *s = [name lowercaseString] ?: @"";
+    NSMutableString *m = [NSMutableString stringWithCapacity:s.length];
+    for (NSUInteger i = 0; i < s.length; i++) {
+        unichar c = [s characterAtIndex:i];
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) [m appendFormat:@"%C", c];
+    }
+    return m;
+}
+
+// #171 Bug 3: collapse entries that are the SAME app (same normalized name) but DIFFERENT versions
+// into ONE navigable row (newest first), carrying the full version list under "revivalVersions".
+// Exact-version duplicates inside a group are dropped (guards an accidental double-approval, #171 Bug 4).
+static NSArray *ADRevivalGroupByName(NSArray *flat) {
+    NSMutableArray *order = [NSMutableArray array];                  // group keys, first-seen order
+    NSMutableDictionary *groups = [NSMutableDictionary dictionary];  // key -> NSMutableArray<dict>
+    for (NSDictionary *d in flat) {
+        NSString *key = ADRevivalNameKey(d[@"title"]);
+        if (!key.length) key = [(d[@"url"] ?: @"") lowercaseString];  // unnamed → keep distinct by url
+        NSMutableArray *g = [groups objectForKey:key];
+        if (!g) { g = [NSMutableArray array]; [groups setObject:g forKey:key]; [order addObject:key]; }
+        NSString *nv = d[@"version"] ?: @"";
+        BOOL dup = NO;
+        for (NSDictionary *x in g) { if ([(x[@"version"] ?: @"") isEqualToString:nv]) { dup = YES; break; } }
+        if (!dup) [g addObject:d];
+    }
+    NSMutableArray *out = [NSMutableArray array];
+    for (NSString *key in order) {
+        NSMutableArray *g = [groups objectForKey:key];
+        [g sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+            BOOL aLEb = RevVersionLTE(a[@"version"], b[@"version"]);
+            BOOL bLEa = RevVersionLTE(b[@"version"], a[@"version"]);
+            if (aLEb && bLEa) return NSOrderedSame;
+            return aLEb ? NSOrderedDescending : NSOrderedAscending;   // newest first
+        }];
+        if (g.count <= 1) { [out addObject:[g objectAtIndex:0]]; continue; }
+        NSMutableDictionary *rep = [[g objectAtIndex:0] mutableCopy];   // representative = newest
+        [rep setObject:[g copy] forKey:@"revivalVersions"];
+        [out addObject:rep];
+    }
+    return out;
+}
+
 - (NSArray *)appDicts {
     NSMutableArray *out = [NSMutableArray array];
     for (NSDictionary *e in [self compatibleApps]) {
@@ -140,10 +184,7 @@ static NSString *ADLocalizedNotes(NSDictionary *e) {
         // otherwise reuse the REAL app's catalogue icon via bid (e.g. Discord's).
         NSString *icon = [e[@"icon"] isKindOfClass:[NSString class]] ? e[@"icon"] : @"";
         if (!icon.length && bid.length) {
-            NSArray *vers = [[LocalCatalog shared] versionsForBundleId:bid];
-            for (NSDictionary *v in vers) {
-                if ([v isKindOfClass:[NSDictionary class]] && [v[@"icon"] length]) { icon = v[@"icon"]; break; }
-            }
+            icon = [[LocalCatalog shared] iconURLForBundleId:bid] ?: @"";   // #120: O(1) icon, not every version
         }
         NSString *ipa = e[@"ipa"] ?: @"";
         NSString *link = e[@"link"] ?: @"";
@@ -168,7 +209,7 @@ static NSString *ADLocalizedNotes(NSDictionary *e) {
             @"revivalExternal": @(external),
         }];
     }
-    return out;
+    return ADRevivalGroupByName(out);   // #171 Bug 3: one row per app, versions grouped
 }
 
 @end

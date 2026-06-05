@@ -2,7 +2,7 @@
 
 "tab.catalog" = "カタログ";
 "tab.search" = "検索";
-"search.placeholder" = "157,000の旧アプリを検索...";
+"search.placeholder" = "43,000以上のアプリを検索...";
 "search.hint_empty" = "カタログを検索するには入力";
 "search.searching" = "検索中...";
 "search.no_results" = "該当アプリなし";
@@ -118,6 +118,7 @@
 
 "common.ok" = "OK";
 "common.cancel" = "キャンセル";
+"common.ios_unknown" = "不明";
 
 "common.done" = "完了";
 "filter.title" = "フィルタ";
@@ -311,6 +312,7 @@
 "settings.download_folder_custom_msg" = "絶対パスを入力してください(例:/var/mobile/Documents/AppDrop)。空のままにすると既定値に戻ります。フォルダは初回保存時に作成されます。";
 "settings.keep_ipa" = "インストール後にIPAを保持";
 "settings.allow_encrypted" = "暗号化されたIPAを許可（上級者向け）";
+"settings.auto_switch_mirror" = "遅いミラーを自動切替";
 "install.saved_at_suffix" = "%@ に保存しました";
 "install.saved_alert_title" = "IPAを保存しました";
 "install.saved_alert_msg" = "保存先:\n%@\n\nFilzaで開いてインストール。Filzaが署名エラー(0xe800B001)で失敗する場合は、Cydiaから「appinst」パッケージをインストールして再試行してください。";
@@ -376,7 +378,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "AppDrop へようこそ";
-"categories.welcome_sub" = "%@ 件のクラシック iOS アプリ・ゲームを見る";
+"categories.welcome_sub" = "%@ 件の iOS アプリ・ゲームを見る";
 "categories.napps" = "%@ 件";
 
 /* v1.7 support/donate */

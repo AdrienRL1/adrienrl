@@ -241,14 +241,29 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
         tr.origin.y += MAX(0, (tr.size.height - ts.height) / 2);
         [title drawInRect:tr withFont:tf lineBreakMode:NSLineBreakByWordWrapping alignment:NSTextAlignmentCenter];
 
-        long long size = [self.app[@"size"] longLongValue];
-        NSString *sizeStr = size > 0 ? [AppTileView humanSize:size] : @"?";
-        NSString *sub = [NSString stringWithFormat:@"v%@ • iOS %@ • %@",
-                           self.app[@"version"] ?: @"?", self.app[@"minOS"] ?: @"?", sizeStr];
-        [[IOS6Theme labelGray] set];
-        [sub drawInRect:CGRectMake(6, h - 18, w - 12, 14)
-               withFont:[UIFont systemFontOfSize:10] lineBreakMode:NSLineBreakByTruncatingTail
-              alignment:NSTextAlignmentCenter];
+        // #171: "name only" at high column counts (user's rule): iPad ≥5 columns, iPhone ≥3
+        // columns → no meta line under the icon (too small to read there — esp. iPad landscape,
+        // where the user's 5-per-row becomes 7). Below that, draw the LONGEST meta line that fits
+        // the tile width (full → drop the version → nothing) so it never truncates to "v4.1.0 (4…".
+        BOOL pad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+        BOOL showMeta = pad ? (self.columnCount <= 4) : (self.columnCount <= 2);
+        if (showMeta) {
+            long long size = [self.app[@"size"] longLongValue];
+            NSString *sizeStr = size > 0 ? [AppTileView humanSize:size] : @"?";
+            NSString *iosStr = ADDisplayIOS(self.app[@"minOS"]);
+            UIFont *subFont = [UIFont systemFontOfSize:10];
+            CGFloat avail = w - 12;
+            NSString *full  = [NSString stringWithFormat:@"v%@ • iOS %@ • %@", self.app[@"version"] ?: @"?", iosStr, sizeStr];
+            NSString *shortS = [NSString stringWithFormat:@"iOS %@ • %@", iosStr, sizeStr];
+            NSString *sub = ([full sizeWithFont:subFont].width <= avail) ? full
+                          : ([shortS sizeWithFont:subFont].width <= avail) ? shortS : nil;
+            if (sub) {
+                [[IOS6Theme labelGray] set];
+                [sub drawInRect:CGRectMake(6, h - 18, w - 12, 14)
+                       withFont:subFont lineBreakMode:NSLineBreakByTruncatingTail
+                      alignment:NSTextAlignmentCenter];
+            }
+        }
     }
 #pragma clang diagnostic pop
     // The selection check is drawn by the `selectionBadge` overlay (above the icon), not here —
