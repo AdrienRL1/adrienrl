@@ -200,6 +200,25 @@ and mbedTLS (~10 min). Subsequent runs are cached. Output:
   and group async/notify threads, plus their inline fallbacks). The pool is
   driven through the objc runtime C API since the shim is C; `NSAutoreleasePool`
   is iOS 2.0 and always present.
+- ✅ **Launch crash fixed (`EXC_BAD_ACCESS` in `objc_msgSend` on the main
+  thread / Thread 0, fault address `0xb`).** The static blocks runtime
+  (`compat/shim/blocks/runtime.c`) shipped its default object-retain/-release
+  callouts (`_Block_retain_object_default` / `_Block_release_object_default`) as
+  **no-ops**. On a stock iOS, libSystem's objc runtime calls `_Block_use_RR(objc_retain,
+  objc_release)` during startup to wire those callouts to real retain/release,
+  but this self-contained shim is **never handed those callbacks** (nothing calls
+  `_Block_use_RR`). The result: `Block_copy` ran `_Block_object_assign` →
+  `_Block_retain_object()` → *nothing*, so an Objective-C object captured by a
+  block was **not retained on copy**. The capturing autorelease scope then drained
+  and freed it, and by the time the copied block ran — e.g. a
+  `dispatch_async(dispatch_get_main_queue(), ^{ … })` body fired off the main
+  `CFRunLoopTimer` hop — it messaged a dangling pointer, faulting in `objc_msgSend`
+  on Thread 0 (matching the crash: main thread, `libobjc` top frame, stack through
+  `CoreFoundation` run loop → AppDrop → the GCD main-queue shim). Fixed by making
+  the two default callouts actually send `-retain` / `-release` via the objc C API
+  (`objc_msgSend` + `sel_registerName`, both iOS 2.0), exactly as the real
+  `_Block_use_RR` would. This is the block-capture analogue of the worker-thread
+  pool fix above and uses the same primitives already proven at launch.
 - ⚠️ The GCD shim is a small pthread implementation (serial **and** concurrent
   queues, `dispatch_once`, `after`, groups, semaphores). The serial path is now
   correct, but the whole thing may still need hardening under heavy load.

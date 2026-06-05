@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <objc/runtime.h>
+#include <objc/message.h>
 
 #include "config.h"
 
@@ -181,10 +183,20 @@ static void _Block_do_nothing(const void *aBlock) { }
 
 static void _Block_retain_object_default(const void *ptr) {
     if (!ptr) return;
+    // On a stock iOS the objc runtime calls _Block_use_RR(objc_retain,
+    // objc_release) at startup so Block_copy retains captured objects. This
+    // static shim is never handed those callbacks, so we must send -retain
+    // ourselves; otherwise objects captured by a block are not retained on
+    // copy and are dead by the time the block runs (EXC_BAD_ACCESS in
+    // objc_msgSend on the main thread when a dispatch_async block fires).
+    id (*msg)(id, SEL) = (id (*)(id, SEL))objc_msgSend;
+    msg((id)ptr, sel_registerName("retain"));
 }
 
 static void _Block_release_object_default(const void *ptr) {
     if (!ptr) return;
+    void (*msg)(id, SEL) = (void (*)(id, SEL))objc_msgSend;
+    msg((id)ptr, sel_registerName("release"));
 }
 
 static void _Block_assign_weak_default(const void *ptr, void *dest) {
