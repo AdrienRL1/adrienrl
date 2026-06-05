@@ -42,7 +42,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
 + (UIImage *)cardBgForSize:(CGSize)size {
     if (size.width < 2 || size.height < 2) return nil;
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     // Key includes the theme id so cards are re-drawn (not served stale) after a theme switch.
     NSString *key = [NSString stringWithFormat:@"%@|%.0fx%.0f", [IOS6Theme currentThemeID], size.width, size.height];
     UIImage *cached = cache[key];
@@ -137,7 +137,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     CGContextSetLineCap(ctx, kCGLineCapRound);
     CGContextMoveToPoint(ctx, 9, 17);  CGContextAddLineToPoint(ctx, 17, 9);  CGContextStrokePath(ctx);
     CGContextMoveToPoint(ctx, 12.5, 18.5); CGContextAddLineToPoint(ctx, 18.5, 12.5); CGContextStrokePath(ctx);
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -161,7 +161,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     CGContextSetLineCap(ctx, kCGLineCapRound);
     CGContextMoveToPoint(ctx, 9, 9);   CGContextAddLineToPoint(ctx, 17, 17); CGContextStrokePath(ctx);
     CGContextMoveToPoint(ctx, 17, 9);  CGContextAddLineToPoint(ctx, 9, 17);  CGContextStrokePath(ctx);
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -181,7 +181,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     CGContextAddLineToPoint(ctx, 9, 7);
     CGContextAddLineToPoint(ctx, 4, 11);
     CGContextStrokePath(ctx);
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }

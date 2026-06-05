@@ -33,7 +33,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 + (UIImage *)cardImageForSize:(CGSize)size {
     if (size.width < 2 || size.height < 2) return nil;
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     NSString *k = [NSString stringWithFormat:@"%@|%.0fx%.0f", [IOS6Theme currentThemeID], size.width, size.height];
     UIImage *hit = cache[k];
     if (hit) return hit;
@@ -58,7 +58,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 // accent ring. The white ring/disc keep the badge legible on top of ANY app icon.
 + (UIImage *)checkGlyphOn {
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     NSString *k = [IOS6Theme currentThemeID] ?: @"_";
     UIImage *hit = cache[k];
     if (hit) return hit;
@@ -85,7 +85,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 
 + (UIImage *)checkGlyphOff {
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     NSString *k = [IOS6Theme currentThemeID] ?: @"_";
     UIImage *hit = cache[k];
     if (hit) return hit;

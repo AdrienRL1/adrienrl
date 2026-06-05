@@ -73,7 +73,7 @@ static NSMutableSet *_inflight = nil;
 
 + (void)initialize {
     if (self == [NetworkClient class]) {
-        _inflight = [NSMutableSet set];
+        _inflight = [[NSMutableSet set] retain];
     }
 }
 

@@ -73,7 +73,7 @@ static NSMutableDictionary *gCache = nil;
 // on their bars; dark accents are bright so they pop on dark. Both are auto-contrasted at runtime.
 static NSArray *ad_themeList(void) {
     static NSArray *list = nil;
-    if (!list) list = @[
+    if (!list) list = [@[
         @{@"id":@"default",   @"nameKey":@"theme.default",   @"dark":@NO,  @"color":[UIColor colorWithRed:0.118 green:0.435 blue:0.902 alpha:1.0]},
         // ── Light colour themes ────────────────────────────────────────────────
         @{@"id":@"c_rouge",   @"nameKey":@"theme.red",       @"dark":@NO,  @"color":[UIColor colorWithRed:0.84 green:0.22 blue:0.22 alpha:1.0]},
@@ -93,7 +93,7 @@ static NSArray *ad_themeList(void) {
         @{@"id":@"orange",    @"nameKey":@"theme.orange",    @"dark":@YES, @"color":[UIColor colorWithRed:0.98 green:0.58 blue:0.20 alpha:1.0]},
         @{@"id":@"vert",      @"nameKey":@"theme.green",     @"dark":@YES, @"color":[UIColor colorWithRed:0.30 green:0.74 blue:0.44 alpha:1.0]},
         @{@"id":@"turquoise", @"nameKey":@"theme.teal",      @"dark":@YES, @"color":[UIColor colorWithRed:0.20 green:0.74 blue:0.74 alpha:1.0]},
-    ];
+    ] retain];
     return list;
 }
 static NSDictionary *ad_themeForID(NSString *tid){
@@ -165,7 +165,7 @@ static UIImage *ad_roundedCard(UIColor *fill, UIColor *border) {
 
 + (void)initialize {
     if (self != [IOS6Theme class]) return;
-    gCache = [NSMutableDictionary dictionary];
+    gCache = [[NSMutableDictionary dictionary] retain];
     NSString *t = [[NSUserDefaults standardUserDefaults] stringForKey:@"IPAInstall.Theme"];
     NSDictionary *d = ad_themeForID(t ?: @"default");
     gThemeID = d[@"id"];
@@ -304,12 +304,12 @@ static UIImage *ad_roundedCard(UIColor *fill, UIColor *border) {
 
 + (UIImage *)cellBackground {
     static UIImage *img = nil;
-    if (!img) img = stretchable(@"cell-bg", 1, 1);
+    if (!img) img = [stretchable(@"cell-bg", 1, 1) retain];
     return img;
 }
 + (UIImage *)cellSelectedBackground {
     static UIImage *img = nil;
-    if (!img) img = stretchable(@"cell-selected", 1, 1);
+    if (!img) img = [stretchable(@"cell-selected", 1, 1) retain];
     return img;
 }
 + (UIImage *)cardBackground {
@@ -323,7 +323,7 @@ static UIImage *ad_roundedCard(UIColor *fill, UIColor *border) {
 
 + (UIImage *)linenPattern {
     static UIImage *img = nil;
-    if (!img) img = [UIImage imageNamed:@"linen"];
+    if (!img) img = [[UIImage imageNamed:@"linen"] retain];
     return img;
 }
 + (UIImage *)linenBackground { return [self linenPattern]; }

@@ -13,7 +13,7 @@
     static NSDictionary *t = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        t = @{
+        t = [@{
             // ---- iPod touch ----
             @"iPod1,1": @[@"iPod touch (1st gen)", @"Samsung S5L8900 (ARM11)", @"128 MB"],
             @"iPod2,1": @[@"iPod touch (2nd gen)", @"Samsung S5L8720 (ARM11)", @"128 MB"],
@@ -76,7 +76,7 @@
             @"iPad5,4": @[@"iPad Air 2 (Cellular)", @"Apple A8X", @"2 GB"],
             @"iPad6,11": @[@"iPad (5th gen, Wi-Fi)", @"Apple A9", @"2 GB"],
             @"iPad6,12": @[@"iPad (5th gen, Cellular)", @"Apple A9", @"2 GB"],
-        };
+        } retain];
     });
     return t;
 }
@@ -88,9 +88,9 @@
         char buf[96]; size_t sz = sizeof(buf);
         if (sysctlbyname("hw.machine", buf, &sz, NULL, 0) == 0 && sz > 0) {
             NSString *m = [NSString stringWithUTF8String:buf];
-            cached = m.length ? m : @"?";
+            cached = [(m.length ? m : @"?") retain];
         } else {
-            cached = @"?";
+            cached = [@"?" retain];
         }
     });
     return cached;
