@@ -19,7 +19,48 @@
 #include <time.h>
 #include <sys/time.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <objc/runtime.h>
+#include <objc/message.h>
 #include "blocks/Block.h"
+
+// ---------------------------------------------------------------------------
+// Per-thread autorelease pool (iOS 3 / MRC correctness)
+// ---------------------------------------------------------------------------
+// Every block this shim runs on a *spawned* pthread (the detached trampoline,
+// the serial worker, the dispatch_after thread, group async/notify threads)
+// executes Objective-C code that autoreleases Foundation objects (NSURL,
+// NSData, NSString, file ops, JSON parsing, SQLite row wrappers, …). On iOS 3
+// under MRC there is NO implicit per-thread pool: only the main thread's
+// CFRunLoop wraps each iteration in one. A worker thread with no
+// NSAutoreleasePool floods the log with
+//     *** _NSAutoreleaseNoPool(): Object 0x… autoreleased with no pool in place
+//         - just leaking
+// and, once enough objects pile up / a leaked-then-touched object is messaged,
+// faults in objc_msgSend with EXC_BAD_ACCESS (the ~2s-after-launch crash on
+// Thread 3). Wrapping each worker block in a real NSAutoreleasePool fixes both
+// the leak storm and the crash. This file is C, so the pool is driven through
+// the objc runtime C API (NSAutoreleasePool is iOS 2.0, always present).
+static void *ad_pool_push(void) {
+    Class cls = objc_getClass("NSAutoreleasePool");
+    if (!cls) return NULL;
+    id (*msg)(id, SEL) = (id (*)(id, SEL))objc_msgSend;
+    id pool = msg((id)cls, sel_registerName("alloc"));
+    pool = msg(pool, sel_registerName("init"));
+    return (void *)pool;
+}
+static void ad_pool_pop(void *pool) {
+    if (!pool) return;
+    void (*msg)(id, SEL) = (void (*)(id, SEL))objc_msgSend;
+    msg((id)pool, sel_registerName("release"));
+}
+
+// Run an Objective-C block wrapped in its own NSAutoreleasePool. Used for every
+// block executed on a shim-spawned worker thread (which otherwise has no pool).
+static void ad_invoke(dispatch_block_t b) {
+    void *pool = ad_pool_push();
+    b();
+    ad_pool_pop(pool);
+}
 
 #undef dispatch_once
 #undef dispatch_once_f
@@ -75,7 +116,7 @@ dispatch_queue_t dispatch_queue_create(const char *label, dispatch_queue_attr_t 
 
 static void *trampoline(void *ctx) {
     dispatch_block_t b = (dispatch_block_t)ctx;
-    b();
+    ad_invoke(b);
     Block_release(b);
     return NULL;
 }
@@ -103,7 +144,7 @@ static void run_on_main(dispatch_block_t b) {
         0, 0,
         ad_main_timer_cb,
         &ctx);
-    if (!t) { if (b) { b(); Block_release(b); } return; }  // fallback: run inline
+    if (!t) { if (b) { ad_invoke(b); Block_release(b); } return; }  // fallback: run inline
     CFRunLoopAddTimer(rl, t, kCFRunLoopCommonModes);
     CFRelease(t);                     // run loop keeps it alive until it fires
     CFRunLoopWakeUp(rl);
@@ -114,7 +155,7 @@ static void run_detached(dispatch_block_t b) {
     pthread_attr_t at;
     pthread_attr_init(&at);
     pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-    if (pthread_create(&t, &at, trampoline, b) != 0) { b(); Block_release(b); }
+    if (pthread_create(&t, &at, trampoline, b) != 0) { ad_invoke(b); Block_release(b); }
     pthread_attr_destroy(&at);
 }
 
@@ -138,7 +179,7 @@ static void *serial_worker(void *ctx) {
         if (q->head == NULL) q->tail = NULL;
         pthread_mutex_unlock(&q->m);
 
-        n->b();
+        ad_invoke(n->b);
         Block_release(n->b);
         free(n);
     }
@@ -161,7 +202,7 @@ static void queue_enqueue(ad_queue *q, dispatch_block_t b /* owned */) {
             q->started = 0;
             ad_node *cur = q->head; q->head = q->tail = NULL;
             pthread_mutex_unlock(&q->m);
-            while (cur) { ad_node *nx = cur->next; cur->b(); Block_release(cur->b); free(cur); cur = nx; }
+            while (cur) { ad_node *nx = cur->next; ad_invoke(cur->b); Block_release(cur->b); free(cur); cur = nx; }
             return;
         }
     }
@@ -227,7 +268,7 @@ static void *after_thread(void *p) {
         ts.tv_nsec = (long)(ns % 1000000000ull);
         nanosleep(&ts, NULL);
     }
-    c->b();
+    ad_invoke(c->b);
     Block_release(c->b);
     free(c);
     return NULL;
@@ -248,7 +289,7 @@ void dispatch_after(dispatch_time_t when, dispatch_queue_t q, dispatch_block_t b
     }
     pthread_t t; pthread_attr_t at; pthread_attr_init(&at);
     pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-    if (pthread_create(&t, &at, after_thread, c) != 0) { c->b(); Block_release(c->b); free(c); }
+    if (pthread_create(&t, &at, after_thread, c) != 0) { ad_invoke(c->b); Block_release(c->b); free(c); }
     pthread_attr_destroy(&at);
 }
 
@@ -304,7 +345,7 @@ long dispatch_group_wait(dispatch_group_t group, dispatch_time_t timeout) {
 typedef struct { grp_t *g; dispatch_queue_t q; dispatch_block_t b; int is_main; } gasync_ctx;
 static void *group_async_thread(void *p) {
     gasync_ctx *c = (gasync_ctx *)p;
-    c->b();
+    ad_invoke(c->b);
     Block_release(c->b);
     dispatch_group_leave((dispatch_group_t)c->g);
     free(c);
@@ -318,7 +359,7 @@ void dispatch_group_async(dispatch_group_t group, dispatch_queue_t q, dispatch_b
     pthread_t t; pthread_attr_t at; pthread_attr_init(&at);
     pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
     if (pthread_create(&t, &at, group_async_thread, c) != 0) {
-        c->b(); Block_release(c->b); dispatch_group_leave(group); free(c);
+        ad_invoke(c->b); Block_release(c->b); dispatch_group_leave(group); free(c);
     }
     pthread_attr_destroy(&at);
 }
@@ -328,7 +369,7 @@ static void *group_notify_thread(void *p) {
     gnotify_ctx *c = (gnotify_ctx *)p;
     dispatch_group_wait((dispatch_group_t)c->g, DISPATCH_TIME_FOREVER);
     if (c->is_main) run_on_main(c->b);
-    else { c->b(); Block_release(c->b); }
+    else { ad_invoke(c->b); Block_release(c->b); }
     free(c);
     return NULL;
 }
@@ -341,7 +382,7 @@ void dispatch_group_notify(dispatch_group_t group, dispatch_queue_t q, dispatch_
     pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
     if (pthread_create(&t, &at, group_notify_thread, c) != 0) {
         dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
-        c->b(); Block_release(c->b); free(c);
+        ad_invoke(c->b); Block_release(c->b); free(c);
     }
     pthread_attr_destroy(&at);
 }

@@ -184,13 +184,22 @@ and mbedTLS (~10 min). Subsequent runs are cached. Output:
   …) appears as an undefined import, so this can't silently regress (the older
   guard only catches *unresolved* imports, but CF 4.0 symbols resolve against
   the 5.1 SDK at build time and only fail at runtime on 3.x).
-- ⚠️ **`NSRegularExpression` is iOS 4.0** and is not yet backfilled. It's only
-  used at install time (`InstallManager`, `UpdateNotesViewController`) and every
-  call site nil-guards the result, so it won't crash — it just silently fails to
-  match (install-success parsing, MB progress, update-note formatting). Backfill
-  later if those features matter on 3.x.
-- ✅+-⚠️ **Runs on real hardware (iPod touch, iOS 3.1.3, armv6).** Now the 
-application starts, but after about 2 seconds it crashes.
+- ✅ **Launch crash fixed (`EXC_BAD_ACCESS` on a GCD worker thread ~2s after
+  launch).** The app starts, then `LocalCatalog` kicks catalog-DB work onto its
+  serial `_searchQueue` and the global background queue (`dispatch_async`).
+  Those queues are backed by the `gcd_shim.c` pthread workers, which ran the
+  Objective-C blocks **with no `NSAutoreleasePool` on the thread**. On iOS 3
+  under MRC there is no implicit per-thread pool (only the main thread's
+  `CFRunLoop` provides one), so every autoreleased Foundation object (NSURL,
+  NSData, NSString, file ops, JSON, SQLite row wrappers) leaked — the device
+  log fills with `*** _NSAutoreleaseNoPool(): … just leaking` — and once enough
+  piled up the runtime faulted in `objc_msgSend` (`EXC_BAD_ACCESS at 0xe`,
+  crashed Thread 3). Fixed by wrapping **every** block executed on a
+  shim-spawned thread in its own `NSAutoreleasePool` (`ad_invoke()` in
+  `gcd_shim.c`: the detached trampoline, the serial worker, `dispatch_after`,
+  and group async/notify threads, plus their inline fallbacks). The pool is
+  driven through the objc runtime C API since the shim is C; `NSAutoreleasePool`
+  is iOS 2.0 and always present.
 - ⚠️ The GCD shim is a small pthread implementation (serial **and** concurrent
   queues, `dispatch_once`, `after`, groups, semaphores). The serial path is now
   correct, but the whole thing may still need hardening under heavy load.
