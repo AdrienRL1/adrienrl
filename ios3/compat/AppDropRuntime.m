@@ -41,6 +41,7 @@
 #import <objc/runtime.h>
 #import <CoreFoundation/CoreFoundation.h>
 #include <dlfcn.h>
+#import "AppDropBlocks.h"   // _Block_copy / _Block_release + ADBlockBox (present/dismiss completion)
 
 #pragma mark - Modern subscripting (dict[key], arr[i] — iOS 6 SDK syntax)
 // clang lowers `dict[key]` to -[NSDictionary objectForKeyedSubscript:],
@@ -443,5 +444,213 @@ static id AppDropCallStackSymbols(id self, SEL _cmd) {
     if ([NSException instancesRespondToSelector:@selector(callStackSymbols)]) return;
     class_addMethod([NSException class], @selector(callStackSymbols),
                     (IMP)AppDropCallStackSymbols, "@@:");
+}
+@end
+
+#pragma mark - presentViewController:animated:completion: / dismissViewControllerAnimated:completion:  (iOS 5.0)
+
+// These two selectors are iOS 5.0. The 5.1 SDK declares them, so call sites
+// compile, but on a real iOS 3.x device UIViewController only responds to the
+// iOS-2 modal API (-presentModalViewController:animated: /
+// -dismissModalViewControllerAnimated:). AppDrop opens several modals
+// (CatalogViewController, FeedbackViewController, FilePickerViewController,
+// RevivalListViewController), so without this the first modal throws an
+// unrecognized selector → uncaught NSException → SIGABRT.
+//
+// We bridge to the old modal API and fire the completion block AFTER the
+// animation would finish (no completion callback exists pre-iOS-5, so we
+// approximate with a delay matching UIKit's ~0.35s modal transition). The
+// completion block is heap-copied with _Block_copy (blocks are NOT ObjC
+// objects on iOS 3 — see AppDropBlocks.h) and released after it runs.
+// No-op on iOS 5+ where UIKit already answers these selectors.
+
+static void AppDropRunAndReleaseCompletion(void (^completion)(void)) {
+    if (!completion) return;
+    completion();
+    _Block_release((const void *)completion);
+}
+
+static void AppDropPresentVC(id self, SEL _cmd, id vcToPresent, BOOL animated, void (^completion)(void)) {
+    [self presentModalViewController:vcToPresent animated:animated];
+    if (completion) {
+        void (^heap)(void) = (void (^)(void))_Block_copy((const void *)completion);
+        double delay = animated ? 0.35 : 0.0;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ AppDropRunAndReleaseCompletion(heap); });
+    }
+}
+
+static void AppDropDismissVC(id self, SEL _cmd, BOOL animated, void (^completion)(void)) {
+    [self dismissModalViewControllerAnimated:animated];
+    if (completion) {
+        void (^heap)(void) = (void (^)(void))_Block_copy((const void *)completion);
+        double delay = animated ? 0.35 : 0.0;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ AppDropRunAndReleaseCompletion(heap); });
+    }
+}
+
+@interface UIViewController (AppDropModalBridge) @end
+@implementation UIViewController (AppDropModalBridge)
++ (void)load {
+    if (![UIViewController instancesRespondToSelector:@selector(presentViewController:animated:completion:)]) {
+        // "v@:@c@?" → void, self, _cmd, id, BOOL(char), block(@?)
+        class_addMethod([UIViewController class],
+                        @selector(presentViewController:animated:completion:),
+                        (IMP)AppDropPresentVC, "v@:@c@?");
+    }
+    if (![UIViewController instancesRespondToSelector:@selector(dismissViewControllerAnimated:completion:)]) {
+        class_addMethod([UIViewController class],
+                        @selector(dismissViewControllerAnimated:completion:),
+                        (IMP)AppDropDismissVC, "v@:c@?");
+    }
+}
+@end
+
+#pragma mark - -[NSString componentsSeparatedByCharactersInSet:]  (iOS 3.2)
+
+// Introduced in iOS 3.2; absent on iOS 3.1.x → unrecognized selector. AppDrop's
+// InstallManager parses ipainstaller output with it (-installedVersionForBundle:),
+// which runs whenever an install/update is attempted. We implement it by scanning
+// the receiver and splitting on any character that is a member of the set —
+// identical semantics to Apple's, including empty substrings between adjacent
+// separators. No-op on iOS 3.2+/4+ where Foundation already provides it.
+static id AppDropComponentsSeparatedByCharactersInSet(id self, SEL _cmd, NSCharacterSet *sep) {
+    if (!sep) return [NSArray arrayWithObject:self];
+    NSMutableArray *parts = [NSMutableArray array];
+    NSUInteger len = [(NSString *)self length];
+    NSUInteger start = 0;
+    for (NSUInteger i = 0; i < len; i++) {
+        unichar ch = [(NSString *)self characterAtIndex:i];
+        if ([sep characterIsMember:ch]) {
+            [parts addObject:[(NSString *)self substringWithRange:NSMakeRange(start, i - start)]];
+            start = i + 1;
+        }
+    }
+    [parts addObject:[(NSString *)self substringWithRange:NSMakeRange(start, len - start)]];
+    return parts;
+}
+
+@interface NSString (AppDropComponentsSepImpl) @end
+@implementation NSString (AppDropComponentsSepImpl)
++ (void)load {
+    if ([NSString instancesRespondToSelector:@selector(componentsSeparatedByCharactersInSet:)]) return;
+    class_addMethod([NSString class], @selector(componentsSeparatedByCharactersInSet:),
+                    (IMP)AppDropComponentsSeparatedByCharactersInSet, "@@:@");
+}
+@end
+
+#pragma mark - +[NSURLConnection sendAsynchronousRequest:queue:completionHandler:]  (iOS 5.0)
+
+// This class method is iOS 5.0. The 5.1 SDK declares it (call sites compile),
+// but on iOS 3.x it is an unrecognized selector on NSURLConnection. AppDrop
+// uses it for the catalog feed, search, install metadata and version lists —
+// i.e. the moment any real network list loads, 3.1 would throw. We back it with
+// the iOS-2 delegate API (-initWithRequest:delegate:) via a tiny self-retaining
+// collector that accumulates data and posts the completion onto the requested
+// NSOperationQueue (all call sites pass +mainQueue). The completion block is a
+// real ObjC-collection-safe value here only because it is captured by ADBlockBox
+// (blocks are not ObjC objects on iOS 3 — see AppDropBlocks.h).
+// No-op on iOS 5+ where Foundation already provides the method.
+
+@interface ADAsyncURLCollector : NSObject {
+    NSMutableData    *_data;
+    NSURLResponse    *_response;
+    NSOperationQueue *_queue;
+    ADBlockBox       *_completionBox;   // boxes void(^)(NSURLResponse*,NSData*,NSError*)
+}
+@end
+
+@implementation ADAsyncURLCollector
+
+- (id)initWithQueue:(NSOperationQueue *)queue
+         completion:(void (^)(NSURLResponse *, NSData *, NSError *))completion {
+    if ((self = [super init])) {
+        _data  = [[NSMutableData alloc] init];
+        _queue = [queue retain];
+        // Reuse ADBlockBox's safe heap-copy storage; cast the 3-arg shape through
+        // the void(^)(id) box slot (only the heap pointer matters; we cast back).
+        _completionBox = [[ADBlockBox boxWithImageBlock:(void(^)(id))completion] retain];
+    }
+    return self;
+}
+
+- (void)deliverResponse:(NSURLResponse *)resp data:(NSData *)data error:(NSError *)error {
+    void (^completion)(NSURLResponse *, NSData *, NSError *) =
+        (void (^)(NSURLResponse *, NSData *, NSError *))[_completionBox block];
+    if (!completion) return;
+    // -[NSOperationQueue addOperationWithBlock:] is itself iOS 4.0, so we can't
+    // use it on 3.x. Every AppDrop call site passes +mainQueue, so deliver via
+    // GCD's main queue (the bundled gcd_shim provides this on iOS 3). If a real
+    // addOperationWithBlock: exists (iOS 4+) and a non-main queue was given,
+    // honor it.
+    if (_queue && _queue != [NSOperationQueue mainQueue] &&
+        [_queue respondsToSelector:@selector(addOperationWithBlock:)]) {
+        [_queue addOperationWithBlock:^{ completion(resp, data, error); }];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(resp, data, error); });
+    }
+}
+
+- (void)connection:(NSURLConnection *)c didReceiveResponse:(NSURLResponse *)response {
+    [_response release];
+    _response = [response retain];
+    [_data setLength:0];
+}
+
+- (void)connection:(NSURLConnection *)c didReceiveData:(NSData *)d {
+    [_data appendData:d];
+}
+
+- (void)connectionDidFinishLoading:(NSURLConnection *)c {
+    [self deliverResponse:_response data:_data error:nil];
+    [c release];        // balance the +alloc the shim did to keep the connection alive
+    [self autorelease]; // balance the self-retain
+}
+
+- (void)connection:(NSURLConnection *)c didFailWithError:(NSError *)error {
+    [self deliverResponse:_response data:nil error:error];
+    [c release];
+    [self autorelease];
+}
+
+- (void)dealloc {
+    [_data release];
+    [_response release];
+    [_queue release];
+    [_completionBox release];
+    [super dealloc];
+}
+
+@end
+
+static void AppDropSendAsyncRequest(id cls, SEL _cmd, NSURLRequest *request,
+                                    NSOperationQueue *queue,
+                                    void (^handler)(NSURLResponse *, NSData *, NSError *)) {
+    // init gives the collector a +1 that we deliberately keep: NSURLConnection
+    // holds only a weak ref to its delegate, so this +1 is what keeps the
+    // collector alive for the life of the load. connectionDidFinish/Fail (or the
+    // start-failure path below) autoreleases it to balance.
+    ADAsyncURLCollector *collector =
+        [[ADAsyncURLCollector alloc] initWithQueue:queue completion:handler];
+    NSURLConnection *conn = [[NSURLConnection alloc] initWithRequest:request
+                                                           delegate:collector
+                                                   startImmediately:YES];
+    if (!conn) {
+        NSError *err = [NSError errorWithDomain:@"AppDropAsyncURL" code:1
+                                       userInfo:[NSDictionary dictionaryWithObject:@"Cannot start connection"
+                                                                            forKey:NSLocalizedDescriptionKey]];
+        [collector deliverResponse:nil data:nil error:err];
+        [collector autorelease];
+    }
+}
+
+@interface NSURLConnection (AppDropAsyncImpl) @end
+@implementation NSURLConnection (AppDropAsyncImpl)
++ (void)load {
+    if ([NSURLConnection respondsToSelector:@selector(sendAsynchronousRequest:queue:completionHandler:)]) return;
+    Class meta = object_getClass((id)[NSURLConnection class]);
+    class_addMethod(meta, @selector(sendAsynchronousRequest:queue:completionHandler:),
+                    (IMP)AppDropSendAsyncRequest, "v@:@@@?");
 }
 @end

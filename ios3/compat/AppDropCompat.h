@@ -212,6 +212,17 @@ enum {
 - (BOOL)shouldAutorotate;
 @end
 
+// ---- presentViewController:animated:completion: / dismissViewControllerAnimated:completion:
+//      are iOS 5.0. The 5.1 SDK DECLARES them (so call sites compile), but on a
+//      real iOS 3.x device the selectors don't exist on UIViewController — only
+//      -presentModalViewController:animated: and
+//      -dismissModalViewControllerAnimated:. AppDrop's modals (settings, file
+//      picker, feedback, revival list) call the iOS 5 form, so the moment a
+//      modal opens 3.1 throws "unrecognized selector" → NSInvalidArgumentException.
+//      AppDropRuntime.m installs these two selectors at +load (only when absent,
+//      i.e. on 3.x), bridging to the iOS 3 modal API and invoking the completion
+//      block after the (un)present. No header declaration is needed here. ----
+
 // ---- UIView -tintColor (iOS 7+; runtime-guarded with respondsToSelector) ----
 @interface UIView (AppDropTint)
 - (void)setTintColor:(UIColor *)color;

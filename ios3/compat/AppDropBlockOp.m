@@ -26,6 +26,7 @@
 
 @implementation ADBlockOperation {
     NSMutableArray *_blockBoxes;   // ADBlockBox elements (each owns a heap block)
+    BOOL _adStarted;               // dedupe guard for the iOS 3.x/4.x queue bug
 }
 
 + (instancetype)blockOperationWithBlock:(void (^)(void))block {
@@ -46,6 +47,23 @@
     // ADBlockBox heap-copies via _Block_copy and releases in its -dealloc; the
     // array retains the BOX (a real NSObject), never the block itself.
     [_blockBoxes addObject:[ADBlockBox boxWithBlock:block]];
+}
+
+// iOS 3.x/4.x NSOperationQueue has a scheduling race: when the queue runs with
+// maxConcurrentOperationCount > 1 AND the queuePriority of already-enqueued
+// operations is mutated (IconLoader does this for visible-first icon ordering
+// while the catalog scrolls), the scheduler can send -start to the SAME
+// operation twice. NSOperation's own -start then throws:
+//     *** -[ADBlockOperation start]: receiver has already started or finished
+// Apple fixed this in iOS 5; on 3.1 we self-defend. The guard makes a second
+// -start a no-op so [super start] (which drives isExecuting/isFinished KVO the
+// queue depends on) is only ever invoked once.
+- (void)start {
+    @synchronized (self) {
+        if (_adStarted || self.isExecuting || self.isFinished) return;
+        _adStarted = YES;
+    }
+    [super start];
 }
 
 - (void)main {
