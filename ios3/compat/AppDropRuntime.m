@@ -406,3 +406,42 @@ static void AppDropWindowSetRootVC(id self, SEL _cmd, id vc) {
                     (IMP)AppDropWindowSetRootVC, "v@:@");
 }
 @end
+
+#pragma mark - UIDevice userInterfaceIdiom (iOS 3.2+) on iOS 3.1.x
+
+// -[UIDevice userInterfaceIdiom] was introduced in iOS 3.2. On iOS 3.1.x it is
+// an unrecognized selector, which aborts the app the moment any device-class
+// check runs (e.g. CatalogFilter +defaultDeviceClass while loading/expanding
+// the catalog). iOS 3.1 hardware is always iPhone/iPod touch, so return
+// UIUserInterfaceIdiomPhone (0).
+static NSInteger AppDropUserInterfaceIdiom(id self, SEL _cmd) {
+    return 0; // UIUserInterfaceIdiomPhone
+}
+
+@interface UIDevice (AppDropIOS3Idiom) @end
+@implementation UIDevice (AppDropIOS3Idiom)
++ (void)load {
+    if ([UIDevice instancesRespondToSelector:@selector(userInterfaceIdiom)]) return;
+    // 'i' = NSInteger (int on 32-bit arm); signature "i@:".
+    class_addMethod([UIDevice class], @selector(userInterfaceIdiom),
+                    (IMP)AppDropUserInterfaceIdiom, "i@:");
+}
+@end
+
+#pragma mark - NSException callStackSymbols (iOS 4.0+) on iOS 3.x
+
+// -[NSException callStackSymbols] was introduced in iOS 4.0. On iOS 3.x it is
+// an unrecognized selector. main.m's uncaught-exception handler calls it, so
+// provide a harmless empty-array fallback to keep crash logging clean.
+static id AppDropCallStackSymbols(id self, SEL _cmd) {
+    return [NSArray array];
+}
+
+@interface NSException (AppDropIOS3CallStack) @end
+@implementation NSException (AppDropIOS3CallStack)
++ (void)load {
+    if ([NSException instancesRespondToSelector:@selector(callStackSymbols)]) return;
+    class_addMethod([NSException class], @selector(callStackSymbols),
+                    (IMP)AppDropCallStackSymbols, "@@:");
+}
+@end
