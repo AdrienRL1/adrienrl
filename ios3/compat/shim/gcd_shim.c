@@ -255,7 +255,7 @@ dispatch_time_t dispatch_walltime(const struct timespec *w, int64_t delta) {
     return (dispatch_time_t)(r < 0 ? 0 : r);
 }
 
-typedef struct { dispatch_time_t when; dispatch_block_t b; } after_ctx;
+typedef struct { dispatch_time_t when; dispatch_block_t b; int is_main; } after_ctx;
 static void *after_thread(void *p) {
     after_ctx *c = (after_ctx *)p;
     struct timeval tv;
@@ -268,28 +268,31 @@ static void *after_thread(void *p) {
         ts.tv_nsec = (long)(ns % 1000000000ull);
         nanosleep(&ts, NULL);
     }
-    ad_invoke(c->b);
-    Block_release(c->b);
+    if (c->is_main) {
+        // Hop the final call onto the main run loop. run_on_main takes ownership
+        // of the block (it releases it after the one-shot timer fires), so we do
+        // NOT release it here.
+        run_on_main(c->b);
+    } else {
+        ad_invoke(c->b);
+        Block_release(c->b);
+    }
     free(c);
     return NULL;
 }
 
 void dispatch_after(dispatch_time_t when, dispatch_queue_t q, dispatch_block_t block) {
     dispatch_block_t b = Block_copy(block);
-    int is_main = (q == dispatch_get_main_queue());
     after_ctx *c = (after_ctx *)malloc(sizeof(after_ctx));
     c->when = when;
-    if (is_main) {
-        // hop the final call back to the main runloop
-        dispatch_block_t mb = b;
-        c->b = Block_copy(^{ run_on_main(Block_copy(mb)); Block_release(mb); });
-        Block_release(b);
-    } else {
-        c->b = b;
-    }
+    c->b = b;                               // we hand this single ref off to after_thread
+    c->is_main = (q == dispatch_get_main_queue());
     pthread_t t; pthread_attr_t at; pthread_attr_init(&at);
     pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
-    if (pthread_create(&t, &at, after_thread, c) != 0) { ad_invoke(c->b); Block_release(c->b); free(c); }
+    if (pthread_create(&t, &at, after_thread, c) != 0) {
+        if (c->is_main) run_on_main(c->b); else { ad_invoke(c->b); Block_release(c->b); }
+        free(c);
+    }
     pthread_attr_destroy(&at);
 }
 

@@ -219,6 +219,26 @@ and mbedTLS (~10 min). Subsequent runs are cached. Output:
   (`objc_msgSend` + `sel_registerName`, both iOS 2.0), exactly as the real
   `_Block_use_RR` would. This is the block-capture analogue of the worker-thread
   pool fix above and uses the same primitives already proven at launch.
+- ✅ **Launch crash fixed for real (`EXC_BAD_ACCESS` in `objc_msgSend` on the
+  main thread / Thread 0, fault address `0x12`, ~0.6 s after `makeKeyAndVisible`).**
+  The retain fix above was necessary but not the trigger; the actual fault was a
+  **double-release of the deferred block** in `dispatch_after`'s main-queue path
+  (`compat/shim/gcd_shim.c`). The old code wrapped the user block `mb` in a
+  trampoline `^{ run_on_main(Block_copy(mb)); Block_release(mb); }`. The blocks
+  runtime already retains a block captured by another block on `Block_copy` and
+  releases it when the wrapper is destroyed (its dispose helper), so the extra
+  manual `Block_release(mb)` over-released `mb`: it was freed early, which in turn
+  disposed *its* captured objects (the `AppDelegate` `self`, the alert strings)
+  ahead of time. When the main `CFRunLoopTimer` finally fired ~0.6 s later (the
+  deferred "catalog quality" alert), it messaged those dangling objects →
+  `objc_msgSend` fault on Thread 0, stack through `CoreFoundation` run loop →
+  AppDrop → the GCD shim. This recurred verbatim across rebuilds (only the binary
+  addresses shifted) because the retain change didn't touch this path. Fixed by
+  dropping the wrapper entirely: `dispatch_after` now stores the single
+  `Block_copy`'d block plus an `is_main` flag, and `after_thread` hands that one
+  reference to `run_on_main` (which owns and releases it after its one-shot timer
+  fires) for the main queue, or runs+releases it inline for other queues — no
+  second copy, no manual over-release.
 - ⚠️ The GCD shim is a small pthread implementation (serial **and** concurrent
   queues, `dispatch_once`, `after`, groups, semaphores). The serial path is now
   correct, but the whole thing may still need hardening under heavy load.
