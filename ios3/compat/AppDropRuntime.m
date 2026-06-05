@@ -245,6 +245,16 @@ static UIImage *AppDropImageWithDataScale(id cls, SEL _cmd, NSData *data, CGFloa
     return img; // pre-scale-aware OS: 1.0 scale is the only option
 }
 
+// iOS 4.0 also added the INSTANCE property -[UIImage scale]. iOS 3.1.3 has no
+// such selector, so reading `image.scale` (IconLoader.m's pre-decode path)
+// throws NSInvalidArgumentException → uncaught → terminate → SIGABRT, a few
+// seconds after launch once the first icons decode. Every armv6 device is a 1x
+// display, so a constant 1.0 is exact. No-op on iOS 4+ where UIImage already
+// answers -scale.
+static CGFloat AppDropImageScale(id self, SEL _cmd) {
+    return 1.0f;
+}
+
 @implementation UIImage (AppDropScaleImpl)
 + (void)load {
     Class meta = object_getClass([UIImage class]);
@@ -254,6 +264,9 @@ static UIImage *AppDropImageWithDataScale(id cls, SEL _cmd, NSData *data, CGFloa
     if (![UIImage respondsToSelector:@selector(imageWithCGImage:scale:orientation:)]) {
         class_addMethod(meta, @selector(imageWithCGImage:scale:orientation:),
                         (IMP)AppDropImageWithCGImageScaleOrientation, "@@:^vfi");
+    }
+    if (![UIImage instancesRespondToSelector:@selector(scale)]) {
+        class_addMethod([UIImage class], @selector(scale), (IMP)AppDropImageScale, "f@:");
     }
 }
 @end
