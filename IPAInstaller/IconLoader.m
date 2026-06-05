@@ -63,8 +63,12 @@ static UIImage *IconForceDecode(UIImage *image) {
         // iPad 1 (256 MB). Anything evicted is re-loaded from disk in ~ms, not re-downloaded.
         _cache.countLimit = 240;
         _cache.totalCostLimit = 28 * 1024 * 1024;   // ~2-3 extra screens → fewer disk reloads
-        _pending = [NSMutableDictionary dictionary];
-        _failedAt = [NSMutableDictionary dictionary];
+        // MRC (-fno-objc-arc): these are singleton-lifetime ivars, so they must be OWNED.
+        // Convenience constructors (+dictionary/+array) return autoreleased objects; assigning
+        // them straight to an ivar leaves a dangling pointer once the pool drains → the download
+        // threads later message freed memory (SIGBUS in objc_msgSend). alloc/init gives us +1.
+        _pending  = [[NSMutableDictionary alloc] init];
+        _failedAt = [[NSMutableDictionary alloc] init];
 
         _downloadQueue = [[NSOperationQueue alloc] init];
         // -[NSOperationQueue setName:] is iOS 4.0+; iOS 3.x throws unrecognized
@@ -75,12 +79,12 @@ static UIImage *IconForceDecode(UIImage *image) {
         // operations here). 8 fills the visible page a bit faster without the old
         // "90 simultaneous TLS handshakes" thrash that spiked CPU+RAM on old devices.
         _downloadQueue.maxConcurrentOperationCount = 8;
-        _queuedOps = [NSMutableArray array];
+        _queuedOps = [[NSMutableArray alloc] init];
 
         // Persistent on-disk thumbnail cache (survives eviction AND app relaunch → an
         // icon downloaded once is instant forever; the #1 real-world speedup).
         NSString *caches = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
-        _diskDir = [caches stringByAppendingPathComponent:@"appdrop-icons"];
+        _diskDir = [[caches stringByAppendingPathComponent:@"appdrop-icons"] copy];   // owned (+1) under MRC
         [[NSFileManager defaultManager] createDirectoryAtPath:_diskDir
                                   withIntermediateDirectories:YES attributes:nil error:NULL];
         [self pruneDiskCacheAsync];

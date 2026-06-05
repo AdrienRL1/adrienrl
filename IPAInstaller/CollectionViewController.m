@@ -25,7 +25,7 @@ static const CGFloat kToolbarH = 44.0;
 - (instancetype)initWithCollectionId:(NSString *)cid {
     if ((self = [super init])) {
         _collectionId = [cid copy];
-        _selectedKeys = [NSMutableSet set];
+        _selectedKeys = [[NSMutableSet alloc] init];   // owned (+1) under MRC — +set is autoreleased and would dangle
     }
     return self;
 }
