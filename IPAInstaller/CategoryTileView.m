@@ -2,6 +2,20 @@
 #import "IconLoader.h"
 #import "IOS6Theme.h"
 
+// Pick up to n distinct random elements from arr (Fisher–Yates partial shuffle).
+// Returns a new autoreleased NSArray; if arr has <= n items, returns a shuffled copy of all of them.
+static NSArray *pickN(NSArray *arr, NSUInteger n) {
+    if (arr.count == 0) return @[];
+    NSMutableArray *m = [arr mutableCopy];
+    NSUInteger count = m.count;
+    NSUInteger take = (n < count) ? n : count;
+    for (NSUInteger i = 0; i < take; i++) {
+        NSUInteger j = i + arc4random_uniform((uint32_t)(count - i));
+        [m exchangeObjectAtIndex:i withObjectAtIndex:j];
+    }
+    return [m subarrayWithRange:NSMakeRange(0, take)];
+}
+
 // iOS 3 has no ObjC NSBlock class: sending a block any ObjC message (e.g.
 // -copyWithZone: from a @property(copy) setter, or -copy) crashes in
 // objc_msgSend. onTap/onDelete are therefore backed by manual accessors that
