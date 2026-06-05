@@ -222,6 +222,20 @@ static id AppDropBase64Decode(id self, SEL _cmd, NSString *str, NSUInteger opt) 
 
 #pragma mark - UIImage +imageWithData:scale:
 
+// iOS 4.0 added +[UIImage imageWithCGImage:scale:orientation:]; iOS 3.1.3 only
+// has the iOS 2.0 +imageWithCGImage:. Every armv6 device is a 1x display, so
+// scale is always 1.0 and AppDrop always passes UIImageOrientationUp — both
+// call sites in IconLoader.m — so falling through is exact, not lossy.
+static UIImage *AppDropImageWithCGImageScaleOrientation(id cls, SEL _cmd,
+                                                        CGImageRef cg,
+                                                        CGFloat scale,
+                                                        UIImageOrientation orientation) {
+    (void)scale;
+    (void)orientation;
+    if (!cg) return nil;
+    return [UIImage imageWithCGImage:cg];
+}
+
 static UIImage *AppDropImageWithDataScale(id cls, SEL _cmd, NSData *data, CGFloat scale) {
     UIImage *img = [UIImage imageWithData:data];
     if (!img) return nil;
@@ -233,9 +247,14 @@ static UIImage *AppDropImageWithDataScale(id cls, SEL _cmd, NSData *data, CGFloa
 
 @implementation UIImage (AppDropScaleImpl)
 + (void)load {
-    if ([UIImage respondsToSelector:@selector(imageWithData:scale:)]) return;
     Class meta = object_getClass([UIImage class]);
-    class_addMethod(meta, @selector(imageWithData:scale:), (IMP)AppDropImageWithDataScale, "@@:@f");
+    if (![UIImage respondsToSelector:@selector(imageWithData:scale:)]) {
+        class_addMethod(meta, @selector(imageWithData:scale:), (IMP)AppDropImageWithDataScale, "@@:@f");
+    }
+    if (![UIImage respondsToSelector:@selector(imageWithCGImage:scale:orientation:)]) {
+        class_addMethod(meta, @selector(imageWithCGImage:scale:orientation:),
+                        (IMP)AppDropImageWithCGImageScaleOrientation, "@@:^vfi");
+    }
 }
 @end
 
