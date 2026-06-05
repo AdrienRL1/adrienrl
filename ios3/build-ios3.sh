@@ -64,8 +64,8 @@ file "$sdk/usr/lib/libobjc.A.dylib" | grep -q armv6 || { echo "ERROR: SDK has no
 # 2. cctools-port (ld64, lipo, strip) + ldid  (cached)
 # ---------------------------------------------------------------------------
 tcbin="$work/toolchain/bin"; export PATH="$tcbin:$PATH"; mkdir -p "$tcbin"
-if [ ! -x "$tcbin/ld64.ld64" ] || [ ! -x "$tcbin/lipo" ]; then
-    printf '\n==> Building cctools-port (ld64, lipo, strip)...\n'
+if [ ! -x "$tcbin/ld64.ld64" ] || [ ! -x "$tcbin/lipo" ] || [ ! -x "$tcbin/install_name_tool" ]; then
+    printf '\n==> Building cctools-port (ld64, lipo, strip, install_name_tool)...\n'
     ncpus="$(nproc 2>/dev/null || echo 2)"
     c=fee8115127bb849d7481ea0015f181d3ebbd33cf
     cd "$work"; rm -rf "cctools-port-$c"
@@ -73,8 +73,9 @@ if [ ! -x "$tcbin/ld64.ld64" ] || [ ! -x "$tcbin/lipo" ]; then
     cd "cctools-port-$c/cctools"
     ./configure --enable-silent-rules --with-llvm-config="$LLVM_CONFIG" CC="$CLANG" CXX="${CLANG}++"
     make -C libstuff -j"$ncpus"; make -C libmacho -j"$ncpus"
-    make -C ld64 -j"$ncpus"; make -C misc strip lipo -j"$ncpus"
+    make -C ld64 -j"$ncpus"; make -C misc strip lipo install_name_tool -j"$ncpus"
     cp ld64/src/ld/ld "$tcbin/ld64.ld64"; cp misc/lipo "$tcbin/lipo"; cp misc/strip "$tcbin/cctools-strip"
+    cp misc/install_name_tool "$tcbin/install_name_tool"
     cd "$scriptroot"
 fi
 if ! command -v ldid >/dev/null && [ ! -x "$tcbin/ldid" ]; then
@@ -159,12 +160,44 @@ printf '\n==> Linking...\n'
 # sends resolved by libobjc on the device.
 "$CLANG" -target "$TRIPLE" -isysroot "$sdk" \
     -fuse-ld=ld64 -mlinker-version=762 \
+    -Wl,-headerpad_max_install_names \
     -framework UIKit -framework Foundation -framework CoreGraphics \
     -framework QuartzCore -framework ImageIO -framework CFNetwork -framework SystemConfiguration \
     -lsqlite3 -lz \
     "$obj"/*.o "$mbedlib" \
     -o "$out/$APP_NAME" 2> "$work/link.err" || { cat "$work/link.err" >&2; exit 1; }
 file "$out/$APP_NAME"
+
+# ---------------------------------------------------------------------------
+# 5b. Fix ImageIO dylib path for iOS 3.1.3
+# ---------------------------------------------------------------------------
+# The iOS 5.1 SDK linker records ImageIO at its iOS-5 public location
+# (/System/Library/Frameworks/ImageIO.framework/ImageIO). On iOS 3.1.3 ImageIO
+# is a PRIVATE framework (/System/Library/PrivateFrameworks/...). dyld can't
+# find it at the public path, so it fails to load dependent dylib #5 and aborts
+# with "can't resolve symbol _CGImageSourceCreateWithData ... dependent dylib #5
+# could not be loaded" (EXC_BREAKPOINT in dyld). Rewrite the load command to the
+# iOS 3 private path.
+printf '\n==> Fixing ImageIO path for iOS 3 (Frameworks -> PrivateFrameworks)...\n'
+INT="$(command -v install_name_tool || echo "$tcbin/install_name_tool")"
+"$INT" -change \
+    /System/Library/Frameworks/ImageIO.framework/ImageIO \
+    /System/Library/PrivateFrameworks/ImageIO.framework/ImageIO \
+    "$out/$APP_NAME"
+
+# Verify the rewrite stuck. The dylib path lives as a literal C string in the
+# load command, so a plain string match on the binary is a reliable, toolchain-
+# independent guard. The public /Frameworks/ path must be gone and the
+# /PrivateFrameworks/ path present, else dyld aborts at launch on iOS 3.1.3.
+if grep -aq '/System/Library/Frameworks/ImageIO.framework/ImageIO' "$out/$APP_NAME"; then
+    echo "ERROR: ImageIO still linked at public /Frameworks/ path (would crash on iOS 3.1.3)." >&2
+    exit 1
+fi
+if ! grep -aq '/System/Library/PrivateFrameworks/ImageIO.framework/ImageIO' "$out/$APP_NAME"; then
+    echo "ERROR: ImageIO PrivateFrameworks path not found after install_name_tool -change." >&2
+    exit 1
+fi
+echo "OK: ImageIO points to PrivateFrameworks (iOS 3.1.3 correct location)."
 
 # Fail loudly if any ARC/blocks/GCD symbol leaked in as an unresolved import
 # (would crash on a real iOS 3 device). ARC C-functions must NOT appear at all
