@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <b>📱 Runs natively on iPhone, iPod touch & iPad</b> — a clean list or grid on iPhone/iPod, and on iPad a <b>true iPad interface</b> (multi-column grids, large tiles, landscape), not a blown-up phone layout.
+  <b> Runs natively on iPhone, iPod touch & iPad</b> — a clean list or grid on iPhone/iPod, and on iPad a <b>true iPad interface</b> (multi-column grids, large tiles, landscape), not a blown-up phone layout.
 </p>
 
 ---
