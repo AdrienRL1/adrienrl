@@ -268,3 +268,30 @@ extern NSString *const NSParagraphStyleAttributeName;
 + (instancetype)UUID;
 - (NSString *)UUIDString;
 @end
+
+// ---- arc4random_uniform: iOS 4.3+ — libSystem on iOS 3.x exports arc4random()
+//      but NOT arc4random_uniform(). The 5.1 SDK still DECLARES it in <stdlib.h>,
+//      so call sites compile fine, but at launch dyld cannot bind the symbol on a
+//      real 3.x device and kills the process before any UI appears:
+//          Dyld Error Message: Symbol not found: _arc4random_uniform
+//          Expected in: /usr/lib/libSystem.B.dylib   →  EXC_BREAKPOINT (SIGTRAP)
+//      (This is what crashed AppDrop "while loading the catalog" — the tile/mosaic
+//       code reaches for arc4random_uniform on the launch path.)
+//
+//      ad_arc4random_uniform() reimplements the unbiased, modulo-free algorithm
+//      using only arc4random() (present since iOS 2). The macro rewrites every
+//      arc4random_uniform token in the AppDrop sources to it, so there are zero
+//      call-site edits and no phantom libSystem dependency — same strategy as the
+//      ADBezierPath / gesture / NSBlockOperation shims above.
+#include <stdint.h>
+#include <stdlib.h>
+static inline uint32_t ad_arc4random_uniform(uint32_t upper_bound) {
+    if (upper_bound < 2) return 0;
+    // Smallest value r may take so that (r % upper_bound) is uniform:
+    // 2^32 % upper_bound, computed as (-upper_bound) % upper_bound.
+    uint32_t min = (uint32_t)(0u - upper_bound) % upper_bound;
+    uint32_t r;
+    do { r = arc4random(); } while (r < min);
+    return r % upper_bound;
+}
+#define arc4random_uniform ad_arc4random_uniform
