@@ -67,7 +67,10 @@ static UIImage *IconForceDecode(UIImage *image) {
         _failedAt = [NSMutableDictionary dictionary];
 
         _downloadQueue = [[NSOperationQueue alloc] init];
-        _downloadQueue.name = @"icon-download";
+        // -[NSOperationQueue setName:] is iOS 4.0+; iOS 3.x throws unrecognized
+        // selector. The name is debug-only (Instruments label), so guard it.
+        if ([_downloadQueue respondsToSelector:@selector(setName:)])
+            _downloadQueue.name = @"icon-download";
         // Bounded concurrency now ACTUALLY applies to the HTTPS path (icons run as
         // operations here). 8 fills the visible page a bit faster without the old
         // "90 simultaneous TLS handshakes" thrash that spiked CPU+RAM on old devices.
