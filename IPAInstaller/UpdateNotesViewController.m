@@ -7,7 +7,20 @@
 @property (nonatomic, strong) UILabel *headerLabel;
 @end
 
-@implementation UpdateNotesViewController
+@implementation UpdateNotesViewController {
+    void (^_installHandlerBlock)(void);
+}
+
+// iOS 3: blocks aren't ObjC objects, so the synthesized copy setter crashes in
+// objc_msgSend. Back installHandler manually via the C blocks runtime — see
+// AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+@dynamic installHandler;
+AD_BLOCK_ACCESSORS(installHandler, setInstallHandler, _installHandlerBlock, void(^)(void))
+
+- (void)dealloc {
+    if (_installHandlerBlock) _Block_release((const void *)_installHandlerBlock);
+    [super dealloc];
+}
 
 #pragma mark - Lifecycle
 
@@ -80,7 +93,7 @@
 }
 
 - (void)installTapped {
-    void (^handler)(void) = [self.installHandler copy];
+    void (^handler)(void) = _installHandlerBlock;   // already heap block; never send -copy on iOS 3
     [self dismissViewControllerAnimated:YES completion:^{
         if (handler) handler();
     }];

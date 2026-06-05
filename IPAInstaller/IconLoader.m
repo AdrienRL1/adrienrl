@@ -113,8 +113,8 @@ static UIImage *IconForceDecode(UIImage *image) {
     // Dedup: if a request for this key is already in flight, just attach this completion.
     @synchronized (self.pending) {
         NSMutableArray *waiters = self.pending[key];
-        if (waiters) { [waiters addObject:[completion copy]]; return; }
-        self.pending[key] = [NSMutableArray arrayWithObject:[completion copy]];
+        if (waiters) { [waiters addObject:[ADBlockBox boxWithImageBlock:(void(^)(id))completion]]; return; }
+        self.pending[key] = [NSMutableArray arrayWithObject:[ADBlockBox boxWithImageBlock:(void(^)(id))completion]];
     }
 
     NSString *finalURL = proxyURL.length ? proxyURL : url;
@@ -213,8 +213,9 @@ static UIImage *IconForceDecode(UIImage *image) {
         waiters = self.pending[key];
         [self.pending removeObjectForKey:key];
     }
-    for (void (^cb)(UIImage *) in waiters) {
-        dispatch_async(dispatch_get_main_queue(), ^{ cb(img); });
+    for (ADBlockBox *box in waiters) {
+        void (^cb)(UIImage *) = (void (^)(UIImage *))[box block];
+        if (cb) dispatch_async(dispatch_get_main_queue(), ^{ cb(img); });
     }
 }
 

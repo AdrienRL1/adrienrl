@@ -17,7 +17,20 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 @property (nonatomic, strong) UIImageView *selectionBadge;
 @end
 
-@implementation AppTileView
+@implementation AppTileView {
+    void (^_onTapBlock)(NSDictionary *);
+}
+
+// iOS 3: blocks aren't ObjC objects, so the synthesized copy setter crashes in
+// objc_msgSend. Back onTap manually via the C blocks runtime — see
+// AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+@dynamic onTap;
+AD_BLOCK_ACCESSORS(onTap, setOnTap, _onTapBlock, void(^)(NSDictionary *))
+
+- (void)dealloc {
+    if (_onTapBlock) _Block_release((const void *)_onTapBlock);
+    [super dealloc];
+}
 
 + (void)setSuppressTileText:(BOOL)suppress { _suppressTileText = suppress; }
 
@@ -268,7 +281,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     // Normal browse: brief press flash, then open the detail screen.
     self.alpha = 0.5;
     NSDictionary *appCopy = self.app;
-    void (^onTap)(NSDictionary *) = [self.onTap copy];
+    void (^onTap)(NSDictionary *) = _onTapBlock;   // already heap-copied by our setter; do NOT send -copy (iOS 3)
     [UIView animateWithDuration:0.18
                       animations:^{ self.alpha = 1.0; }
                       completion:^(BOOL done) { onTap(appCopy); }];

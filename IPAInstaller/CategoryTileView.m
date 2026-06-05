@@ -2,6 +2,12 @@
 #import "IconLoader.h"
 #import "IOS6Theme.h"
 
+// iOS 3 has no ObjC NSBlock class: sending a block any ObjC message (e.g.
+// -copyWithZone: from a @property(copy) setter, or -copy) crashes in
+// objc_msgSend. onTap/onDelete are therefore backed by manual accessors that
+// copy/release through the C blocks runtime — see AppDropBlocks.h
+// (AD_BLOCK_ACCESSORS), force-included via AppDropCompat.h.
+
 @interface CategoryTileView ()
 @property (nonatomic, strong) UIImageView *bgView;
 @property (nonatomic, strong) UIImageView *iconView;
@@ -22,18 +28,20 @@
 @property (nonatomic, strong) UIButton *deleteBadge;        // top-left ⊗ (edit mode, folders only)
 @end
 
-// Pick up to n random items from a pool (partial Fisher–Yates) — gives the mosaic variety per visit.
-static NSArray *pickN(NSArray *pool, NSUInteger n) {
-    if (pool.count <= n) return pool ?: @[];
-    NSMutableArray *m = [pool mutableCopy];
-    for (NSUInteger i = 0; i < n; i++) {
-        NSUInteger j = i + arc4random_uniform((uint32_t)(m.count - i));
-        [m exchangeObjectAtIndex:i withObjectAtIndex:j];
-    }
-    return [m subarrayWithRange:NSMakeRange(0, n)];
+@implementation CategoryTileView {
+    void (^_onTapBlock)(void);
+    void (^_onDeleteBlock)(void);
 }
 
-@implementation CategoryTileView
+@dynamic onTap, onDelete;
+AD_BLOCK_ACCESSORS(onTap, setOnTap, _onTapBlock, void(^)(void))
+AD_BLOCK_ACCESSORS(onDelete, setOnDelete, _onDeleteBlock, void(^)(void))
+
+- (void)dealloc {
+    if (_onTapBlock)    _Block_release((const void *)_onTapBlock);
+    if (_onDeleteBlock) _Block_release((const void *)_onDeleteBlock);
+    [super dealloc];
+}
 
 #pragma mark - Drawing helpers
 
@@ -537,7 +545,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
 
 - (void)tapped {
     if (!self.onTap) return;
-    void (^cb)(void) = [self.onTap copy];
+    void (^cb)(void) = _onTapBlock;   // already a heap block (our setter Block_copy'd it); do NOT send -copy (iOS 3 blocks aren't ObjC objects)
     self.alpha = 0.55;
     [UIView animateWithDuration:0.16 animations:^{ self.alpha = 1.0; }
                      completion:^(BOOL done) { cb(); }];

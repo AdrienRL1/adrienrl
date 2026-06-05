@@ -17,6 +17,11 @@
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
 
+// ---- Safe block storage on iOS 3 (blocks are NOT ObjC objects) ----
+// AD_BLOCK_ACCESSORS + ADBlockBox: never send a block an ObjC message; copy/
+// release via the bundled C blocks runtime instead. See AppDropBlocks.h.
+#import "AppDropBlocks.h"
+
 // ---- AD_WEAK: weak-reference qualifier for the iOS 3 MRC target ----
 // True zeroing __weak needs the iOS 5+ ObjC runtime (objc_loadWeak /
 // objc_storeWeak with side tables), which iOS 3/4 devices do not have. Under
@@ -168,6 +173,23 @@
 #define UITapGestureRecognizer       ADTapGestureRecognizer
 #define UILongPressGestureRecognizer ADLongPressGestureRecognizer
 #define UIPanGestureRecognizer       ADPanGestureRecognizer
+#endif
+
+// ---- NSBlockOperation: iOS 4.0+ (true 3.x has NSOperation/NSOperationQueue
+// but not the block convenience subclass). AppDrop's IconLoader builds its
+// icon-fetch work as +[NSBlockOperation blockOperationWithBlock:], which runs
+// the instant the first uncached tile appears — right after the catalog grid
+// builds. On 3.1 that selector is unrecognized → NSInvalidArgumentException.
+// Provide a real NSOperation subclass that runs one block in -main, and
+// macro-rewrite the token so call sites are unchanged (same strategy as the
+// gesture recognizers above). Implementation in AppDropBlockOp.m.
+@interface ADBlockOperation : NSOperation
++ (instancetype)blockOperationWithBlock:(void (^)(void))block;
+- (void)addExecutionBlock:(void (^)(void))block;
+@end
+
+#ifndef NSBlockOperation
+#define NSBlockOperation ADBlockOperation
 #endif
 
 // ---- UIInterfaceOrientationMask: iOS 6 NS_OPTIONS ----

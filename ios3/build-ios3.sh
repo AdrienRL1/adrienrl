@@ -137,6 +137,8 @@ MRC="-target $TRIPLE -isysroot $sdk -fno-objc-arc -fobjc-abi-version=2 -Wno-ever
 "$CLANG" $MRC -include "$COMPAT/AppDropCompat.h" -I"$COMPAT" -c "$COMPAT/AppDropJSON.m" -o "$obj/compat_json.o"
 "$CLANG" $MRC -include "$COMPAT/AppDropCompat.h" -c "$COMPAT/AppDropBezier.m" -o "$obj/compat_bezier.o"
 "$CLANG" $MRC -include "$COMPAT/AppDropCompat.h" -c "$COMPAT/AppDropGestures.m" -o "$obj/compat_gestures.o"
+"$CLANG" $MRC -include "$COMPAT/AppDropCompat.h" -I"$COMPAT" -c "$COMPAT/AppDropBlocks.m" -o "$obj/compat_blocks.o"
+"$CLANG" $MRC -include "$COMPAT/AppDropCompat.h" -I"$COMPAT" -c "$COMPAT/AppDropBlockOp.m" -o "$obj/compat_blockop.o"
 "$CLANG" $MRC -I"$COMPAT" -c "$COMPAT/cJSON.c" -o "$obj/compat_cjson.o"
 
 # Runtime shims: blocks + GCD only. iOS 3 has no blocks runtime and no
