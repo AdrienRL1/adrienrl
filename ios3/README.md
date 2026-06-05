@@ -70,6 +70,7 @@ Everything else below is SDK/runtime backfill, unrelated to ARC vs MRC:
 | `UIImage +imageWithData:scale:` (iOS 6) | 1 | `+load` IMP |
 | `NSUUID` (iOS 6 class) | 1 | real `@implementation` (CFUUID-backed) |
 | `NSJSONSerialization` (iOS 5 class) | 10 | cJSON-backed class in `AppDropJSON.m` |
+| `UINavigationItem setRightBarButtonItems:`/`setLeftBarButtonItems:` + getters (iOS 5) | 9 (Search/Catalog/Collection/AppDetail/Root) | `+load` IMP in `AppDropRuntime.m`; >1 item hosted in a transparent `UIToolbar` via the singular setter (right side reversed to match iOS 5 ordering) |
 | Blocks runtime (`_Block_copy`, `__NSConcreteStackBlock`, …) | 52 blocks | static `shim/blocks/` (Apple libclosure, public domain) |
 | GCD (`dispatch_async`, `dispatch_once`, …) | 56 sites | static pthread-backed `shim/gcd_shim.c` |
 | mbedTLS prebuilt was armv7-only | link | rebuilt for armv6 from source (v3.6.2) |

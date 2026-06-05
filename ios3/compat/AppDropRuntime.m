@@ -479,6 +479,129 @@ static id AppDropCallStackSymbols(id self, SEL _cmd) {
 }
 @end
 
+#pragma mark - -[UINavigationItem setRightBarButtonItems:] / setLeftBarButtonItems: (+ getters)  (iOS 5.0)
+
+// The PLURAL (array) bar-button accessors —
+//   -setRightBarButtonItems:[/animated:], -setLeftBarButtonItems:[/animated:],
+//   -rightBarButtonItems, -leftBarButtonItems —
+// are iOS 5.0. The 5.1 SDK declares them (so `navigationItem.rightBarButtonItems = @[...]`
+// compiles), but on a real iOS 3.1.3 device UINavigationItem only answers the
+// SINGULAR iOS-2 API: -setRightBarButtonItem:[/animated:] / -setLeftBarButtonItem:.
+// The Search tab (refreshSearchNav) assigns TWO right items (Filters + Select),
+// and Catalog / Collection / AppDetail / Root do the same → the moment that nav
+// bar is configured, 3.1 throws "unrecognized selector" → NSInvalidArgumentException
+// → SIGABRT. This is the search-tab launch crash.
+//
+// iOS 3's navigation item shows only ONE button per side, so to honour an array
+// of >1 we host the buttons in a transparent UIToolbar and hand that to the
+// SINGULAR setter as the customView of one UIBarButtonItem — the canonical
+// iOS 3/4 multi-button technique. A single-element (or empty) array maps
+// directly to the singular setter with no toolbar wrapper. We also store the
+// original array via an associated object so the matching getter round-trips
+// (some call sites read .rightBarButtonItems back). No-op on iOS 5+ where UIKit
+// already provides all four selectors.
+
+static char kAppDropRightItemsKey;
+static char kAppDropLeftItemsKey;
+
+// Build the single UIBarButtonItem that represents `items` for the singular API.
+// nil/empty -> no items (clear the side)
+// 1         -> that item, unchanged
+// >1        -> a transparent UIToolbar (sized to fit) wrapped in one custom-view item
+//
+// `reverseOrder` matches iOS 5+ semantics: the navigationItem's RIGHT-side array
+// is ordered right-to-left (element 0 is the RIGHTMOST button), whereas a
+// UIToolbar lays its items out left-to-right. So for the right side we reverse
+// the array before handing it to the toolbar; the left side is left-to-right on
+// both and needs no reversal.
+static UIBarButtonItem *AppDropWrapBarItems(NSArray *items, BOOL reverseOrder) {
+    NSUInteger count = [items count];
+    if (count == 0) return nil;
+    if (count == 1) return [items objectAtIndex:0];
+
+    NSArray *ordered = items;
+    if (reverseOrder) {
+        NSMutableArray *rev = [NSMutableArray arrayWithCapacity:count];
+        for (NSUInteger i = count; i > 0; i--) {
+            [rev addObject:[items objectAtIndex:(i - 1)]];
+        }
+        ordered = rev;
+    }
+
+    UIToolbar *bar = [[[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, 0, 44)] autorelease];
+    // Transparent so it blends into the navigation bar instead of drawing a
+    // second opaque toolbar background on top of it.
+    bar.barStyle = UIBarStyleBlackTranslucent;
+    bar.translucent = YES;
+    bar.backgroundColor = [UIColor clearColor];
+    if ([bar respondsToSelector:@selector(setBackgroundImage:forToolbarPosition:barMetrics:)]) {
+        [bar setBackgroundImage:[[[UIImage alloc] init] autorelease]
+             forToolbarPosition:0 /* UIToolbarPositionAny */
+                     barMetrics:0 /* UIBarMetricsDefault */];
+    }
+    [bar setItems:ordered animated:NO];
+    [bar sizeToFit];
+    CGRect f = bar.frame;
+    if (f.size.width <= 0) {
+        // sizeToFit can report 0 width before layout; fall back to a sane width
+        // based on item count so the buttons remain tappable.
+        f.size.width = (CGFloat)count * 44.0f;
+    }
+    f.size.height = 44;
+    bar.frame = f;
+    return [[[UIBarButtonItem alloc] initWithCustomView:bar] autorelease];
+}
+
+static void AppDropSetRightBarButtonItems(id self, SEL _cmd, NSArray *items, BOOL animated) {
+    objc_setAssociatedObject(self, &kAppDropRightItemsKey, items, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [self setRightBarButtonItem:AppDropWrapBarItems(items, YES) animated:animated];
+}
+static void AppDropSetRightBarButtonItemsNoAnim(id self, SEL _cmd, NSArray *items) {
+    AppDropSetRightBarButtonItems(self, _cmd, items, NO);
+}
+static id AppDropGetRightBarButtonItems(id self, SEL _cmd) {
+    NSArray *stored = objc_getAssociatedObject(self, &kAppDropRightItemsKey);
+    if (stored) return stored;
+    UIBarButtonItem *single = [self rightBarButtonItem];
+    return single ? [NSArray arrayWithObject:single] : [NSArray array];
+}
+
+static void AppDropSetLeftBarButtonItems(id self, SEL _cmd, NSArray *items, BOOL animated) {
+    objc_setAssociatedObject(self, &kAppDropLeftItemsKey, items, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [self setLeftBarButtonItem:AppDropWrapBarItems(items, NO) animated:animated];
+}
+static void AppDropSetLeftBarButtonItemsNoAnim(id self, SEL _cmd, NSArray *items) {
+    AppDropSetLeftBarButtonItems(self, _cmd, items, NO);
+}
+static id AppDropGetLeftBarButtonItems(id self, SEL _cmd) {
+    NSArray *stored = objc_getAssociatedObject(self, &kAppDropLeftItemsKey);
+    if (stored) return stored;
+    UIBarButtonItem *single = [self leftBarButtonItem];
+    return single ? [NSArray arrayWithObject:single] : [NSArray array];
+}
+
+@interface UINavigationItem (AppDropPluralBarItems) @end
+@implementation UINavigationItem (AppDropPluralBarItems)
++ (void)load {
+    if ([UINavigationItem instancesRespondToSelector:@selector(setRightBarButtonItems:)]) return;
+    // "v@:@"  -> void, self, _cmd, id           (no-animated setter)
+    // "v@:@c" -> void, self, _cmd, id, BOOL      (animated setter)
+    // "@@:"   -> id,   self, _cmd                (getter)
+    class_addMethod([UINavigationItem class], @selector(setRightBarButtonItems:),
+                    (IMP)AppDropSetRightBarButtonItemsNoAnim, "v@:@");
+    class_addMethod([UINavigationItem class], @selector(setRightBarButtonItems:animated:),
+                    (IMP)AppDropSetRightBarButtonItems, "v@:@c");
+    class_addMethod([UINavigationItem class], @selector(rightBarButtonItems),
+                    (IMP)AppDropGetRightBarButtonItems, "@@:");
+    class_addMethod([UINavigationItem class], @selector(setLeftBarButtonItems:),
+                    (IMP)AppDropSetLeftBarButtonItemsNoAnim, "v@:@");
+    class_addMethod([UINavigationItem class], @selector(setLeftBarButtonItems:animated:),
+                    (IMP)AppDropSetLeftBarButtonItems, "v@:@c");
+    class_addMethod([UINavigationItem class], @selector(leftBarButtonItems),
+                    (IMP)AppDropGetLeftBarButtonItems, "@@:");
+}
+@end
+
 #pragma mark - presentViewController:animated:completion: / dismissViewControllerAnimated:completion:  (iOS 5.0)
 
 // These two selectors are iOS 5.0. The 5.1 SDK declares them, so call sites
