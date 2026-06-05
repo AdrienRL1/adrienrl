@@ -1,25 +1,82 @@
 #import "UploadViewController.h"
 #import "FilePickerViewController.h"
+#import "CategorySuggestViewController.h"
 #import "IOS6Theme.h"
 #import "Localization.h"
 #import "HTTPSClient.h"
 #import "DeviceInfo.h"
+#import "MachOInspector.h"
+#import "IPAPackage.h"
+#import "LocalCatalog.h"
 
 static NSString *const kUploadURL = @"https://appdrop-feedback.adrienruestlorquet.workers.dev/upload";
 static const long long kMaxIPABytes = 45LL * 1024 * 1024;   // mirror the Worker cap
 
-// Section / row layout (grouped).
-enum { SEC_FILE, SEC_CAT, SEC_DETAILS, SEC_ATTEST, SEC_COUNT };
+// A text field that draws its placeholder in the THEMED placeholder colour instead of the
+// fixed system grey. The upload form uses placeholders AS field labels, and the system grey was
+// unreadable on the dark theme (iPad 1 / iOS 5). drawPlaceholderInRect: is the reliable hook
+// across iOS 5-10 (attributedPlaceholder is iOS 6+ only, so iOS 5 needs this). (#170b)
+@interface ADThemedField : UITextField @end
+@implementation ADThemedField
+// iOS 5/6 render the placeholder via a private `_placeholderLabel` (a UILabel) — the fixed system
+// grey is unreadable on the dark theme. Recolour that label here, where it exists by layout time.
+// (The earlier attempt overrode -drawPlaceholderInRect:, but on iOS 5 that runs without a graphics
+// context → null-context deref → crash. This KVC approach is the safe, stable way on iOS 5-10.) (#170b)
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    @try {
+        id pl = [self valueForKey:@"_placeholderLabel"];
+        if ([pl isKindOfClass:[UILabel class]])
+            ((UILabel *)pl).textColor = [IOS6Theme placeholderColor];
+    } @catch (__unused NSException *e) { /* ivar gone on a future OS — harmless */ }
+}
+@end
+
+// Upload type. Index doubles as the segmented-control segment.
+typedef NS_ENUM(NSInteger, UploadKind) {
+    UploadKindCatalog = 0,   // a normal app/game NOT in the 43k catalogue → merged in under a category
+    UploadKindRevival = 1,   // "Fonctionne aujourd'hui"
+    UploadKindMods    = 2,   // "Apps modifiées"
+};
+static NSString *UploadKindTarget(UploadKind k) {
+    return k == UploadKindCatalog ? @"catalog" : (k == UploadKindRevival ? @"revival" : @"mods");
+}
+
+// v3.1 ⇄ v3.2 SWITCH. The "Catalogue" (normal-app) upload type + its category picker are DEFERRED to
+// v3.2 — the whole feature is KEPT in the code, just dormant. Flip to YES for v3.2 to re-enable it.
+// v3.1 ships only Fonctionne aujourd'hui / Apps modifiées, both with a MANDATORY description.
+static const BOOL kEnableCatalogType = NO;
+
+// Section kinds (the order/visibility is rebuilt by -rebuildSections; K_CATEGORY only shows for catalog).
+enum { K_FILE, K_TYPE, K_CATEGORY, K_DETAILS, K_ATTEST };
+// Detail rows.
 enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
 
+// Localized category / subgenre names (mirror the small file-static helpers used elsewhere).
+static NSString *uvLocName(NSString *prefix, NSString *value) {
+    if (!value.length) return @"";
+    NSString *k = [prefix stringByAppendingString:value];
+    NSString *v = T(k);
+    return [v isEqualToString:k] ? value : v;
+}
+static NSString *uvLocCat(NSString *c) { return uvLocName(@"cat.", c); }
+static NSString *uvLocSub(NSString *s) { return uvLocName(@"sub.", s); }
+
 @interface UploadViewController () <UITextFieldDelegate, UITextViewDelegate>
-@property (nonatomic, copy) NSString *target;
+@property (nonatomic, assign) UploadKind kind;
+@property (nonatomic, strong) NSArray *kinds;              // section layout (array of NSNumber kind)
 @property (nonatomic, copy) NSString *chosenPath;
 @property (nonatomic, assign) long long chosenSize;
+@property (nonatomic, assign) BOOL analyzing;             // inspecting/extracting the picked .ipa
+@property (nonatomic, copy) NSString *iconB64;            // auto-extracted icon (standard PNG, base64)
+@property (nonatomic, copy) NSString *pickedCategory;     // for catalog uploads
+@property (nonatomic, copy) NSString *pickedSubgenre;
+@property (nonatomic, assign) BOOL bidInCatalog;          // current bid already present in the catalogue
 @property (nonatomic, strong) UITableViewCell *pickCell;
-@property (nonatomic, strong) UISegmentedControl *categorySeg;
+@property (nonatomic, strong) UISegmentedControl *typeSeg;
 @property (nonatomic, strong) UITextField *nameField, *miniosField, *versionField, *modField, *bidField, *creditField;
 @property (nonatomic, strong) UITextView *descView;
+@property (nonatomic, strong) UILabel *descPh;
 @property (nonatomic, strong) UISwitch *attestSwitch;
 @property (nonatomic, strong) UIBarButtonItem *sendItem;
 @end
@@ -28,7 +85,10 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
 
 - (instancetype)initWithTarget:(NSString *)target {
     if ((self = [super initWithStyle:UITableViewStyleGrouped])) {
-        _target = [[@"revival" isEqualToString:target] ? @"revival" : @"mods" copy];
+        if ([@"revival" isEqualToString:target]) _kind = UploadKindRevival;
+        else if ([@"mods" isEqualToString:target]) _kind = UploadKindMods;
+        else _kind = UploadKindCatalog;
+        if (!kEnableCatalogType && _kind == UploadKindCatalog) _kind = UploadKindRevival;   // v3.1: no catalog type
     }
     return self;
 }
@@ -46,6 +106,7 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
     self.title = T(@"upload.title");
     self.view.backgroundColor = [IOS6Theme groupedBackgroundColor];
     if ([IOS6Theme isDark]) self.tableView.backgroundView = nil;
+    [self rebuildSections];
 
     self.sendItem = [[UIBarButtonItem alloc] initWithTitle:T(@"upload.send")
                         style:UIBarButtonItemStyleDone target:self action:@selector(sendTapped)];
@@ -57,6 +118,18 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
         name:UIKeyboardWillHideNotification object:nil];
 }
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+
+- (void)rebuildSections {
+    NSMutableArray *k = [@[ @(K_FILE), @(K_TYPE) ] mutableCopy];
+    if (self.kind == UploadKindCatalog) [k addObject:@(K_CATEGORY)];
+    [k addObject:@(K_DETAILS)];
+    [k addObject:@(K_ATTEST)];
+    self.kinds = k;
+}
+- (NSInteger)kindForSection:(NSInteger)s {
+    if (s < 0 || s >= (NSInteger)self.kinds.count) return -1;
+    return [self.kinds[s] integerValue];
+}
 
 #pragma mark - Keyboard
 
@@ -89,7 +162,7 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
 }
 - (UITextField *)fieldIn:(UITableViewCell *)c placeholder:(NSString *)ph keyboard:(UIKeyboardType)kb caps:(UITextAutocapitalizationType)caps {
     CGFloat w = self.view.bounds.size.width;
-    UITextField *tf = [[UITextField alloc] initWithFrame:CGRectMake(14, 6, w - 28 - 20, 32)];
+    UITextField *tf = [[ADThemedField alloc] initWithFrame:CGRectMake(14, 6, w - 28 - 20, 32)];
     tf.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     tf.font = [UIFont systemFontOfSize:16];
     tf.textColor = [IOS6Theme labelDark];
@@ -106,46 +179,75 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
 
 #pragma mark - Table
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return SEC_COUNT; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return (NSInteger)self.kinds.count; }
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    if (s == SEC_DETAILS) return D_COUNT;
-    return 1;
+    return [self kindForSection:s] == K_DETAILS ? D_COUNT : 1;
 }
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
-    switch (s) {
-        case SEC_FILE: return T(@"upload.section_file");
-        case SEC_CAT: return T(@"upload.section_category");
-        case SEC_DETAILS: return T(@"upload.section_details");
-        case SEC_ATTEST: return T(@"upload.section_rights");
+    switch ([self kindForSection:s]) {
+        case K_FILE:     return T(@"upload.section_file");
+        case K_TYPE:     return T(@"upload.section_type");
+        case K_CATEGORY: return T(@"upload.section_category");
+        case K_DETAILS:  return T(@"upload.section_details");
+        case K_ATTEST:   return T(@"upload.section_rights");
     }
     return nil;
 }
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    if (s == SEC_FILE) return T(@"upload.intro");
-    if (s == SEC_ATTEST) return T(@"upload.legal");
+    switch ([self kindForSection:s]) {
+        case K_FILE:     return T(@"upload.intro");
+        case K_CATEGORY: return self.bidInCatalog ? T(@"upload.cat_inherited") : T(@"upload.cat_footer");
+        case K_ATTEST:   return T(@"upload.legal");
+    }
     return nil;
 }
 - (void)tableView:(UITableView *)tv willDisplayHeaderView:(UIView *)v forSection:(NSInteger)s { [IOS6Theme styleGroupedHeaderFooter:v]; }
 - (void)tableView:(UITableView *)tv willDisplayFooterView:(UIView *)v forSection:(NSInteger)s { [IOS6Theme styleGroupedHeaderFooter:v]; }
+// iOS 5 has no willDisplay…View: hooks, so the default grouped header/footer keep a light-mode emboss
+// unreadable in dark mode ("Fichier"/"Type"/"Détails" + the footer notes). Supply themed views on
+// iOS 5; iOS 6+ returns nil/auto so the willDisplay… paths above stay unchanged. (#170b)
+- (UIView *)tableView:(UITableView *)tv viewForHeaderInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return nil;
+    return [IOS6Theme manualGroupedHeaderViewForTitle:[self tableView:tv titleForHeaderInSection:s]
+                                                width:tv.bounds.size.width];
+}
+- (CGFloat)tableView:(UITableView *)tv heightForHeaderInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return UITableViewAutomaticDimension;
+    return [IOS6Theme manualGroupedHeaderHeightForTitle:[self tableView:tv titleForHeaderInSection:s]];
+}
+- (UIView *)tableView:(UITableView *)tv viewForFooterInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return nil;
+    return [IOS6Theme manualGroupedFooterViewForText:[self tableView:tv titleForFooterInSection:s]
+                                               width:tv.bounds.size.width];
+}
+- (CGFloat)tableView:(UITableView *)tv heightForFooterInSection:(NSInteger)s {
+    if (![IOS6Theme needsManualGroupedHeaderFooter]) return UITableViewAutomaticDimension;
+    return [IOS6Theme manualGroupedFooterHeightForText:[self tableView:tv titleForFooterInSection:s]
+                                                 width:tv.bounds.size.width];
+}
 
-// Size the category segmented control to the CELL's real content width (grouped cells are inset,
-// especially on iPad) — fixes it overflowing off the right edge. Final bounds are known here.
+// Size the type segmented control to the CELL's real content width (grouped cells are inset).
 - (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)ip {
-    if (ip.section == SEC_CAT && self.categorySeg) {
+    // iOS 5/6 grouped tables override a cell.backgroundColor set in cellForRow: with the default
+    // light backdrop, so in dark mode the cells stayed WHITE and the (light) text was unreadable.
+    // Re-apply the themed cell colour here — the only place it reliably sticks for grouped cells.
+    cell.backgroundColor = [IOS6Theme cellColor];
+    if ([self kindForSection:ip.section] == K_TYPE && self.typeSeg) {
         CGFloat cw = cell.contentView.bounds.size.width;
-        if (cw > 24) self.categorySeg.frame = CGRectMake(10, 6, cw - 20, 32);
+        if (cw > 24) self.typeSeg.frame = CGRectMake(10, 6, cw - 20, 32);
     }
 }
 
 - (CGFloat)tableView:(UITableView *)tv heightForRowAtIndexPath:(NSIndexPath *)ip {
-    if (ip.section == SEC_DETAILS && ip.row == D_DESC) return 96.0;
+    if ([self kindForSection:ip.section] == K_DETAILS && ip.row == D_DESC) return 96.0;
     return 44.0;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     CGFloat w = self.view.bounds.size.width;
+    NSInteger kind = [self kindForSection:ip.section];
 
-    if (ip.section == SEC_FILE) {
+    if (kind == K_FILE) {
         if (!self.pickCell) {
             self.pickCell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
             self.pickCell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -153,26 +255,45 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
         self.pickCell.backgroundColor = [IOS6Theme cellColor];
         self.pickCell.textLabel.textColor = [IOS6Theme labelDark];
         self.pickCell.textLabel.text = T(@"upload.pick_button");
-        self.pickCell.detailTextLabel.text = self.chosenPath
-            ? [self.chosenPath lastPathComponent] : T(@"upload.pick_none");
+        self.pickCell.detailTextLabel.text = self.analyzing ? T(@"upload.analyzing")
+            : (self.chosenPath ? [self.chosenPath lastPathComponent] : T(@"upload.pick_none"));
         self.pickCell.detailTextLabel.textColor = [IOS6Theme labelGray];
         return self.pickCell;
     }
 
-    if (ip.section == SEC_CAT) {
+    if (kind == K_TYPE) {
         UITableViewCell *c = [self blankCell];
-        if (!self.categorySeg) {
-            self.categorySeg = [[UISegmentedControl alloc] initWithItems:
-                @[ T(@"categories.modded"), T(@"revival.title") ]];
-            self.categorySeg.selectedSegmentIndex = [self.target isEqualToString:@"revival"] ? 1 : 0;
+        if (!self.typeSeg) {
+            NSArray *segItems = kEnableCatalogType
+                ? @[ T(@"upload.type_catalog"), T(@"upload.type_revival"), T(@"upload.type_mods") ]
+                : @[ T(@"upload.type_revival"), T(@"upload.type_mods") ];   // v3.1: 2-way (catalog deferred)
+            self.typeSeg = [[UISegmentedControl alloc] initWithItems:segItems];
+            self.typeSeg.selectedSegmentIndex = [self segIndexForKind:self.kind];
+            [self.typeSeg addTarget:self action:@selector(typeChanged:) forControlEvents:UIControlEventValueChanged];
         }
-        self.categorySeg.frame = CGRectMake(12, 6, w - 24, 32);
-        self.categorySeg.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-        [c.contentView addSubview:self.categorySeg];
+        self.typeSeg.frame = CGRectMake(12, 6, w - 24, 32);
+        self.typeSeg.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [c.contentView addSubview:self.typeSeg];
         return c;
     }
 
-    if (ip.section == SEC_ATTEST) {
+    if (kind == K_CATEGORY) {
+        UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        c.backgroundColor = [IOS6Theme cellColor];
+        c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        if (self.pickedCategory.length) {
+            c.textLabel.textColor = [IOS6Theme labelDark];
+            c.textLabel.text = self.pickedSubgenre.length
+                ? [NSString stringWithFormat:@"%@ › %@", uvLocCat(self.pickedCategory), uvLocSub(self.pickedSubgenre)]
+                : uvLocCat(self.pickedCategory);
+        } else {
+            c.textLabel.textColor = [IOS6Theme labelGray];
+            c.textLabel.text = T(@"upload.cat_choose");
+        }
+        return c;
+    }
+
+    if (kind == K_ATTEST) {
         UITableViewCell *c = [self blankCell];
         UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(14, 0, w - 90, 44)];
         l.autoresizingMask = UIViewAutoresizingFlexibleWidth;
@@ -187,7 +308,7 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
         return c;
     }
 
-    // SEC_DETAILS
+    // K_DETAILS
     if (ip.row == D_DESC) {
         UITableViewCell *c = [self blankCell];
         if (!self.descView) {
@@ -197,13 +318,17 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
             self.descView.backgroundColor = [UIColor clearColor];
             self.descView.textColor = [IOS6Theme labelDark];
             self.descView.delegate = self;
-            UILabel *ph = [[UILabel alloc] initWithFrame:CGRectMake(17, 12, w - 40, 20)];
-            ph.text = T(@"upload.desc_ph"); ph.font = [UIFont systemFontOfSize:15];
-            ph.textColor = [IOS6Theme placeholderColor]; ph.backgroundColor = [UIColor clearColor]; ph.tag = 7777;
-            [c.contentView addSubview:ph];
+            self.descPh = [[UILabel alloc] initWithFrame:CGRectMake(17, 12, w - 40, 20)];
+            self.descPh.font = [UIFont systemFontOfSize:15];
+            self.descPh.textColor = [IOS6Theme placeholderColor];
+            self.descPh.backgroundColor = [UIColor clearColor]; self.descPh.tag = 7777;
         }
-        [c.contentView addSubview:self.descView];
-        ((UILabel *)[c.contentView viewWithTag:7777]).hidden = self.descView.text.length > 0;
+        // Placeholder reflects whether the description is required for this type. Re-attach both views
+        // on cell reuse (each reloadData builds a fresh cell).
+        self.descPh.text = (self.kind == UploadKindCatalog) ? T(@"upload.desc_ph_opt") : T(@"upload.desc_ph_req");
+        if (self.descPh.superview != c.contentView)   [c.contentView addSubview:self.descPh];
+        if (self.descView.superview != c.contentView) [c.contentView addSubview:self.descView];
+        self.descPh.hidden = self.descView.text.length > 0;
         return c;
     }
     UITableViewCell *c = [self blankCell];
@@ -222,16 +347,74 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
-    if (ip.section == SEC_FILE) [self pickFile];
+    NSInteger kind = [self kindForSection:ip.section];
+    if (kind == K_FILE) [self pickFile];
+    else if (kind == K_CATEGORY) [self pickCategory];
+}
+
+#pragma mark - Type / category
+
+// Map between the segmented-control index and UploadKind. ON (v3.2) → [Catalogue,Fonctionne,Modifiée]
+// (index == kind). OFF (v3.1) → [Fonctionne,Modifiée].
+- (NSInteger)segIndexForKind:(UploadKind)k {
+    if (kEnableCatalogType) return (NSInteger)k;
+    return (k == UploadKindMods) ? 1 : 0;
+}
+- (UploadKind)kindForSegIndex:(NSInteger)i {
+    if (kEnableCatalogType) return (UploadKind)i;
+    return (i == 1) ? UploadKindMods : UploadKindRevival;
+}
+
+- (void)typeChanged:(UISegmentedControl *)seg {
+    self.kind = [self kindForSegIndex:seg.selectedSegmentIndex];
+    [self.view endEditing:YES];
+    [self rebuildSections];
+    [self.tableView reloadData];
+}
+
+- (void)pickCategory {
+    [self.view endEditing:YES];
+    CategorySuggestViewController *p = [[CategorySuggestViewController alloc]
+        initForPickingCategory:self.pickedCategory subgenre:self.pickedSubgenre];
+    __weak UploadViewController *weakSelf = self;
+    p.onPick = ^(NSString *category, NSString *subgenre) {
+        UploadViewController *s = weakSelf; if (!s) return;
+        s.pickedCategory = category;
+        s.pickedSubgenre = subgenre;
+        [s.tableView reloadData];
+    };
+    [self.navigationController pushViewController:p animated:YES];
 }
 
 #pragma mark - Field delegates
 
 - (void)textFieldDidBeginEditing:(UITextField *)tf { [self scrollToView:tf]; }
 - (BOOL)textFieldShouldReturn:(UITextField *)tf { [tf resignFirstResponder]; return YES; }
+- (void)textFieldDidEndEditing:(UITextField *)tf {
+    if (tf == self.bidField) { [self refreshBidInCatalog]; }   // typed bid → re-check catalogue
+}
 - (void)textViewDidBeginEditing:(UITextView *)tv { [self scrollToView:tv]; [self syncPh:tv]; }
 - (void)textViewDidChange:(UITextView *)tv { [self syncPh:tv]; }
 - (void)syncPh:(UITextView *)tv { ((UILabel *)[tv.superview viewWithTag:7777]).hidden = tv.text.length > 0; }
+
+// Is the current bundle id already in the catalogue? Drives the catalogue footer + "category optional".
+- (void)refreshBidInCatalog {
+    NSString *bid = [self trim:self.bidField];
+    BOOL was = self.bidInCatalog;
+    NSString *prevCat = self.pickedCategory;
+    if (bid.length) {
+        NSDictionary *cur = [[LocalCatalog shared] categorySubgenreForBundleId:bid];
+        self.bidInCatalog = (cur != nil);
+        // Inherit the catalogue's category for display when the user hasn't picked one.
+        if (cur && !self.pickedCategory.length) {
+            self.pickedCategory = cur[@"category"];
+            self.pickedSubgenre = cur[@"subgenre"];
+        }
+    } else {
+        self.bidInCatalog = NO;
+    }
+    if (was != self.bidInCatalog || prevCat != self.pickedCategory) [self.tableView reloadData];
+}
 
 #pragma mark - File picker
 
@@ -244,10 +427,41 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
         s.chosenPath = path;
         NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:NULL];
         s.chosenSize = attrs ? (long long)[attrs fileSize] : 0;
+        [s analyzePickedIPA:path];
         [s.tableView reloadData];
     };
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:fp];
     [self presentViewController:nav animated:YES completion:nil];
+}
+
+// Off-main: verify the .ipa isn't FairPlay-encrypted, and auto-fill name/version/min-iOS/bid + icon.
+- (void)analyzePickedIPA:(NSString *)path {
+    self.analyzing = YES;
+    self.iconB64 = nil;
+    __weak UploadViewController *weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        MachOInspectionResult enc = [MachOInspector inspectIPA:path];
+        NSDictionary *meta = (enc == MachOInspectionResultEncrypted) ? nil : [IPAPackage metadataForIPA:path];
+        NSData *icon       = (enc == MachOInspectionResultEncrypted) ? nil : [IPAPackage iconPNGForIPA:path];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UploadViewController *s = weakSelf; if (!s) return;
+            if (![s.chosenPath isEqualToString:path]) return;   // user picked another file meanwhile
+            s.analyzing = NO;
+            if (enc == MachOInspectionResultEncrypted) {
+                s.chosenPath = nil; s.chosenSize = 0; s.iconB64 = nil;
+                [s alert:T(@"upload.title") msg:T(@"upload.err_encrypted")];
+                [s.tableView reloadData];
+                return;
+            }
+            if ([meta[@"name"] length]    && !s.nameField.text.length)    s.nameField.text    = meta[@"name"];
+            if ([meta[@"version"] length] && !s.versionField.text.length) s.versionField.text = meta[@"version"];
+            if ([meta[@"min_ios"] length] && !s.miniosField.text.length)  s.miniosField.text  = meta[@"min_ios"];
+            if ([meta[@"bid"] length]     && !s.bidField.text.length)     s.bidField.text     = meta[@"bid"];
+            if (icon.length) s.iconB64 = [s base64:icon];
+            [s refreshBidInCatalog];
+            [s.tableView reloadData];
+        });
+    });
 }
 
 #pragma mark - Send
@@ -256,12 +470,26 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
 
 - (void)sendTapped {
     NSString *name = [self trim:self.nameField];
+    NSString *desc = [self textViewText:self.descView];
     if (self.chosenPath.length == 0) { [self alert:T(@"upload.title") msg:T(@"upload.err_nofile")]; return; }
+    if (self.analyzing)              { [self alert:T(@"upload.title") msg:T(@"upload.analyzing")]; return; }
     if (name.length == 0)            { [self alert:T(@"upload.title") msg:T(@"upload.err_noname")]; return; }
+    // Description: required for Works-Today / Modded; optional for a plain catalogue app.
+    if (self.kind != UploadKindCatalog && desc.length == 0) {
+        [self alert:T(@"upload.title") msg:T(@"upload.err_nodesc")]; return;
+    }
+    // Category: required for a catalogue app that ISN'T already in AppDrop (else it's inherited).
+    if (self.kind == UploadKindCatalog && !self.bidInCatalog && !self.pickedCategory.length) {
+        [self alert:T(@"upload.title") msg:T(@"upload.cat_required")]; return;
+    }
     if (!self.attestSwitch.on)       { [self alert:T(@"upload.title") msg:T(@"upload.err_attest")]; return; }
     if (self.chosenSize > kMaxIPABytes) {
         [self alert:T(@"upload.title") msg:[NSString stringWithFormat:T(@"upload.err_toobig"), 45]];
         return;
+    }
+    // Defensive re-check: never upload an encrypted build, even if the async probe was skipped.
+    if ([MachOInspector inspectIPA:self.chosenPath] == MachOInspectionResultEncrypted) {
+        [self alert:T(@"upload.title") msg:T(@"upload.err_encrypted")]; return;
     }
     NSData *fileData = [NSData dataWithContentsOfFile:self.chosenPath];
     if (!fileData.length) { [self alert:T(@"upload.title") msg:T(@"upload.err_read")]; return; }
@@ -274,11 +502,10 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
     [sp startAnimating];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:sp];
 
-    NSString *target = (self.categorySeg.selectedSegmentIndex == 1) ? @"revival" : @"mods";
-    NSDictionary *payload = @{
-        @"target":      target,
+    NSMutableDictionary *payload = [@{
+        @"target":      UploadKindTarget(self.kind),
         @"name":        name,
-        @"description": [self textViewText:self.descView],
+        @"description": desc,
         @"min_ios":     [self trim:self.miniosField],
         @"appver":      [self trim:self.versionField],
         @"mod":         [self trim:self.modField],
@@ -286,9 +513,15 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
         @"credit":      [self trim:self.creditField],
         @"ipa":         b64,
         @"attest":      @YES,
+        @"decrypted":   @YES,
         @"device":      [DeviceInfo aiSummary] ?: @"",
         @"lang":        [Localization currentLanguageCode] ?: @"en",
-    };
+    } mutableCopy];
+    if (self.kind == UploadKindCatalog) {
+        payload[@"category"] = self.pickedCategory ?: @"";
+        payload[@"subgenre"] = self.pickedSubgenre ?: @"";
+    }
+    if (self.iconB64.length) payload[@"icon_png"] = self.iconB64;
     NSData *body = [NSJSONSerialization dataWithJSONObject:payload options:0 error:NULL];
 
     [HTTPSClient postURL:kUploadURL headers:@{@"Content-Type": @"application/json"} body:body timeout:120

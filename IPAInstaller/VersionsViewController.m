@@ -15,6 +15,7 @@
 @property (nonatomic, strong) NSArray *versions;
 @property (nonatomic, strong) NSMutableDictionary *encByURL;   // url -> @(MachOInspectionResult)
 @property (nonatomic, strong) NSMutableSet *encInflight;       // urls currently being probed
+@property (nonatomic, assign) BOOL pendingReload;             // a probe resolved mid-scroll → reload when it settles (#151)
 @end
 
 @implementation VersionsViewController
@@ -87,7 +88,7 @@
                                           completion:^(BOOL ok, NSError *e) {
                 if (!ok) {
                     [self.spinner stopAnimating];
-                    self.statusLabel.text = [@"Echec : " stringByAppendingString:e.localizedDescription ?: @""];
+                    self.statusLabel.text = [NSString stringWithFormat:T(@"versions.load_failed"), e.localizedDescription ?: @""];
                     return;
                 }
                 [self queryLocalVersions];
@@ -109,7 +110,7 @@
                            completionHandler:^(NSURLResponse *r, NSData *d, NSError *e) {
         [self.spinner stopAnimating];
         if (e || !d) {
-            self.statusLabel.text = [NSString stringWithFormat:@"Erreur : %@",
+            self.statusLabel.text = [NSString stringWithFormat:T(@"versions.load_failed"),
                                        e.localizedDescription ?: @""];
             return;
         }
@@ -127,16 +128,16 @@
     NSArray *vs = [[LocalCatalog shared] versionsForBundleId:self.bundleId];
     [self.spinner stopAnimating];
     self.versions = vs;
-    self.statusLabel.text = [NSString stringWithFormat:@"%lu version%@ (local)",
-                              (unsigned long)vs.count, vs.count > 1 ? @"s" : @""];
+    self.statusLabel.text = [NSString stringWithFormat:T(@"versions.count"), (unsigned long)vs.count];
     [self.tableView reloadData];
+    [self probeVisibleRows];   // lazily badge the FIRST screenful's encrypted mirrors (#151)
 }
 
 - (NSString *)humanSize:(long long)b {
-    if (b < 1024) return [NSString stringWithFormat:@"%lld o", b];
-    if (b < 1024*1024) return [NSString stringWithFormat:@"%.0f Ko", b/1024.0];
-    if (b < 1024LL*1024*1024) return [NSString stringWithFormat:@"%.1f Mo", b/(1024.0*1024)];
-    return [NSString stringWithFormat:@"%.2f Go", b/(1024.0*1024*1024)];
+    if (b < 1024) return [NSString stringWithFormat:@"%lld B", b];
+    if (b < 1024*1024) return [NSString stringWithFormat:@"%.0f KB", b/1024.0];
+    if (b < 1024LL*1024*1024) return [NSString stringWithFormat:@"%.1f MB", b/(1024.0*1024)];
+    return [NSString stringWithFormat:@"%.2f GB", b/(1024.0*1024*1024)];
 }
 
 #pragma mark - FairPlay-encryption badge (lazy probe + cache)
@@ -149,9 +150,16 @@
     if (n) return [n integerValue];
     NSInteger cached = [MachOInspector cachedResultForURL:url];
     if (cached >= 0) { [self.encByURL setObject:[NSNumber numberWithInteger:cached] forKey:url]; return cached; }
-    [self scheduleEncProbeForURL:url];
+    // Unknown — do NOT probe here. cellForRow runs during fast scroll; probing per cell queued
+    // dozens of blocking HTTP probes and froze the list (#151). Probing is driven by
+    // -probeVisibleRows (bounded, visible rows only, when the scroll settles).
     return -1;
 }
+
+// Max FairPlay probes in flight at once. Each probe is a blocking HTTP-Range read, so a fast
+// scroll must NOT spawn dozens (that froze the list — #151). Visible rows are probed a few at a
+// time; as each lands, the next visible one is picked up.
+static const NSUInteger kMaxConcurrentEncProbes = 3;
 
 - (void)scheduleEncProbeForURL:(NSString *)url {
     if (url.length == 0 || [self.encInflight containsObject:url]) return;
@@ -161,15 +169,39 @@
         VersionsViewController *s = weakSelf;
         if (!s) return;
         [s.encInflight removeObject:url];
-        if (r == MachOInspectionResultUnknown) return;            // couldn't tell → leave unbadged
-        [s.encByURL setObject:[NSNumber numberWithInteger:(NSInteger)r] forKey:url];
-        NSMutableArray *paths = [NSMutableArray array];
-        for (NSUInteger i = 0; i < s.versions.count; i++) {
-            if ([[[s.versions objectAtIndex:i] objectForKey:@"url"] isEqualToString:url])
-                [paths addObject:[NSIndexPath indexPathForRow:(NSInteger)i inSection:0]];
+        if (r != MachOInspectionResultUnknown) {
+            [s.encByURL setObject:[NSNumber numberWithInteger:(NSInteger)r] forKey:url];
+            // Defer the refresh while the user is flinging (mirrors CatalogViewController) — an
+            // immediate reload mid-scroll churns layout and freezes on iOS 6/7 (#151).
+            if (s.tableView.dragging || s.tableView.decelerating) s.pendingReload = YES;
+            else [s.tableView reloadData];
         }
-        if (paths.count) [s.tableView reloadRowsAtIndexPaths:paths withRowAnimation:UITableViewRowAnimationNone];
+        [s probeVisibleRows];   // fill the freed slot with the next visible, unprobed row
     }];
+}
+
+// Probe only the rows currently on screen, a few at a time. Called after load and whenever the
+// scroll settles — never from cellForRow (that per-cell probing is what froze the list, #151).
+- (void)probeVisibleRows {
+    for (NSIndexPath *ip in [self.tableView indexPathsForVisibleRows]) {
+        if (self.encInflight.count >= kMaxConcurrentEncProbes) break;
+        if (ip.row < 0 || ip.row >= (NSInteger)self.versions.count) continue;
+        NSString *url = [[self.versions objectAtIndex:ip.row] objectForKey:@"url"] ?: @"";
+        if (url.length == 0) continue;
+        if ([self.encByURL objectForKey:url]) continue;              // already known
+        if ([MachOInspector cachedResultForURL:url] >= 0) continue;  // known in the MachO cache
+        if ([self.encInflight containsObject:url]) continue;         // in flight
+        [self scheduleEncProbeForURL:url];
+    }
+}
+
+- (void)flushAfterScroll {
+    if (self.pendingReload) { self.pendingReload = NO; [self.tableView reloadData]; }
+    [self probeVisibleRows];
+}
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)sv { [self flushAfterScroll]; }
+- (void)scrollViewDidEndDragging:(UIScrollView *)sv willDecelerate:(BOOL)decel {
+    if (!decel) [self flushAfterScroll];
 }
 
 #pragma mark - Table
@@ -179,14 +211,17 @@
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
-    return [NSString stringWithFormat:@"%lu version%@ disponible%@",
-              (unsigned long)self.versions.count,
-              self.versions.count > 1 ? @"s" : @"",
-              self.versions.count > 1 ? @"s" : @""];
+    return [NSString stringWithFormat:T(@"versions.available_header"), (unsigned long)self.versions.count];
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
     return T(@"versions.footer");
+}
+
+// iOS 5/6 grouped tables drop a cell.backgroundColor set in cellForRow:, so dark-mode cells
+// stayed white with unreadable (light) text. Re-apply the themed colour here (where it sticks).
+- (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)ip {
+    cell.backgroundColor = [IOS6Theme cellColor];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
@@ -200,7 +235,7 @@
     }
     NSDictionary *v = self.versions[ip.row];
     long long size = [v[@"size"] longLongValue];
-    NSString *sizeStr = size > 0 ? [self humanSize:size] : @"taille inconnue";
+    NSString *sizeStr = size > 0 ? [self humanSize:size] : T(@"versions.unknown_size");
     // Mark versions this device can't run (min iOS higher than the device's iOS).
     BOOL compatible = [[LocalCatalog shared] deviceCanRunMinIOS:v[@"minOS"]];
     NSString *url = v[@"url"] ?: @"";

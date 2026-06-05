@@ -24,3 +24,6 @@
 - (NSDictionary *)revivalForBundleId:(NSString *)bid;
 
 @end
+
+// Posted on the main thread when a newer hosted revival.json was fetched mid-session (#142).
+extern NSString *const RevivalCatalogDidChangeNotification;

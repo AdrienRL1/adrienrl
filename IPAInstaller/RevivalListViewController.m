@@ -1,5 +1,6 @@
 #import "RevivalListViewController.h"
 #import "RevivalCatalog.h"
+#import "ModdedCatalog.h"
 #import "Localization.h"
 #import "IOS6Theme.h"
 #import "AppRowCell.h"
@@ -74,6 +75,24 @@ static NSString *RevHumanSize(long long bytes) {
     self.tpr = MAX(1, [AppRowCell tilesPerRowForWidth:[self gridWidth]]);
     self.tableView.rowHeight = [AppRowCell gridRowHeight];
     [self installHeader];
+    // #142: refresh in-session when the hosted Works-Today / Modded list updates.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(revivalListDidChange) name:RevivalCatalogDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(revivalListDidChange) name:ModdedCatalogDidChangeNotification object:nil];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+// #142: the hosted Works-Today / Modded list was refreshed mid-session → reload our data + view.
+- (void)revivalListDidChange {
+    self.allApps = [self.uploadTarget isEqualToString:@"mods"]
+        ? [[ModdedCatalog shared] appDicts]
+        : (self.customAppDicts ?: [[RevivalCatalog shared] appDicts]);
+    self.apps = [self applyFilter:[CatalogFilter load_] to:self.allApps];
+    [self.tableView reloadData];
 }
 
 - (NSArray *)applyFilter:(CatalogFilter *)f to:(NSArray *)apps {

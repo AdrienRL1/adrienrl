@@ -7,8 +7,32 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/mount.h>   // statfs — low-storage guard (#169)
 
 extern char **environ;
+
+// #169 — low-storage install guard. ipainstaller unpacks the .ipa into
+// /var/mobile/Applications WHILE the .ipa still occupies tmp, so a download+install
+// transiently needs several times the file size on disk. On a nearly-full 8 GB device
+// (Reddit: iPhone 3GS) that would fill the disk to 0 bytes mid-install; instead we refuse
+// up front with a clear message. NSTemporaryDirectory() and /var/mobile/Applications share
+// the /var volume, so its free space governs both the download and the install.
+static const double kDLSpaceFactor      = 2.5;  // ~2.5× the file size free to download AND install it
+static const double kInstallSpaceFactor = 1.5;  // ~1.5× the .ipa size free for ipainstaller's extraction
+
+// Free bytes available to us on the volume holding tmp + installed apps. -1 = unknown
+// (callers then skip the check rather than wrongly block an install).
+static long long ADFreeDiskBytes(void) {
+    struct statfs s;
+    if (statfs([NSTemporaryDirectory() fileSystemRepresentation], &s) == 0)
+        return (long long)s.f_bavail * (long long)s.f_bsize;
+    return -1;
+}
+
+static NSString *ADHumanSize(long long bytes) {
+    if (bytes >= 1024LL * 1024 * 1024) return [NSString stringWithFormat:@"%.1f GB", bytes / 1073741824.0];
+    return [NSString stringWithFormat:@"%.0f MB", bytes / 1048576.0];
+}
 
 NSString *const InstallManagerJobsChangedNotification = @"InstallManagerJobsChangedNotification";
 NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSavedNotification";
@@ -150,6 +174,15 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     NSString *tmpDir = NSTemporaryDirectory();
     NSFileManager *fm = [NSFileManager defaultManager];
     NSArray *entries = [fm contentsOfDirectoryAtPath:tmpDir error:nil];
+    // #93: SPARE the partial .ipa / .partN of jobs we still know about (loadJobsFromDisk ran first).
+    // A PAUSED (or interrupted) download whose app then got killed — very common on iOS 6 — must keep
+    // its partial so resumeJob can continue via Range instead of restarting from 0. The stem
+    // `_inst_<jobId[6:]>.ipa` is a prefix of both the final file and its `.partN` sidecars.
+    NSMutableSet *protectedStems = [NSMutableSet set];
+    for (NSString *jid in _jobsById) {
+        if (jid.length > 6)
+            [protectedStems addObject:[NSString stringWithFormat:@"_inst_%@.ipa", [jid substringFromIndex:6]]];
+    }
     NSInteger n = 0;
     long long bytes = 0;
     for (NSString *name in entries) {
@@ -163,6 +196,9 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         BOOL isPart = ([name rangeOfString:@".ipa.part"].location != NSNotFound);
         BOOL isProbe = [name hasPrefix:@"_probe_"];  // shouldn't be _inst_ but defensive
         if (!isIPA && !isPart && !isProbe) continue;
+        BOOL keep = NO;
+        for (NSString *stem in protectedStems) { if ([name hasPrefix:stem]) { keep = YES; break; } }
+        if (keep) continue;   // belongs to a known (paused/active) job — don't delete its partial
         NSString *path = [tmpDir stringByAppendingPathComponent:name];
         NSDictionary *attrs = [fm attributesOfItemAtPath:path error:nil];
         bytes += [attrs[NSFileSize] longLongValue];
@@ -513,6 +549,10 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     __block NSDate *windowStart = [NSDate date];
     __block long long windowStartBytes = 0;
     __block BOOL slowAbort = NO;
+    // #169: tripped on the first progress tick if free disk < kDLSpaceFactor × file size.
+    __block BOOL spaceAbort = NO;
+    __block BOOL spaceChecked = NO;
+    __block long long spaceNeedBytes = 0;
 
     // Stream count from Settings (default 4). 1 disables parallelism and
     // ParallelDownloader transparently falls back to the legacy single-stream
@@ -531,6 +571,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         // the completion's pause branch); without this the downloader runs on and the progress
         // ticks below keep overwriting the "paused" UI, so the user sees the download "restart".
         if (!j || j.cancelRequested || j.pauseRequested) return YES;
+        if (spaceAbort) return YES;   // #169: not enough free disk to download + install
         // Only consider slow-mirror abort if we still have retry budget — otherwise
         // there's no point dropping the connection.
         if (attempt < kMaxMirrorAttempts - 1) {
@@ -552,6 +593,18 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         return NO;
     }
                      progress:^(long long received, long long total) {
+        // #169: as soon as the real size is known, make sure there's room to download AND
+        // install (ipainstaller extracts while the .ipa is still on disk). If not, trip
+        // spaceAbort so isCancelled stops the download now — far better than filling the disk
+        // to 0 bytes. Checked once (free space only shrinks as we download).
+        if (!spaceChecked && total > 0) {
+            spaceChecked = YES;
+            long long freeB = ADFreeDiskBytes();
+            long long need  = (long long)(total * kDLSpaceFactor);
+            // Count bytes already on disk (`received` is large on a resume — the partial .ipa
+            // already occupies space) so we don't falsely abort a nearly-finished resume.
+            if (freeB >= 0 && (freeB + received) < need) { spaceNeedBytes = need; spaceAbort = YES; }
+        }
         NSDate *now = [NSDate date];
         NSTimeInterval dt = [now timeIntervalSinceDate:lastTick];
         double bps = dt > 0 ? (received - lastReceived) / dt : 0;
@@ -579,6 +632,23 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     }
                    completion:^(BOOL ok, NSInteger status, NSError *err) {
         if (!ok) {
+            // #169: aborted because there isn't enough free storage to download + install.
+            // Report it clearly and clean up the partial — checked first so the generic
+            // network-error path below never masks it.
+            if (spaceAbort) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    InstallJob *j = weakJob;
+                    if (j) {
+                        j.state = @"failed";
+                        j.message = [NSString stringWithFormat:T(@"install.error.no_space"),
+                                       ADHumanSize(spaceNeedBytes)];
+                    }
+                    [self postChanged];
+                    [[NSFileManager defaultManager] removeItemAtPath:localPath error:nil];
+                    [self deleteChunkSidecarsFor:localPath];
+                });
+                return;
+            }
             // Slow-mirror retry: don't surface the failure, just kick off a new attempt.
             // The partial .ipa stays on disk; HTTPSClient will send Range: bytes=N-.
             if (slowAbort && !job.cancelRequested && !job.pauseRequested && attempt < kMaxMirrorAttempts - 1) {
@@ -702,6 +772,31 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
             return;
         }
 
+        // #169: pre-install free-space guard. ipainstaller unpacks the .ipa into
+        // /var/mobile/Applications WHILE the .ipa still occupies tmp; on a nearly-full
+        // low-storage device (Reddit: iPhone 3GS, 8 GB) that fills the disk to 0 bytes
+        // mid-install. Refuse up front with a clear message rather than letting it happen
+        // (ipainstaller is a separate process — we can't catch its write failures, only
+        // prevent them). The .ipa is downloaded already, so this is the precise moment.
+        {
+            long long ipaSize = (long long)[[[NSFileManager defaultManager]
+                                  attributesOfItemAtPath:localPath error:nil] fileSize];
+            long long freeNow = ADFreeDiskBytes();
+            long long needNow = (long long)(ipaSize * kInstallSpaceFactor);
+            if (ipaSize > 0 && freeNow >= 0 && freeNow < needNow) {
+                NSLog(@"[InstallManager] #169 insufficient space to install: free=%lld need=%lld (.ipa=%lld)",
+                      freeNow, needNow, ipaSize);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    job.state = @"failed";
+                    job.message = [NSString stringWithFormat:T(@"install.error.no_space"),
+                                     ADHumanSize(needNow)];
+                    [self postChanged];
+                    [[NSFileManager defaultManager] removeItemAtPath:localPath error:nil];
+                });
+                return;
+            }
+        }
+
         // Phase 2: invoke ipainstaller via posix_spawn
         dispatch_async(dispatch_get_main_queue(), ^{
             job.state = @"installing";
@@ -712,8 +807,21 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             NSString *out = nil;
             int exitCode = [self runIpainstallerOnFile:localPath capturedOutput:&out];
+            BOOL success = (exitCode == 0) || (out && [out.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
+            // #150 (iOS 9: "installs to 100% but the app isn't really installed"): if the
+            // installer output names a bundle id, confirm the app is actually registered
+            // (ipainstaller -l). Downgrade to failure ONLY on a confident "absent"; any
+            // unverifiable case keeps the optimistic result, so a genuinely-working install
+            // (e.g. iPad 4 / iOS 6) is never false-failed.
+            if (success) {
+                NSString *vbid = [self bundleIdFromInstallerOutput:out];
+                if (vbid.length && ![self verifyInstalledBundleId:vbid]) {
+                    success = NO;
+                    out = [(out ?: @"") stringByAppendingString:
+                        @"\n[AppDrop] post-install check: app not registered — the install did not take."];
+                }
+            }
             dispatch_async(dispatch_get_main_queue(), ^{
-                BOOL success = (exitCode == 0) || (out && [out.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
                 if (success) {
                     job.state = @"completed";
                     [self scheduleUICacheRefresh];   // rebuild the SpringBoard icon cache so the new app appears (feedback #26/#36)
@@ -868,6 +976,28 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     return [self runIpainstallerArgs:(path.length ? @[path] : @[]) capturedOutput:outOutput];
 }
 
+// #150: pull a reverse-DNS bundle id (e.g. com.foo.bar) out of ipainstaller's output so we can
+// confirm the install really registered. Returns nil if none is found (→ skip verification).
+- (NSString *)bundleIdFromInstallerOutput:(NSString *)out {
+    if (!out.length) return nil;
+    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:
+        @"[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+){2,}" options:0 error:NULL];
+    NSTextCheckingResult *m = re ? [re firstMatchInString:out options:0
+                                                    range:NSMakeRange(0, out.length)] : nil;
+    return (m && m.range.location != NSNotFound) ? [out substringWithRange:m.range] : nil;
+}
+
+// #150: YES if the bundle id is confirmed installed (it appears in `ipainstaller -l`). If we
+// can't list (no installer, or -l failed), returns YES — we never downgrade a success we
+// can't actually disprove. Synchronous (spawns + waits) — call OFF the main thread.
+- (BOOL)verifyInstalledBundleId:(NSString *)bid {
+    if (!bid.length) return YES;
+    NSString *out = nil;
+    int rc = [self runIpainstallerArgs:@[@"-l"] capturedOutput:&out];
+    if (rc != 0 || !out.length) return YES;            // can't verify → assume OK
+    return ([out rangeOfString:bid].location != NSNotFound);
+}
+
 // After a successful install the new icon often won't appear on SpringBoard until the icon
 // cache is rebuilt — ipainstaller doesn't reliably trigger it on every jailbreak (feedback
 // #26/#36: "I download it but it doesn't show on my home screen"). uicache rebuilds it.
@@ -876,8 +1006,11 @@ static NSInteger gUICacheToken = 0;
 
 - (void)scheduleUICacheRefresh {
     NSInteger token = ++gUICacheToken;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
-                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+    // Run soon, at DEFAULT priority (was 2.5 s / LOW) so the icon actually appears before the
+    // user leaves the app — the single most common confusion ("installed but not on my home
+    // screen": feedback #24/#40/#50/#74 + Reddit). Still coalesces a burst of multi-select installs.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         if (token != gUICacheToken) return;   // a newer install rescheduled — let that later one run uicache
         [self runUICache];
     });

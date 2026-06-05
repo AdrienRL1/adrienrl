@@ -1,10 +1,14 @@
 #import "ModdedCatalog.h"
 #import "LocalCatalog.h"
 #import "HTTPSClient.h"
+#import "Localization.h"
 #import <UIKit/UIKit.h>
+
+NSString *const ModdedCatalogDidChangeNotification = @"ModdedCatalogDidChangeNotification";
 
 @interface ModdedCatalog ()
 @property (nonatomic, strong) NSArray *apps;
+@property (nonatomic, assign) NSInteger loadedVersion;   // top-level "version" of self.apps (#142)
 @end
 
 @implementation ModdedCatalog
@@ -35,9 +39,16 @@ static NSString *const kModsURL = @"https://adrienrl1.github.io/cydia/mods.json"
     [HTTPSClient getURL:kModsURL timeout:20 completion:^(NSData *data, NSInteger code, NSError *err) {
         if (err || code < 200 || code >= 300 || data.length < 10) return;
         id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
-        if ([obj isKindOfClass:[NSDictionary class]] &&
-            [[(NSDictionary *)obj objectForKey:@"apps"] isKindOfClass:[NSArray class]]) {
-            [data writeToFile:[self cachePath] atomically:YES];
+        if (![obj isKindOfClass:[NSDictionary class]]) return;
+        if (![[(NSDictionary *)obj objectForKey:@"apps"] isKindOfClass:[NSArray class]]) return;
+        NSInteger newVer = [[(NSDictionary *)obj objectForKey:@"version"] integerValue];
+        [data writeToFile:[self cachePath] atomically:YES];
+        // #142: refresh the Modded list IN-SESSION when the hosted file is newer.
+        if (newVer > self.loadedVersion) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self load];
+                [[NSNotificationCenter defaultCenter] postNotificationName:ModdedCatalogDidChangeNotification object:nil];
+            });
         }
     }];
 }
@@ -63,6 +74,7 @@ static NSString *const kModsURL = @"https://adrienrl1.github.io/cydia/mods.json"
     NSDictionary *chosen = (cached && cv > bv) ? cached : (bundled ?: cached);
     id apps = chosen[@"apps"];
     self.apps = [apps isKindOfClass:[NSArray class]] ? apps : @[];
+    self.loadedVersion = [chosen[@"version"] integerValue];   // #142
 }
 
 - (NSArray *)allApps { return self.apps ?: @[]; }
@@ -89,6 +101,20 @@ static BOOL ModVersionLTE(NSString *a, NSString *b) {
         if (!minIOS.length || ModVersionLTE(minIOS, dev)) [out addObject:app];
     }
     return out;
+}
+
+// #147: notes in the user's language — notes_i18n[lang] → notes_i18n["en"] → notes (FR default).
+static NSString *ADLocalizedModNotes(NSDictionary *e) {
+    id i18n = e[@"notes_i18n"];
+    if ([i18n isKindOfClass:[NSDictionary class]]) {
+        NSString *lang = [Localization currentLanguageCode];
+        id s = (lang.length ? [i18n objectForKey:lang] : nil);
+        if ([s isKindOfClass:[NSString class]] && [s length]) return s;
+        id en = [i18n objectForKey:@"en"];
+        if ([en isKindOfClass:[NSString class]] && [en length]) return en;
+    }
+    id n = e[@"notes"];
+    return [n isKindOfClass:[NSString class]] ? n : @"";
 }
 
 - (NSArray *)appDicts {
@@ -119,7 +145,7 @@ static BOOL ModVersionLTE(NSString *a, NSString *b) {
             @"platform":     @6,                         // iPhone + iPad
             @"isModded":     @YES,
             @"modDesc":      e[@"mod"] ?: @"",           // short description of the modification
-            @"revivalNotes": e[@"notes"] ?: @"",         // reuse the detail screen's notes line
+            @"revivalNotes": ADLocalizedModNotes(e),     // reuse the detail screen's notes line
             @"revivalLink":  link,
             @"revivalExternal": @(external),
         }];

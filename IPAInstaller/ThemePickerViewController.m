@@ -74,6 +74,13 @@ static UIImage *ADThemeSwatch(UIColor *color) {
     return s == 1 ? T(@"theme.footer") : nil;
 }
 
+// iOS 5/6 grouped tables drop a cell.backgroundColor set in cellForRow:, so dark-mode cells
+// stayed white with unreadable (light) text. Re-apply the themed colour here (the swatch is the
+// cell's imageView, drawn on top, so it's unaffected).
+- (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)ip {
+    cell.backgroundColor = [IOS6Theme cellColor];
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     static NSString *cid = @"themeRow";
     UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:cid];

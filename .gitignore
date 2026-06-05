@@ -27,6 +27,11 @@ __pycache__/
 *.log
 /tmp/
 
+# Cloudflare Worker — deployed by pasting into the Cloudflare dashboard, never from the repo
+# (and it must never carry secrets). Translation job DB stays local too.
+feedback-worker/
+work.db
+
 # Personal notes that don't belong in the public repo
 PROGRESS.md
 IPA-Install-RAPPORT.md

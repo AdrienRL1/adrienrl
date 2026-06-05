@@ -15,6 +15,22 @@
 "catalog.filters" = "Filtros";
 "catalog.search_placeholder" = "Pesquisar (título ou bundle ID)";
 "catalog.loading" = "Carregando catálogo...";
+"catalog.retry" = "Catálogo indisponível — toque para tentar novamente.";
+"suggestcat.title" = "Sugerir categoria";
+"suggestcat.action" = "Categoria errada? Sugira uma";
+"suggestcat.current" = "Atual: %@";
+"suggestcat.pick_category" = "Escolha uma categoria";
+"suggestcat.pick_subgenre" = "Escolha uma seção";
+"suggestcat.subgenre_required" = "Escolha uma seção.";
+"suggestcat.none" = "Geral";
+"suggestcat.submit" = "Enviar";
+"suggestcat.thanks" = "Obrigado! Sua sugestão foi enviada para revisão.";
+"versions.load_failed" = "Falhou: %@";
+"versions.available_header" = "%lu versões disponíveis";
+"versions.count" = "%lu versões";
+"versions.unknown_size" = "tamanho desconhecido";
+"catalog.decompress_failed" = "falha na descompressão";
+"catalog.unavailable" = "catálogo indisponível";
 "catalog.loading_more" = "Carregando...";
 "catalog.network_error" = "Erro de rede: %@";
 "catalog.tap_retry" = "Toque para tentar de novo";
@@ -168,6 +184,7 @@
 "install.error.no_ipainstaller" = "ipainstaller não encontrado. Instale o pacote « IPA Installer Console » do Cydia (busque: appinst ou ipainstaller).";
 "install.error.spawn_failed" = "posix_spawn(%s) falhou: %s";
 "install.error.install_failed" = "Instalação falhou (exit %d): %@";
+"install.error.no_space" = "Espaço de armazenamento insuficiente para instalar este app (são necessários cerca de %@ livres). Libere espaço e tente novamente.";
 
 /* ===== App detail extras (v1.8.7) ===== */
 "app.fallback_title" = "App";
@@ -312,6 +329,7 @@
 /* v1.7 category menu */
 "categories.title" = "Categorias";
 "categories.all" = "Todos os apps";
+"categories.all_in_cat" = "Tudo";
 "catalog.browse_categories" = "Categorias";
 "cat.Games" = "Jogos";
 "cat.Entertainment" = "Entretenimento";
@@ -392,6 +410,14 @@
 "feedback.empty" = "Escreva seu feedback primeiro.";
 "feedback.not_configured" = "O feedback ainda não está configurado — tente após a próxima atualização.";
 
+/* v3.1 crash reporter */
+"crash.prompt_title" = "O AppDrop travou";
+"crash.prompt_msg" = "O AppDrop travou na sua última sessão. Enviar um relatório de erro anônimo para ajudar a corrigir? Nenhum dado pessoal é incluído.";
+"crash.send" = "Enviar relatório";
+"crash.decline" = "Agora não";
+"crash.thanks_title" = "Obrigado!";
+"crash.thanks_msg" = "Relatório enviado. Isso ajuda muito a corrigir o problema.";
+
 "tab.home" = "Início";
 
 /* ===== Revival / Works today (issue #4) ===== */
@@ -453,6 +479,7 @@
 "folder.short" = "Pasta";
 "folder.add_title" = "Adicionar a uma pasta";
 "folder.new" = "Nova pasta";
+"folder.untitled" = "Sem título";
 "folder.create" = "Criar";
 "folder.edit" = "Editar";
 "folder.rename" = "Renomear";
@@ -506,3 +533,18 @@
 "upload.err_toobig" = "Arquivo muito grande (máx. %d MB).";
 "upload.err_read" = "Não foi possível ler o arquivo.";
 "upload.err_send" = "Falha ao enviar";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "Tipo";
+"upload.type_catalog" = "App/Jogo";
+"upload.type_revival" = "Funciona";
+"upload.type_mods" = "Modificada";
+"upload.cat_choose" = "Escolher uma categoria";
+"upload.cat_required" = "Escolha uma categoria para este app.";
+"upload.cat_pick_title" = "Categoria";
+"upload.cat_inherited" = "App já no AppDrop: a categoria é herdada do catálogo.";
+"upload.cat_footer" = "Obrigatório para um app que ainda não está no AppDrop.";
+"upload.err_encrypted" = "Este app está criptografado (DRM FairPlay) e não pode ser compartilhado. Escolha uma versão descriptografada.";
+"upload.err_nodesc" = "Adicione uma descrição.";
+"upload.desc_ph_req" = "Descrição (obrigatória)";
+"upload.desc_ph_opt" = "Descrição (opcional)";
+"upload.analyzing" = "Analisando…";

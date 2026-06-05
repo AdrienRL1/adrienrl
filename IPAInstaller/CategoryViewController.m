@@ -147,6 +147,11 @@ static NSString *fmtCount(NSInteger n) {
             selector:@selector(catalogDidUpdate) name:LocalCatalogDidUpdateNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
             selector:@selector(catalogDidUpdate) name:CollectionStoreDidChangeNotification object:nil];
+        // #142: rebuild the home tiles when the hosted Works-Today / Modded list refreshes mid-session.
+        [[NSNotificationCenter defaultCenter] addObserver:self
+            selector:@selector(catalogDidUpdate) name:RevivalCatalogDidChangeNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+            selector:@selector(catalogDidUpdate) name:ModdedCatalogDidChangeNotification object:nil];
     }
     [self attemptCatalogLoad];
 }
@@ -372,7 +377,22 @@ static UIImage *AppDropModdedGlyph(void) {
     self.pinnedCount = 0;   // subgenre screens have no pinned zone; set below for the top level
 
     if (sub) {
-        // Subgenre tiles only (this is a drilled-in screen — no collections / reorder).
+        // "All <category>" tile FIRST so the user can browse the WHOLE category without being
+        // forced to pick a subgenre (feedback #152 — v3.0 regression; subgenre=nil → all apps in cat).
+        NSInteger catTotal = 0;
+        for (NSDictionary *cc in [cat categoryCounts]) {
+            if ([(cc[@"category"] ?: @"") isEqualToString:self.parentCategory]) {
+                catTotal = [cc[@"count"] integerValue]; break;
+            }
+        }
+        [items addObject:@{ @"id": [@"allcat:" stringByAppendingString:self.parentCategory],
+            @"kind": @"all-cat", @"cat": self.parentCategory,
+            @"label": T(@"categories.all_in_cat"),
+            @"seed": [@"allcat_" stringByAppendingString:self.parentCategory],
+            @"defSpan": @"1x1", @"defaultPinned": @NO,
+            @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount(catTotal)],
+            @"iconPool": [cat iconPoolForCategory:self.parentCategory] ?: @[] }];
+        // Subgenre tiles (this is a drilled-in screen — no collections / reorder).
         for (NSDictionary *d in [cat subgenreCountsForCategory:self.parentCategory]) {
             NSString *sg = d[@"subgenre"] ?: @"";
             [items addObject:@{ @"id": [@"sub:" stringByAppendingString:sg], @"kind": @"sub", @"sub": sg,
@@ -542,6 +562,9 @@ static UIImage *AppDropModdedGlyph(void) {
         vc.customIntro = T(@"modded.intro");
         vc.uploadTarget = @"mods";      // users can share their own modded apps
         [self.navigationController pushViewController:vc animated:YES];
+    } else if ([kind isEqualToString:@"all-cat"]) {
+        NSString *cn = it[@"cat"];
+        [self pushResultsForCategory:cn subgenre:nil title:locCat(cn)];
     } else if ([kind isEqualToString:@"sub"]) {
         NSString *subv = it[@"sub"];
         [self pushResultsForCategory:self.parentCategory subgenre:subv

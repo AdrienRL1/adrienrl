@@ -96,6 +96,32 @@ static inline uint32_t bswap32(uint32_t x) {
     return result;
 }
 
++ (NSData *)extractLargestEntryFromIPA:(NSString *)ipaPath
+                              matching:(BOOL (^)(NSString *entryName))match
+                              maxBytes:(NSUInteger)maxBytes {
+    if (!ipaPath.length || !match || maxBytes == 0) return nil;
+    FILE *fp = fopen([ipaPath fileSystemRepresentation], "rb");
+    if (!fp) return nil;
+    if (fseeko(fp, 0, SEEK_END) != 0) { fclose(fp); return nil; }
+    off_t fileSize = ftello(fp);
+
+    MOReader reader = ^NSData *(off_t off, size_t len) {
+        if (off < 0 || len == 0) return nil;
+        NSMutableData *d = [NSMutableData dataWithLength:len];
+        if (!d) return nil;
+        if (fseeko(fp, off, SEEK_SET) != 0) return nil;
+        size_t got = fread(d.mutableBytes, 1, len, fp);
+        d.length = got;
+        return d;
+    };
+
+    NSData *result = nil;
+    @try { result = [self extractLargestUsingReader:reader fileSize:fileSize matching:match maxBytes:maxBytes]; }
+    @catch (NSException *e) { NSLog(@"[MachOInspector] extract exception: %@", e); result = nil; }
+    fclose(fp);
+    return result;
+}
+
 + (void)inspectURL:(NSString *)url completion:(void (^)(MachOInspectionResult result))completion {
     NSInteger cached = [self cachedResultForURL:url];
     if (cached >= 0) {
@@ -326,6 +352,97 @@ static inline uint32_t bswap32(uint32_t x) {
     out.length = maxLen - strm.avail_out;
     if (out.length < 28) return nil;
     return out;
+}
+
+// Full multi-shot inflate (raw deflate). Loops until Z_STREAM_END or `maxLen` is exceeded —
+// unlike inflateRaw (single-shot, ≤32 KB) this recovers a whole file (e.g. an icon PNG).
++ (NSData *)inflateFull:(NSData *)compressed maxOutput:(size_t)maxLen {
+    z_stream strm;
+    memset(&strm, 0, sizeof(strm));
+    if (inflateInit2(&strm, -MAX_WBITS) != Z_OK) return nil;
+    NSMutableData *out = [NSMutableData data];
+    uint8_t buf[16384];
+    strm.next_in = (Bytef *)compressed.bytes;
+    strm.avail_in = (uInt)compressed.length;
+    int ret = Z_OK;
+    do {
+        strm.next_out = buf;
+        strm.avail_out = sizeof(buf);
+        ret = inflate(&strm, Z_NO_FLUSH);
+        if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR) { inflateEnd(&strm); return nil; }
+        size_t have = sizeof(buf) - strm.avail_out;
+        if (have) [out appendBytes:buf length:have];
+        if (out.length > maxLen) { inflateEnd(&strm); return nil; }
+        if (ret == Z_BUF_ERROR && strm.avail_in == 0) break;   // no more input
+    } while (ret != Z_STREAM_END);
+    inflateEnd(&strm);
+    return out.length ? out : nil;
+}
+
+// Reader-driven sibling of inspectUsingReader: instead of looking for the main binary, it returns
+// the bytes of the largest central-directory entry whose name passes `match`.
++ (NSData *)extractLargestUsingReader:(MOReader)readBytes fileSize:(off_t)fileSize
+                             matching:(BOOL (^)(NSString *))match maxBytes:(NSUInteger)maxBytes {
+    if (fileSize < 22) return nil;
+    off_t searchStart = fileSize > (off_t)65557 ? fileSize - 65557 : 0;
+    size_t searchLen = (size_t)(fileSize - searchStart);
+    NSData *tail = readBytes(searchStart, searchLen);
+    if (!tail || tail.length != searchLen) return nil;
+
+    const uint8_t *tb = tail.bytes;
+    NSInteger eocdr = -1;
+    for (NSInteger i = (NSInteger)searchLen - 22; i >= 0; i--) {
+        if (tb[i] == 0x50 && tb[i+1] == 0x4b && tb[i+2] == 0x05 && tb[i+3] == 0x06) { eocdr = i; break; }
+    }
+    if (eocdr < 0) return nil;
+
+    uint32_t cdSize = le32(tb + eocdr + 12);
+    uint32_t cdOff  = le32(tb + eocdr + 16);
+    if (cdOff == 0xFFFFFFFFu || cdSize == 0xFFFFFFFFu) return nil;
+    if ((off_t)cdOff + (off_t)cdSize > fileSize) return nil;
+    if (cdSize > 16 * 1024 * 1024) return nil;
+
+    NSData *cd = readBytes(cdOff, cdSize);
+    if (!cd || cd.length != cdSize) return nil;
+
+    const uint8_t *cdp = cd.bytes;
+    const uint8_t *cdEnd = cdp + cd.length;
+    uint32_t bestLhOff = 0, bestComp = 0, bestUncomp = 0; uint16_t bestMethod = 0; BOOL found = NO;
+    while (cdp + 46 <= cdEnd) {
+        if (le32(cdp) != ZIP_CD_SIG) break;
+        uint16_t method     = le16(cdp + 10);
+        uint32_t compSize   = le32(cdp + 20);
+        uint32_t uncompSize = le32(cdp + 24);
+        uint16_t fnLen      = le16(cdp + 28);
+        uint16_t exLen      = le16(cdp + 30);
+        uint16_t cmLen      = le16(cdp + 32);
+        uint32_t lhOff      = le32(cdp + 42);
+        if (cdp + 46 + (size_t)fnLen + exLen + cmLen > cdEnd) break;
+        if (method == ZIP_METHOD_STORED || method == ZIP_METHOD_DEFLATE) {
+            NSString *name = [[NSString alloc] initWithBytes:cdp + 46 length:fnLen encoding:NSUTF8StringEncoding];
+            if (!name) name = [[NSString alloc] initWithBytes:cdp + 46 length:fnLen encoding:NSASCIIStringEncoding];
+            if (name && match(name) && (!found || uncompSize > bestUncomp)) {
+                found = YES; bestUncomp = uncompSize; bestLhOff = lhOff; bestComp = compSize; bestMethod = method;
+            }
+        }
+        cdp += 46 + fnLen + exLen + cmLen;
+    }
+    if (!found || bestComp == 0) return nil;
+    if (bestUncomp != 0 && bestUncomp > maxBytes) return nil;
+    if (bestComp > maxBytes + 2 * 1024 * 1024) return nil;   // sanity vs compressed payload
+
+    NSData *lfhData = readBytes((off_t)bestLhOff, 30);
+    if (!lfhData || lfhData.length != 30) return nil;
+    const uint8_t *lfh = lfhData.bytes;
+    if (le32(lfh) != ZIP_LFH_SIG) return nil;
+    uint16_t lfnLen = le16(lfh + 26);
+    uint16_t lexLen = le16(lfh + 28);
+    off_t dataOff = (off_t)bestLhOff + 30 + lfnLen + lexLen;
+
+    NSData *raw = readBytes(dataOff, (size_t)bestComp);
+    if (!raw || raw.length != (size_t)bestComp) return nil;
+    if (bestMethod == ZIP_METHOD_STORED) return (raw.length <= maxBytes) ? raw : nil;
+    return [self inflateFull:raw maxOutput:maxBytes];
 }
 
 #pragma mark - Mach-O parsing

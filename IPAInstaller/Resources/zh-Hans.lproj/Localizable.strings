@@ -15,6 +15,22 @@
 "catalog.filters" = "筛选";
 "catalog.search_placeholder" = "搜索 (标题或 bundle ID)";
 "catalog.loading" = "正在加载目录...";
+"catalog.retry" = "目录不可用 — 点按重试。";
+"suggestcat.title" = "建议分类";
+"suggestcat.action" = "分类有误？提个建议";
+"suggestcat.current" = "当前：%@";
+"suggestcat.pick_category" = "选择分类";
+"suggestcat.pick_subgenre" = "选择子分类";
+"suggestcat.subgenre_required" = "请选择一个子分类。";
+"suggestcat.none" = "通用";
+"suggestcat.submit" = "发送";
+"suggestcat.thanks" = "谢谢！你的建议已提交审核。";
+"versions.load_failed" = "失败：%@";
+"versions.available_header" = "%lu 个版本";
+"versions.count" = "%lu 个版本";
+"versions.unknown_size" = "大小未知";
+"catalog.decompress_failed" = "解压失败";
+"catalog.unavailable" = "目录不可用";
 "catalog.loading_more" = "加载中...";
 "catalog.network_error" = "网络错误: %@";
 "catalog.tap_retry" = "点按重试";
@@ -168,6 +184,7 @@
 "install.error.no_ipainstaller" = "找不到 ipainstaller。请从 Cydia 安装「IPA Installer Console」软件包 (搜索: appinst 或 ipainstaller)。";
 "install.error.spawn_failed" = "posix_spawn(%s) 失败: %s";
 "install.error.install_failed" = "安装失败 (exit %d): %@";
+"install.error.no_space" = "存储空间不足，无法安装此应用（需要约 %@ 可用空间）。请清理空间后重试。";
 
 /* ===== App detail extras (v1.8.7) ===== */
 "app.fallback_title" = "应用";
@@ -312,6 +329,7 @@
 /* v1.7 category menu */
 "categories.title" = "分类";
 "categories.all" = "全部应用";
+"categories.all_in_cat" = "全部";
 "catalog.browse_categories" = "分类";
 "cat.Games" = "游戏";
 "cat.Entertainment" = "娱乐";
@@ -392,6 +410,14 @@
 "feedback.empty" = "请先填写你的反馈。";
 "feedback.not_configured" = "反馈功能尚未配置——请在下次更新后再试。";
 
+/* v3.1 crash reporter */
+"crash.prompt_title" = "AppDrop 已崩溃";
+"crash.prompt_msg" = "AppDrop 上次使用时崩溃了。是否发送匿名崩溃报告以帮助修复？不包含任何个人数据。";
+"crash.send" = "发送报告";
+"crash.decline" = "暂不";
+"crash.thanks_title" = "谢谢！";
+"crash.thanks_msg" = "报告已发送。这对修复问题很有帮助。";
+
 "tab.home" = "主页";
 
 /* ===== Revival / Works today (issue #4) ===== */
@@ -453,6 +479,7 @@
 "folder.short" = "文件夹";
 "folder.add_title" = "添加到文件夹";
 "folder.new" = "新建文件夹";
+"folder.untitled" = "无标题";
 "folder.create" = "创建";
 "folder.edit" = "编辑";
 "folder.rename" = "重命名";
@@ -506,3 +533,18 @@
 "upload.err_toobig" = "文件太大（最多 %d MB）。";
 "upload.err_read" = "无法读取文件。";
 "upload.err_send" = "发送失败";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "类型";
+"upload.type_catalog" = "应用";
+"upload.type_revival" = "可用";
+"upload.type_mods" = "修改";
+"upload.cat_choose" = "选择类别";
+"upload.cat_required" = "请为此应用选择一个类别。";
+"upload.cat_pick_title" = "类别";
+"upload.cat_inherited" = "应用已在 AppDrop 中：类别将沿用目录中的设置。";
+"upload.cat_footer" = "对于尚未收录到 AppDrop 的应用为必填项。";
+"upload.err_encrypted" = "此应用已加密（FairPlay DRM），无法分享。请选择已解密的版本。";
+"upload.err_nodesc" = "请添加说明。";
+"upload.desc_ph_req" = "说明（必填）";
+"upload.desc_ph_opt" = "说明（可选）";
+"upload.analyzing" = "正在分析…";

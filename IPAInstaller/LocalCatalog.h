@@ -67,6 +67,17 @@ extern NSString *const LocalCatalogDidUpdateNotification;
 // Returns NSArray of @{ @"subgenre": NSString, @"count": NSNumber }, sorted by count desc.
 - (NSArray *)subgenreCountsForCategory:(NSString *)category;
 
+// #156: current category/subgenre of an app (for the "suggest category" screen), or nil.
+- (NSDictionary *)categorySubgenreForBundleId:(NSString *)bid;
+// #156: fetch + apply the hosted category-overrides.json (called after load; safe to re-call).
+- (void)refreshCategoryOverrides;
+
+// v3.1: fetch + merge the hosted catalog-extras.json (community apps absent from the 43k catalogue,
+// moderated). New apps are INSERTed into the local DB under their category; a new version of an
+// existing app is added to its versions list; an exact duplicate is skipped (unless the catalogue's
+// copy is FairPlay-encrypted, in which case its download is swapped for the contributed decrypted one).
+- (void)refreshCatalogExtras;
+
 // v1.7: total number of unique apps in the catalogue (for the "All apps" row / header).
 - (NSInteger)uniqueAppCount;
 

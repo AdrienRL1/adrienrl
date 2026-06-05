@@ -26,6 +26,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel *statusLabel;
+@property (nonatomic, strong) UITapGestureRecognizer *catalogRetryRecognizer;
 @property (nonatomic, strong) CatalogFilter *filter;
 @property (nonatomic, strong) NSMutableArray *results;
 @property (nonatomic, assign) NSInteger totalCount;
@@ -330,12 +331,34 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
         if (!ok) {
             self.loading = NO;
             [self.spinner stopAnimating];
-            self.statusLabel.text = [NSString stringWithFormat:@"Echec chargement local : %@",
-                                       err.localizedDescription ?: @""];
+            // Catalog download failed/stalled (e.g. iPad 1 network) → let the user retry
+            // in place instead of being stuck. (#146)
+            self.statusLabel.text = T(@"catalog.retry");
+            [self enableCatalogRetryTap];
             return;
         }
         doQuery();
     }];
+}
+
+// Make the footer status label tap-to-retry after a failed catalog load.
+- (void)enableCatalogRetryTap {
+    self.statusLabel.userInteractionEnabled = YES;
+    if (!self.catalogRetryRecognizer) {
+        self.catalogRetryRecognizer = [[UITapGestureRecognizer alloc]
+            initWithTarget:self action:@selector(catalogRetryTapped)];
+        [self.statusLabel addGestureRecognizer:self.catalogRetryRecognizer];
+    }
+    self.catalogRetryRecognizer.enabled = YES;
+}
+
+- (void)catalogRetryTapped {
+    self.catalogRetryRecognizer.enabled = NO;          // guard against double-tap
+    self.statusLabel.userInteractionEnabled = NO;
+    self.loading = NO;                                 // allow re-entry
+    self.statusLabel.text = T(@"catalog.loading");
+    [self.spinner startAnimating];
+    [self loadMoreAutonomous];                         // re-run resolve → load → query
 }
 
 // v1.1: UISearchBarDelegate methods removed — search now lives in its own

@@ -2,6 +2,33 @@
 
 Older release notes are also available on the [GitHub Releases](https://github.com/AdrienRL1/AppDrop/releases) page.
 
+## AppDrop v3.1 — Suggest-a-category, automatic crash reports, safer uploads & a pile of fixes
+
+A community + maintenance release on top of v3.0. You can now **suggest a better category** for any app, AppDrop can **send an anonymous crash report** in one tap if it crashed last time, and **"Share an app"** is safer. Plus a long list of fixes straight from your feedback.
+
+### New
+- **Suggest a category** — propose a better category/subgenre for any catalog app, through a moderated review.
+- **Automatic crash reports** — if AppDrop crashed last session, it offers to send an anonymous report (no personal data), so iOS 7–10 crashes we can't reproduce finally get a real backtrace.
+- **Safer "Share an app"** — a description is now mandatory, FairPlay-encrypted IPAs are blocked *before* upload, and the app's icon + metadata are auto-extracted from the IPA.
+
+### Fixed
+- **iOS 9** — installs that silently failed at 100% (the app wasn't actually installed) are now verified and reliable.
+- **iPad 1 / iOS 5.1.1** — the catalog could hang forever on *"Downloading catalog…"*; added a timeout + retry.
+- **Installed but missing from the home screen** — reliable automatic icon-cache refresh.
+- **Freeze** when scrolling to the end of an app's versions list.
+- **Browse a whole genre again** — an *"All apps"* tile was restored at the top of each category.
+- **AppSync dependency conflict** (lukezgd vs skyglow) — alternative packages are now accepted.
+- **Pause then resume** restarted the download from 0 — it now resumes via HTTP Range.
+- **Low storage** — an install could fill the disk to *"0 bytes"* instead of stopping; added a pre-install free-space check that aborts cleanly with a clear message.
+- **Search bar** didn't follow the theme on the light-coloured themes.
+- **Dark mode** — unreadable text on several menus on iOS 5 (form placeholders, section headers, cell backgrounds).
+- Localized *"Works today"* descriptions (English included) and size units in MB/GB; full 8-language coverage.
+
+### Compatibility
+iOS 5.0 – 10.x (armv7 / 32-bit), jailbroken. Tested on iPad 1 (iOS 5.1.1), iPhone 5 (iOS 6.1.4), iPad 4 (iOS 6.1.3).
+
+---
+
 ## AppDrop v3.0 — Themes, dark mode, Favorites & folders, and a layout that's finally yours
 
 The biggest visual update yet. Seventeen colour themes with a full dark mode, a home screen you can rearrange like widgets, Favorites and named folders, a "download later" queue, a new (and growing) Modded-apps section, moderated app sharing, pause/resume downloads, and FairPlay detection that warns you *before* a download — plus dozens of fixes across all 8 languages.

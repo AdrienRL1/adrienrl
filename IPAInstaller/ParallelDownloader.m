@@ -252,6 +252,11 @@
             }
         }
         fclose(in);
+        // #169: free each chunk the moment it's been copied, so the peak disk use during
+        // assembly is ~1× the final size instead of 2× (all parts + the growing final at
+        // once). Critical on low-storage devices (Reddit: iPhone 3GS, 8 GB). The caller's
+        // post-concat cleanup loop then just no-ops on the already-deleted parts.
+        [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
     }
     fclose(out);
     return YES;

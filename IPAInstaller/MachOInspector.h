@@ -51,4 +51,12 @@ typedef NS_ENUM(NSInteger, MachOInspectionResult) {
 // URL hasn't been probed yet (so a caller can show a cached badge instantly, then probe if absent).
 + (NSInteger)cachedResultForURL:(NSString *)url;
 
+// Generic single-file extractor that reuses the same ZIP plumbing. Walks the central directory and,
+// among entries whose full path passes `match` (STORED or DEFLATE only), inflates the one with the
+// LARGEST uncompressed size — so an icon lookup grabs the highest-resolution variant. Output capped
+// at `maxBytes`. Returns the file bytes, or nil if nothing matches / on any parse error. Any thread.
++ (NSData *)extractLargestEntryFromIPA:(NSString *)ipaPath
+                              matching:(BOOL (^)(NSString *entryName))match
+                              maxBytes:(NSUInteger)maxBytes;
+
 @end

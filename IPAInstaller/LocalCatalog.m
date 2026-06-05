@@ -1,6 +1,7 @@
 #import "LocalCatalog.h"
 #import "Localization.h"
 #import "HTTPSClient.h"   // first-launch catalog download (via bundled mbedTLS)
+#import "MachOInspector.h"  // v3.1: cached FairPlay status when merging community apps
 #import <UIKit/UIKit.h>   // UIDevice — for device-iOS icon filtering
 #import <sqlite3.h>
 #import <zlib.h>          // gunzip the downloaded catalog.db.gz
@@ -10,6 +11,13 @@
 // own mbedTLS (which reaches github.io even on old iOS, unlike Cydia/system TLS),
 // then cached in Caches/. archive.org/github Pages are both free, no private server.
 static NSString *const kCatalogURL = @"https://adrienrl1.github.io/cydia/catalog.db.gz";
+static NSString *const kCategoryOverridesURL = @"https://adrienrl1.github.io/cydia/category-overrides.json";  // #156
+static NSString *const kCatalogExtrasURL     = @"https://adrienrl1.github.io/cydia/catalog-extras.json";      // v3.1
+// v3.1 ⇄ v3.2 SWITCH (must match kEnableCatalogType in UploadViewController.m). The community-app
+// catalog-extras merge is DEFERRED to v3.2 — methods are KEPT but not called. Flip to YES for v3.2.
+static const BOOL kEnableCatalogExtras = NO;
+// Inserted "extra" rows are tagged base_idx = -1 so a re-apply can purge + rebuild them idempotently
+// (real catalogue rows always have base_idx >= 0).
 // Size (bytes) of the catalog.db.gz we last downloaded — the freshness baseline for
 // -checkForCatalogUpdate. Any re-publish re-gzips → a different byte count → triggers a refresh.
 static NSString *const kCatalogGzSizeKey = @"IPACatalog.GzSize";
@@ -31,6 +39,10 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
 @property (nonatomic, strong) NSDictionary *urls;  // cached at open (only 27k entries, ~2 MB)
 @property (nonatomic, assign) BOOL loaded;
 @property (nonatomic, assign) BOOL updateInFlight;   // a background freshness check/update is running
+// v3.1 community apps (catalog-extras): in-memory overrides for the inserted rows, since they carry no
+// real base_idx/img_pk. Atomic so dictFromRow can read a consistent snapshot off the search queue.
+@property (atomic, strong) NSDictionary *extraURLs;   // "bid_lower|version" -> .ipa URL
+@property (atomic, strong) NSDictionary *extraIcons;  // "bid_lower"          -> icon URL
 @end
 
 @implementation LocalCatalog {
@@ -106,11 +118,23 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
     NSString *gzTmp = [cached stringByAppendingString:@".gz"];
     [fm removeItemAtPath:gzTmp error:NULL];
 
-    __block BOOL ok = NO; __block NSError *dlErr = nil;
+    // Stall watchdog (feedback #14/#83/#146 — iPad 1 / iOS 5.1.1 stuck on "Downloading
+    // catalog…" forever). The download must keep making progress: if NO bytes arrive for
+    // kCatalogStallTimeout seconds — e.g. an mbedTLS handshake/read that hangs and never
+    // honors SO_RCVTIMEO on iOS 5.1.1 — we abort instead of waiting on DISPATCH_TIME_FOREVER.
+    // A slow-but-progressing 27 MB download on an iPad 1 is NOT killed; only a true stall is.
+    static const NSTimeInterval kCatalogStallTimeout = 90.0;
+    __block BOOL ok = NO; __block NSError *dlErr = nil; __block BOOL done = NO; __block BOOL aborted = NO;
+    __block NSTimeInterval lastProgress = [NSDate timeIntervalSinceReferenceDate];
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     [HTTPSClient downloadURL:kCatalogURL
                       toFile:gzTmp
+                 isCancelled:^BOOL{
+        // Polled inside the recv loop → lets the download thread bail as soon as it can.
+        return aborted || ([NSDate timeIntervalSinceReferenceDate] - lastProgress > kCatalogStallTimeout);
+    }
                     progress:^(long long received, long long total) {
+        lastProgress = [NSDate timeIntervalSinceReferenceDate];
         if (total > 0) {
             int pct = (int)((received * 100) / total);
             say([NSString stringWithFormat:T(@"catalog.downloading_pct"), pct]);
@@ -121,9 +145,22 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
                                  userInfo:@{NSLocalizedDescriptionKey:
                                             [NSString stringWithFormat:@"HTTP %ld", (long)statusCode]}];
         dlErr = e;
+        done = YES;
         dispatch_semaphore_signal(sem);
     }];
-    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+    // Wait in short slices so that a truly stuck recv() (one that never returns, hence never
+    // polls isCancelled) cannot pin us forever. If no progress for the timeout, stop waiting
+    // and return an error the UI can retry; a still-running download thread ends on its own
+    // socket timeout and its late completion signals a semaphore with no waiter (safe).
+    while (!done) {
+        if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC))) == 0) break;
+        if ([NSDate timeIntervalSinceReferenceDate] - lastProgress > kCatalogStallTimeout) {
+            aborted = YES;   // best-effort: ask the download thread to bail
+            if (!dlErr) dlErr = [NSError errorWithDomain:@"LocalCatalog" code:3
+                                     userInfo:@{NSLocalizedDescriptionKey: @"catalog download stalled"}];
+            break;
+        }
+    }
 
     if (!ok) {
         [fm removeItemAtPath:gzTmp error:NULL];
@@ -140,7 +177,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
     if (!gunzipped) {
         [fm removeItemAtPath:cached error:NULL];
         if (errOut) *errOut = [NSError errorWithDomain:@"LocalCatalog" code:2
-                                   userInfo:@{NSLocalizedDescriptionKey: @"décompression échouée"}];
+                                   userInfo:@{NSLocalizedDescriptionKey: T(@"catalog.decompress_failed")}];
         return nil;
     }
     return cached;
@@ -269,6 +306,8 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
         self.urls = urls;
         _dbPath = [cached copy];
         if (old) sqlite3_close(old);
+        [self applyStoredCategoryOverrides];     // #156: re-apply category corrections to the fresh DB
+        if (kEnableCatalogExtras) [self applyCatalogExtras];     // v3.2 (deferred): re-merge community apps
 
         if (expectedGzSize > 0)
             [[NSUserDefaults standardUserDefaults] setObject:@(expectedGzSize) forKey:kCatalogGzSizeKey];
@@ -304,7 +343,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (completion) completion(NO, resolveErr ?:
                     [NSError errorWithDomain:@"LocalCatalog" code:1
-                                    userInfo:@{NSLocalizedDescriptionKey: @"catalogue indisponible"}]);
+                                    userInfo:@{NSLocalizedDescriptionKey: T(@"catalog.unavailable")}]);
             });
             return;
         }
@@ -355,6 +394,10 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
         self.db = db;
         self.urls = urls;
         self.loaded = YES;
+        [self applyStoredCategoryOverrides];   // #156: apply cached category corrections to this DB
+        [self refreshCategoryOverrides];       // #156: fetch the latest in the background, apply + notify
+        if (kEnableCatalogExtras) [self applyCatalogExtras];     // v3.2 (deferred): merge community apps
+        if (kEnableCatalogExtras) [self refreshCatalogExtras];   // v3.2 (deferred): fetch catalog-extras
 
         dispatch_async(dispatch_get_main_queue(), ^{
             if (progressBlock) progressBlock([NSString stringWithFormat:@"Catalogue : %lld apps", entryCount]);
@@ -724,6 +767,19 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSString *iconURL = [NSString stringWithFormat:@"https://stuffed18.github.io/ipa-archive-updated/data/%ld/%ld.jpg",
                           (long)(imgPk / 1000), (long)imgPk];
 
+    // v3.1: community apps (catalog-extras) carry no real base_idx/img_pk — resolve their .ipa URL
+    // (by bid|version) and icon (by bid) from the in-memory side-maps. Also lets a contributed
+    // decrypted build replace the URL of a known-encrypted catalogue version.
+    NSDictionary *eu = self.extraURLs, *ei = self.extraIcons;
+    if (eu.count && bidStr.length) {
+        NSString *u = eu[[NSString stringWithFormat:@"%@|%@", [bidStr lowercaseString], versionStr]];
+        if (u.length) ipaURL = u;
+    }
+    if (ei.count && bidStr.length) {
+        NSString *ic = ei[[bidStr lowercaseString]];
+        if (ic.length) iconURL = ic;
+    }
+
     return @{
         @"id": @(pk),
         @"title": titleStr,
@@ -736,6 +792,265 @@ static NSString *iconURLForImgPk(long imgPk) {
         @"fileName": filenameStr,
         @"icon": iconURL,
     };
+}
+
+#pragma mark - Category overrides (#156, crowd-sourced + admin-moderated)
+
+- (NSString *)categoryOverridesCachePath {
+    NSString *c = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    return [c stringByAppendingPathComponent:@"appdrop-category-overrides.json"];
+}
+
+// Current category/subgenre of an app (read on the search queue → shares self.db safely).
+- (NSDictionary *)categorySubgenreForBundleId:(NSString *)bid {
+    if (!self.loaded || !self.db || !bid.length) return nil;
+    NSString *low = [bid lowercaseString];
+    __block NSDictionary *out = nil;
+    dispatch_sync(_searchQueue, ^{
+        sqlite3_stmt *st = NULL;
+        if (sqlite3_prepare_v2(self.db, "SELECT category, subgenre FROM entries_unique WHERE bid_lower=? LIMIT 1",
+                                -1, &st, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, [low UTF8String], -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(st) == SQLITE_ROW) {
+                const unsigned char *c = sqlite3_column_text(st, 0);
+                const unsigned char *s = sqlite3_column_text(st, 1);
+                out = @{ @"category": c ? [NSString stringWithUTF8String:(const char *)c] : @"",
+                         @"subgenre": s ? [NSString stringWithUTF8String:(const char *)s] : @"" };
+            }
+        }
+        sqlite3_finalize(st);
+    });
+    return out;
+}
+
+// Apply the cached category-overrides.json to the CACHED catalog.db via a SECOND read-write
+// connection (self.db stays read-only). MUST be called on _searchQueue so no query races the write.
+// Accepts { "version":N, "overrides": { "<bid>": {"category":...,"subgenre":...} } } or a flat dict.
+- (void)applyStoredCategoryOverrides {
+    if (!self.loaded || !_dbPath.length) return;
+    NSData *data = [NSData dataWithContentsOfFile:[self categoryOverridesCachePath]];
+    if (data.length < 2) return;
+    id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+    NSDictionary *ov = nil;
+    if ([obj isKindOfClass:[NSDictionary class]]) {
+        id inner = [(NSDictionary *)obj objectForKey:@"overrides"];
+        ov = [inner isKindOfClass:[NSDictionary class]] ? inner : (NSDictionary *)obj;
+    }
+    if (![ov isKindOfClass:[NSDictionary class]] || ov.count == 0) return;
+
+    sqlite3 *wdb = NULL;
+    if (sqlite3_open_v2([_dbPath UTF8String], &wdb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, NULL) != SQLITE_OK) {
+        if (wdb) sqlite3_close(wdb);
+        return;   // read-only file (e.g. a bundled DB) → can't apply; harmless
+    }
+    sqlite3_exec(wdb, "BEGIN", NULL, NULL, NULL);
+    sqlite3_stmt *st = NULL;
+    if (sqlite3_prepare_v2(wdb, "UPDATE entries_unique SET category=?, subgenre=? WHERE bid_lower=?",
+                            -1, &st, NULL) == SQLITE_OK) {
+        for (NSString *bid in ov) {
+            if (![bid isKindOfClass:[NSString class]] || !bid.length) continue;
+            id e = [ov objectForKey:bid];
+            if (![e isKindOfClass:[NSDictionary class]]) continue;
+            NSString *cat = [e[@"category"] isKindOfClass:[NSString class]] ? e[@"category"] : nil;
+            if (!cat.length) continue;   // category is required; subgenre may be empty
+            NSString *sub = [e[@"subgenre"] isKindOfClass:[NSString class]] ? e[@"subgenre"] : @"";
+            sqlite3_reset(st);
+            sqlite3_bind_text(st, 1, [cat UTF8String], -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, [sub UTF8String], -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 3, [[bid lowercaseString] UTF8String], -1, SQLITE_TRANSIENT);
+            sqlite3_step(st);
+        }
+    }
+    sqlite3_finalize(st);
+    sqlite3_exec(wdb, "COMMIT", NULL, NULL, NULL);
+    sqlite3_close(wdb);
+}
+
+// Download category-overrides.json, cache it, apply it, and refresh the UI. Best-effort.
+- (void)refreshCategoryOverrides {
+    [HTTPSClient getURL:kCategoryOverridesURL timeout:20 completion:^(NSData *data, NSInteger code, NSError *err) {
+        if (err || code < 200 || code >= 300 || data.length < 2) return;
+        id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+        if (![obj isKindOfClass:[NSDictionary class]]) return;
+        [data writeToFile:[self categoryOverridesCachePath] atomically:YES];
+        dispatch_async(self->_searchQueue, ^{
+            [self applyStoredCategoryOverrides];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSNotificationCenter defaultCenter] postNotificationName:LocalCatalogDidUpdateNotification object:nil];
+            });
+        });
+    }];
+}
+
+#pragma mark - Catalog extras (v3.1, community apps merged into the catalogue)
+
+- (NSString *)catalogExtrasCachePath {
+    NSString *c = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    return [c stringByAppendingPathComponent:@"appdrop-catalog-extras.json"];
+}
+
+// Resolve an existing catalogue row's .ipa URL from its base_idx + filename (same scheme as dictFromRow).
+- (NSString *)urlForBaseIdx:(NSInteger)baseIdx filename:(NSString *)filename {
+    NSString *baseURL = self.urls[[NSString stringWithFormat:@"%ld", (long)baseIdx]] ?: @"";
+    if (baseURL.length && ![baseURL hasSuffix:@"/"]) baseURL = [baseURL stringByAppendingString:@"/"];
+    return (baseURL.length && filename.length) ? [baseURL stringByAppendingString:filename] : @"";
+}
+
+// Merge the cached catalog-extras.json into the CACHED catalog.db via a 2nd read-write connection.
+// MUST run on _searchQueue (or the same context as applyStoredCategoryOverrides). Idempotent: it purges
+// prior extra rows (base_idx = -1) then re-inserts, so a re-apply or a hot-swapped fresh DB converges.
+- (void)applyCatalogExtras {
+    if (!self.loaded || !_dbPath.length) { self.extraURLs = nil; self.extraIcons = nil; return; }
+    NSData *data = [NSData dataWithContentsOfFile:[self catalogExtrasCachePath]];
+    NSArray *apps = nil;
+    if (data.length > 1) {
+        id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+        if ([obj isKindOfClass:[NSDictionary class]]) {
+            id a = [(NSDictionary *)obj objectForKey:@"apps"];
+            apps = [a isKindOfClass:[NSArray class]] ? a : nil;
+        } else if ([obj isKindOfClass:[NSArray class]]) {
+            apps = obj;
+        }
+    }
+
+    sqlite3 *wdb = NULL;
+    if (sqlite3_open_v2([_dbPath UTF8String], &wdb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, NULL) != SQLITE_OK) {
+        if (wdb) sqlite3_close(wdb);
+        return;   // read-only DB → can't merge; harmless
+    }
+    sqlite3_exec(wdb, "BEGIN", NULL, NULL, NULL);
+    sqlite3_exec(wdb, "DELETE FROM entries_unique WHERE base_idx = -1", NULL, NULL, NULL);   // purge prior extras
+    sqlite3_exec(wdb, "DELETE FROM entries WHERE base_idx = -1", NULL, NULL, NULL);
+
+    NSMutableDictionary *newURLs = [NSMutableDictionary dictionary];
+    NSMutableDictionary *newIcons = [NSMutableDictionary dictionary];
+
+    if (apps.count) {
+        long long nextPk = 1;   // both tables share the pk space
+        sqlite3_stmt *mx = NULL;
+        if (sqlite3_prepare_v2(wdb, "SELECT MAX(m) FROM (SELECT MAX(pk) m FROM entries_unique UNION SELECT MAX(pk) m FROM entries)", -1, &mx, NULL) == SQLITE_OK) {
+            if (sqlite3_step(mx) == SQLITE_ROW) nextPk = sqlite3_column_int64(mx, 0) + 1;
+        }
+        sqlite3_finalize(mx);
+
+        const char *insU = "INSERT INTO entries_unique (pk, plat, minos, title, bid, version, base_idx, filename, size_kb, img_pk, title_lower, bid_lower, category, subgenre, min_minos) VALUES (?,?,?,?,?,?,-1,?,?,0,?,?,?,?,?)";
+        const char *insE = "INSERT INTO entries (pk, plat, minos, title, bid, version, base_idx, filename, size_kb, img_pk, title_lower, bid_lower) VALUES (?,?,?,?,?,?,-1,?,?,0,?,?)";
+
+        for (NSDictionary *app in apps) {
+            if (![app isKindOfClass:[NSDictionary class]]) continue;
+            NSString *bid = [app[@"bid"] isKindOfClass:[NSString class]] ? app[@"bid"] : nil;
+            NSString *ipa = [app[@"ipa"] isKindOfClass:[NSString class]] ? app[@"ipa"] : nil;
+            if (!bid.length || !ipa.length) continue;
+            NSString *bidLow = [bid lowercaseString];
+            NSString *name = [app[@"name"] isKindOfClass:[NSString class]] ? app[@"name"] : bid;
+            NSString *ver  = [app[@"version"] isKindOfClass:[NSString class]] ? app[@"version"] : @"";
+            NSString *minIosStr = [app[@"min_ios"] isKindOfClass:[NSString class]] ? app[@"min_ios"] : @"";
+            NSString *cat  = [app[@"category"] isKindOfClass:[NSString class]] ? app[@"category"] : @"";
+            NSString *sub  = [app[@"subgenre"] isKindOfClass:[NSString class]] ? app[@"subgenre"] : @"";
+            NSString *icon = [app[@"icon"] isKindOfClass:[NSString class]] ? app[@"icon"] : @"";
+            NSInteger plat = [app[@"plat"] respondsToSelector:@selector(integerValue)] ? [app[@"plat"] integerValue] : 0;
+            if (plat <= 0) plat = 6;   // default: both idioms
+            int minos = (int)[self encodeIOSVersion:minIosStr];
+            long long sizeBytes = [app[@"size"] respondsToSelector:@selector(longLongValue)] ? [app[@"size"] longLongValue] : 0;
+            long long sizeKb = sizeBytes / 1024;
+            NSString *fname = [ipa lastPathComponent] ?: @"app.ipa";
+            NSString *titleLow = [name lowercaseString];
+            NSString *key = [NSString stringWithFormat:@"%@|%@", bidLow, ver];
+
+            // Existing state (only real rows remain — extras were purged above).
+            BOOL bidExists = NO;
+            sqlite3_stmt *q = NULL;
+            if (sqlite3_prepare_v2(wdb, "SELECT 1 FROM entries_unique WHERE bid_lower=? LIMIT 1", -1, &q, NULL) == SQLITE_OK) {
+                sqlite3_bind_text(q, 1, [bidLow UTF8String], -1, SQLITE_TRANSIENT);
+                bidExists = (sqlite3_step(q) == SQLITE_ROW);
+            }
+            sqlite3_finalize(q);
+
+            BOOL versionExists = NO; NSString *existingUrl = nil;
+            q = NULL;
+            if (sqlite3_prepare_v2(wdb, "SELECT base_idx, filename FROM entries WHERE bid_lower=? AND version=? LIMIT 1", -1, &q, NULL) == SQLITE_OK) {
+                sqlite3_bind_text(q, 1, [bidLow UTF8String], -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(q, 2, [ver UTF8String], -1, SQLITE_TRANSIENT);
+                if (sqlite3_step(q) == SQLITE_ROW) {
+                    versionExists = YES;
+                    NSInteger bi = sqlite3_column_int(q, 0);
+                    const unsigned char *fn = sqlite3_column_text(q, 1);
+                    existingUrl = [self urlForBaseIdx:bi filename:(fn ? [NSString stringWithUTF8String:(const char *)fn] : @"")];
+                }
+            }
+            sqlite3_finalize(q);
+
+            if (versionExists) {
+                // Exact duplicate → keep the contributed (decrypted) build only if the catalogue's copy
+                // is KNOWN FairPlay-encrypted: swap its download URL in place (no duplicate row). Else skip.
+                if (existingUrl.length && [MachOInspector cachedResultForURL:existingUrl] == MachOInspectionResultEncrypted)
+                    newURLs[key] = ipa;
+                continue;
+            }
+
+            // New app → a browse row (entries_unique) + a version row; existing bid → just a version row.
+            if (!bidExists) {
+                sqlite3_stmt *iu = NULL;
+                if (sqlite3_prepare_v2(wdb, insU, -1, &iu, NULL) == SQLITE_OK) {
+                    sqlite3_bind_int64(iu, 1, nextPk);
+                    sqlite3_bind_int(iu, 2, (int)plat);
+                    sqlite3_bind_int(iu, 3, minos);
+                    sqlite3_bind_text(iu, 4, [name UTF8String], -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(iu, 5, [bid UTF8String], -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(iu, 6, [ver UTF8String], -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(iu, 7, [fname UTF8String], -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_int64(iu, 8, sizeKb);
+                    sqlite3_bind_text(iu, 9, [titleLow UTF8String], -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(iu, 10, [bidLow UTF8String], -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(iu, 11, [cat UTF8String], -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(iu, 12, [sub UTF8String], -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_int(iu, 13, minos);
+                    sqlite3_step(iu);
+                }
+                sqlite3_finalize(iu);
+                nextPk++;
+                if (icon.length) newIcons[bidLow] = icon;   // own the icon only for a new app
+            }
+            sqlite3_stmt *ie = NULL;
+            if (sqlite3_prepare_v2(wdb, insE, -1, &ie, NULL) == SQLITE_OK) {
+                sqlite3_bind_int64(ie, 1, nextPk);
+                sqlite3_bind_int(ie, 2, (int)plat);
+                sqlite3_bind_int(ie, 3, minos);
+                sqlite3_bind_text(ie, 4, [name UTF8String], -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(ie, 5, [bid UTF8String], -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(ie, 6, [ver UTF8String], -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(ie, 7, [fname UTF8String], -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int64(ie, 8, sizeKb);
+                sqlite3_bind_text(ie, 9, [titleLow UTF8String], -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(ie, 10, [bidLow UTF8String], -1, SQLITE_TRANSIENT);
+                sqlite3_step(ie);
+            }
+            sqlite3_finalize(ie);
+            nextPk++;
+            newURLs[key] = ipa;
+        }
+    }
+
+    sqlite3_exec(wdb, "COMMIT", NULL, NULL, NULL);
+    sqlite3_close(wdb);
+    self.extraURLs = newURLs;
+    self.extraIcons = newIcons;
+}
+
+// Download catalog-extras.json, cache it, merge it, refresh the UI. Best-effort.
+- (void)refreshCatalogExtras {
+    [HTTPSClient getURL:kCatalogExtrasURL timeout:20 completion:^(NSData *data, NSInteger code, NSError *err) {
+        if (err || code < 200 || code >= 300 || data.length < 2) return;
+        id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+        if (![obj isKindOfClass:[NSDictionary class]] && ![obj isKindOfClass:[NSArray class]]) return;
+        [data writeToFile:[self catalogExtrasCachePath] atomically:YES];
+        dispatch_async(self->_searchQueue, ^{
+            [self applyCatalogExtras];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSNotificationCenter defaultCenter] postNotificationName:LocalCatalogDidUpdateNotification object:nil];
+            });
+        });
+    }];
 }
 
 #pragma mark - versionsForBundleId

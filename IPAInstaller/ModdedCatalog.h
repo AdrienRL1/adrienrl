@@ -20,3 +20,6 @@
 - (NSArray *)appDicts;
 
 @end
+
+// Posted on the main thread when a newer hosted mods.json was fetched mid-session (#142).
+extern NSString *const ModdedCatalogDidChangeNotification;

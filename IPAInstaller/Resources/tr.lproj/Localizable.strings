@@ -17,6 +17,22 @@
 "catalog.filters" = "Filtreler";
 "catalog.search_placeholder" = "Ara (başlık veya bundle ID)";
 "catalog.loading" = "Katalog yükleniyor...";
+"catalog.retry" = "Katalog kullanılamıyor — yeniden denemek için dokunun.";
+"suggestcat.title" = "Kategori öner";
+"suggestcat.action" = "Yanlış kategori mi? Öneride bulun";
+"suggestcat.current" = "Şu an: %@";
+"suggestcat.pick_category" = "Bir kategori seç";
+"suggestcat.pick_subgenre" = "Bölüm seç";
+"suggestcat.subgenre_required" = "Lütfen bir bölüm seçin.";
+"suggestcat.none" = "Genel";
+"suggestcat.submit" = "Gönder";
+"suggestcat.thanks" = "Teşekkürler! Önerin incelenmek üzere gönderildi.";
+"versions.load_failed" = "Başarısız: %@";
+"versions.available_header" = "%lu sürüm mevcut";
+"versions.count" = "%lu sürüm";
+"versions.unknown_size" = "bilinmeyen boyut";
+"catalog.decompress_failed" = "açma başarısız";
+"catalog.unavailable" = "katalog kullanılamıyor";
 "catalog.loading_more" = "Yükleniyor...";
 "catalog.network_error" = "Ağ hatası: %@";
 "catalog.tap_retry" = "Yeniden denemek için dokunun";
@@ -174,6 +190,7 @@
 "install.error.no_ipainstaller" = "ipainstaller bulunamadı. Cydia'dan « IPA Installer Console » paketini yükleyin (arama kısmına: appinst veya ipainstaller yazın).";
 "install.error.spawn_failed" = "posix_spawn(%s) başarısız oldu: %s";
 "install.error.install_failed" = "Yükleme başarısız oldu (çıkış kodu %d): %@";
+"install.error.no_space" = "Bu uygulamayı yüklemek için yeterli boş alan yok (yaklaşık %@ boş alan gerekli). Yer açıp tekrar deneyin.";
 
 /* ===== App detail extras (v1.8.7) ===== */
 "app.fallback_title" = "Uygulama";
@@ -313,6 +330,7 @@
 
 "categories.title" = "Kategoriler";
 "categories.all" = "Tüm uygulamalar";
+"categories.all_in_cat" = "Tümü";
 "categories.napps" = "%@ uygulama";
 "categories.welcome" = "AppDrop'a Hoş Geldiniz";
 "categories.welcome_sub" = "%@ nostaljik iOS uygulaması ve oyununa göz atın";
@@ -340,6 +358,14 @@
 "feedback.error" = "Gönderilemedi — bağlantınızı kontrol edin";
 "feedback.empty" = "Lütfen önce geri bildiriminizi yazın.";
 "feedback.not_configured" = "Geri bildirim henüz ayarlanmadı — bir sonraki güncellemeden sonra tekrar deneyin.";
+
+/* v3.1 crash reporter */
+"crash.prompt_title" = "AppDrop çöktü";
+"crash.prompt_msg" = "AppDrop son oturumunuzda çöktü. Sorunu düzeltmeye yardımcı olmak için anonim bir çökme raporu gönderilsin mi? Hiçbir kişisel veri içermez.";
+"crash.send" = "Raporu gönder";
+"crash.decline" = "Şimdi değil";
+"crash.thanks_title" = "Teşekkürler!";
+"crash.thanks_msg" = "Rapor gönderildi. Bu, sorunu çözmeye gerçekten yardımcı oluyor.";
 
 "settings.support_row" = "AppDrop'u destekle";
 "support.action" = "AppDrop'u destekle";
@@ -453,6 +479,7 @@
 "folder.short" = "Klasör";
 "folder.add_title" = "Bir klasöre ekle";
 "folder.new" = "Yeni klasör";
+"folder.untitled" = "Adsız";
 "folder.create" = "Oluştur";
 "folder.edit" = "Düzenle";
 "folder.rename" = "Yeniden adlandır";
@@ -506,3 +533,18 @@
 "upload.err_toobig" = "Dosya çok büyük (en fazla %d MB).";
 "upload.err_read" = "Dosya okunamadı.";
 "upload.err_send" = "Gönderme başarısız";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "Tür";
+"upload.type_catalog" = "Uygulama";
+"upload.type_revival" = "Çalışır";
+"upload.type_mods" = "Modlu";
+"upload.cat_choose" = "Kategori seç";
+"upload.cat_required" = "Bu uygulama için bir kategori seç.";
+"upload.cat_pick_title" = "Kategori";
+"upload.cat_inherited" = "Uygulama zaten AppDrop'ta: kategori katalogdan devralınır.";
+"upload.cat_footer" = "Henüz AppDrop'ta olmayan bir uygulama için zorunludur.";
+"upload.err_encrypted" = "Bu uygulama şifreli (FairPlay DRM) ve paylaşılamaz. Şifresi çözülmüş bir sürüm seç.";
+"upload.err_nodesc" = "Bir açıklama ekle.";
+"upload.desc_ph_req" = "Açıklama (zorunlu)";
+"upload.desc_ph_opt" = "Açıklama (isteğe bağlı)";
+"upload.analyzing" = "Çözümleniyor…";

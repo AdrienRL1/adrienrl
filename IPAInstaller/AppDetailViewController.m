@@ -8,6 +8,7 @@
 #import "DeviceInfo.h"
 #import "CollectionStore.h"
 #import "MachOInspector.h"
+#import "CategorySuggestViewController.h"
 
 @interface AppDetailViewController () <UIAlertViewDelegate>
 @property (nonatomic, strong) UIImageView *iconView;
@@ -358,6 +359,13 @@ static UIImage *ADCancelGlyph(void) {
 - (void)toggleFavoriteTapped {
     [[CollectionStore shared] toggleFavorite:self.app];
     [self updateFavoriteButton];
+}
+
+// #156: open the moderated "suggest a category" screen for this catalogue app.
+- (void)suggestCategoryTapped {
+    CategorySuggestViewController *vc = [[CategorySuggestViewController alloc]
+        initWithBundleId:self.app[@"bundleId"] name:self.app[@"title"]];
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)laterTapped {
@@ -712,8 +720,11 @@ static UIImage *ADCancelGlyph(void) {
     }
     if (desc) descText = [self cleanMarkdown:desc[@"text"]];
 
-    // Info text below (offset by verdict banner if shown)
-    self.infoView = [[ADVerticalTextView alloc] initWithFrame:CGRectMake(0, contentY, w, b.size.height - contentY)];
+    // Info text below (offset by verdict banner if shown). For catalogue apps we reserve a
+    // bottom bar for the "suggest category" action (#156); revival/modded apps have no category.
+    BOOL showSuggestCat = ([self.app[@"bundleId"] length] > 0) && ![self.app[@"isRevival"] boolValue];
+    CGFloat suggestH = showSuggestCat ? 54.0f : 0.0f;
+    self.infoView = [[ADVerticalTextView alloc] initWithFrame:CGRectMake(0, contentY, w, b.size.height - contentY - suggestH)];
     self.infoView.backgroundColor = [IOS6Theme contentBackgroundColor];
     self.infoView.textColor = [IOS6Theme labelDark];
     self.infoView.font = [UIFont systemFontOfSize:13];
@@ -764,6 +775,26 @@ static UIImage *ADCancelGlyph(void) {
         }
     }
     [self.view addSubview:self.infoView];
+
+    if (showSuggestCat) {
+        // #156: a real, themed button pinned to the bottom — propose the right category (moderated).
+        // (FlexibleTopMargin keeps the strip at the bottom; the button inside follows its width.)
+        UIView *strip = [[UIView alloc] initWithFrame:CGRectMake(0, b.size.height - suggestH, w, suggestH)];
+        strip.backgroundColor = [IOS6Theme contentBackgroundColor];
+        strip.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+        UIView *sep = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 0.5)];
+        sep.backgroundColor = [IOS6Theme separatorColor];
+        sep.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [strip addSubview:sep];
+        UIButton *sc = [UIButton buttonWithType:UIButtonTypeCustom];
+        sc.frame = CGRectMake(12, 8, w - 24, suggestH - 16);
+        sc.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [sc setTitle:T(@"suggestcat.action") forState:UIControlStateNormal];
+        [IOS6Theme styleGrayButton:sc];   // themed rounded button (light + dark)
+        [sc addTarget:self action:@selector(suggestCategoryTapped) forControlEvents:UIControlEventTouchUpInside];
+        [strip addSubview:sc];
+        [self.view addSubview:strip];
+    }
 }
 
 // Insert zero-width break opportunities into long, space-less strings (download URLs,
