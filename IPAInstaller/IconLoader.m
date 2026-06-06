@@ -233,29 +233,48 @@ static UIImage *IconForceDecode(UIImage *image) {
     CGFloat scale = [UIScreen mainScreen].scale;
     CGSize px = CGSizeMake(targetSize.width * scale, targetSize.height * scale);
 
-    CGImageSourceRef src = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
-    if (!src) return nil;
-    // iOS 3 backport: the kCGImageSource* thumbnail keys are weak-imported (iOS 4+ in the 5.1 SDK).
-    // If any resolves to NULL on an old device, putting it in a dictionary literal as a key throws
-    // (NSInvalidArgumentException, "nil key") and takes down every icon decode. Build the options
-    // dict defensively so a missing key is simply skipped — ImageIO then full-decodes + we downscale,
-    // which is exactly the pre-thumbnail-API behaviour.
-    NSMutableDictionary *opts = [NSMutableDictionary dictionary];
-    if (&kCGImageSourceCreateThumbnailFromImageAlways != NULL)
-        opts[(__bridge id)kCGImageSourceCreateThumbnailFromImageAlways] = (__bridge id)kCFBooleanTrue;
-    if (&kCGImageSourceCreateThumbnailWithTransform != NULL)
-        opts[(__bridge id)kCGImageSourceCreateThumbnailWithTransform]   = (__bridge id)kCFBooleanTrue;
-    if (&kCGImageSourceThumbnailMaxPixelSize != NULL)
-        opts[(__bridge id)kCGImageSourceThumbnailMaxPixelSize] = @((int)MAX(px.width, px.height));
-    CGImageRef thumb = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)opts);
-    CFRelease(src);
+    CGImageRef thumb = NULL;   // the source image we draw (then downscale)
+    BOOL ownThumb = NO;        // YES only if WE created `thumb` (must release it)
+
+    // Preferred path: ImageIO thumbnailing — decodes + downsamples in one pass.
+    // CGImageSourceCreateWithData / CGImageSourceCreateThumbnailAtIndex and the
+    // kCGImageSource* thumbnail keys are all WEAK-imported (iOS 4+ in the 5.1 SDK).
+    // On iOS 3.1.3 the keys resolve to NULL, so the options dict ends up empty and
+    // the thumbnail call returns NULL — which is exactly why every icon vanished on
+    // the 3.1.3 device. Guard each weak symbol, and if anything yields no image we
+    // fall through to the UIImage path below.
+    if (&CGImageSourceCreateWithData != NULL && &CGImageSourceCreateThumbnailAtIndex != NULL) {
+        CGImageSourceRef src = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
+        if (src) {
+            NSMutableDictionary *opts = [NSMutableDictionary dictionary];
+            if (&kCGImageSourceCreateThumbnailFromImageAlways != NULL)
+                opts[(__bridge id)kCGImageSourceCreateThumbnailFromImageAlways] = (__bridge id)kCFBooleanTrue;
+            if (&kCGImageSourceCreateThumbnailWithTransform != NULL)
+                opts[(__bridge id)kCGImageSourceCreateThumbnailWithTransform]   = (__bridge id)kCFBooleanTrue;
+            if (&kCGImageSourceThumbnailMaxPixelSize != NULL)
+                opts[(__bridge id)kCGImageSourceThumbnailMaxPixelSize] = @((int)MAX(px.width, px.height));
+            thumb = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)opts);
+            if (thumb) ownThumb = YES;
+            CFRelease(src);
+        }
+    }
+
+    // Fallback (iOS 3.1.3, or any ImageIO miss above): full-decode with the rock-solid
+    // iOS 2.0 API. We still downscale by drawing into the px-sized rounded context
+    // below, so the on-screen result is identical — just a little more transient RAM.
+    UIImage *full = nil;
+    if (!thumb) {
+        full = [UIImage imageWithData:data];
+        thumb = full.CGImage;   // owned by `full`; do NOT release it ourselves
+        ownThumb = NO;
+    }
     if (!thumb) return nil;
 
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)px.width, (size_t)px.height,
                                               8, (size_t)px.width * 4, colorSpace,
                                               kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
-    if (!ctx) { CGColorSpaceRelease(colorSpace); CGImageRelease(thumb); return nil; }
+    if (!ctx) { CGColorSpaceRelease(colorSpace); if (ownThumb) CGImageRelease(thumb); return nil; }
     CGContextSetInterpolationQuality(ctx, kCGInterpolationMedium);
 
     CGFloat radius = targetSize.width * 0.21 * scale;
@@ -268,7 +287,7 @@ static UIImage *IconForceDecode(UIImage *image) {
     CGImageRef cg = CGBitmapContextCreateImage(ctx);
     UIImage *out = [UIImage imageWithCGImage:cg scale:scale orientation:UIImageOrientationUp];
     CGImageRelease(cg);
-    CGImageRelease(thumb);
+    if (ownThumb) CGImageRelease(thumb);
     CGContextRelease(ctx);
     CGColorSpaceRelease(colorSpace);
     return out;

@@ -511,13 +511,49 @@ static char kAppDropLeftItemsKey;
 // Build the single UIBarButtonItem that represents `items` for the singular API.
 // nil/empty -> no items (clear the side)
 // 1         -> that item, unchanged
-// >1        -> a transparent UIToolbar (sized to fit) wrapped in one custom-view item
+// >1        -> a transparent UIToolbar (sized COMPACTLY to its contents) wrapped
+//              in one custom-view item
 //
 // `reverseOrder` matches iOS 5+ semantics: the navigationItem's RIGHT-side array
 // is ordered right-to-left (element 0 is the RIGHTMOST button), whereas a
 // UIToolbar lays its items out left-to-right. So for the right side we reverse
 // the array before handing it to the toolbar; the left side is left-to-right on
 // both and needs no reversal.
+//
+// CRITICAL (iOS 3.1.3): we must NOT call -[UIToolbar sizeToFit] here. On iOS 3
+// a toolbar's -sizeToFit snaps its width to the FULL navigation-bar width
+// (320 pt), so the transparent wrapper toolbar ends up covering the entire bar
+// — hiding the title and the left/back button, and jamming the buttons against
+// the left edge (exactly the "no title, no Feedback/Home/back button, buttons
+// shoved left" symptom). Instead we measure each item and give the toolbar an
+// explicit, content-tight width so it occupies only the right (or left) end of
+// the bar, leaving the title centered and the opposite side free.
+
+// Estimate the on-screen width of one bar-button item for compact layout.
+static CGFloat AppDropEstimateBarItemWidth(UIBarButtonItem *item) {
+    if (!item) return 0.0f;
+    // Custom view: use its own width.
+    UIView *cv = [item respondsToSelector:@selector(customView)] ? [item customView] : nil;
+    if (cv) {
+        CGFloat cw = cv.frame.size.width;
+        return cw > 0 ? cw + 12.0f : 44.0f;
+    }
+    // System items (Refresh, Add, Done-style icons, etc.): fixed-width glyph slot.
+    if ([item respondsToSelector:@selector(width)] && item.width > 0) {
+        return item.width + 12.0f;   // explicit fixed-space width
+    }
+    // Titled text button: measure the title with the bar-button font (~15pt bold)
+    // plus the rounded-rect bezel padding on each side.
+    NSString *title = [item respondsToSelector:@selector(title)] ? [item title] : nil;
+    if (title.length) {
+        UIFont *f = [UIFont boldSystemFontOfSize:15];
+        CGSize sz = [title sizeWithFont:f];   // iOS-2 API; present on every OS here
+        return sz.width + 24.0f;              // ~12pt bezel padding each side
+    }
+    // Image-only or system glyph item with no measurable title.
+    return 44.0f;
+}
+
 static UIBarButtonItem *AppDropWrapBarItems(NSArray *items, BOOL reverseOrder) {
     NSUInteger count = [items count];
     if (count == 0) return nil;
@@ -532,7 +568,14 @@ static UIBarButtonItem *AppDropWrapBarItems(NSArray *items, BOOL reverseOrder) {
         ordered = rev;
     }
 
-    UIToolbar *bar = [[[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, 0, 44)] autorelease];
+    // Compact content width: sum of per-item widths + inter-item gaps + end caps.
+    CGFloat width = 0.0f;
+    for (UIBarButtonItem *it in ordered) width += AppDropEstimateBarItemWidth(it);
+    width += (CGFloat)(count - 1) * 8.0f;   // gaps between buttons
+    width += 12.0f;                          // small leading/trailing breathing room
+    if (width < 44.0f) width = (CGFloat)count * 44.0f;   // floor: keep buttons tappable
+
+    UIToolbar *bar = [[[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, width, 44)] autorelease];
     // Transparent so it blends into the navigation bar instead of drawing a
     // second opaque toolbar background on top of it.
     bar.barStyle = UIBarStyleBlackTranslucent;
@@ -544,15 +587,8 @@ static UIBarButtonItem *AppDropWrapBarItems(NSArray *items, BOOL reverseOrder) {
                      barMetrics:0 /* UIBarMetricsDefault */];
     }
     [bar setItems:ordered animated:NO];
-    [bar sizeToFit];
-    CGRect f = bar.frame;
-    if (f.size.width <= 0) {
-        // sizeToFit can report 0 width before layout; fall back to a sane width
-        // based on item count so the buttons remain tappable.
-        f.size.width = (CGFloat)count * 44.0f;
-    }
-    f.size.height = 44;
-    bar.frame = f;
+    // Explicit compact frame — deliberately NO sizeToFit (see note above).
+    bar.frame = CGRectMake(0, 0, width, 44);
     return [[[UIBarButtonItem alloc] initWithCustomView:bar] autorelease];
 }
 

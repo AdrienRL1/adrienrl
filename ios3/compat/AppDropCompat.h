@@ -192,6 +192,36 @@
 #define NSBlockOperation ADBlockOperation
 #endif
 
+// ---- NSCache: iOS 4.0+ (true 3.x has no NSCache). The class symbol is weak-
+//      imported from the 5.1 SDK, so on a real iOS 3.1.3 device it binds to NULL
+//      and `[[NSCache alloc] init]` returns nil — AppDrop's IconLoader then has a
+//      dead RAM tier: every -objectForKey: misses and every
+//      -setObject:forKey:cost: is a no-op, so icons re-decode from disk on every
+//      scroll (visible stutter, and icons that look like they never settle next
+//      to the iOS 6 build). ADCache (AppDropCache.m) is a complete NSCache work-
+//      alike built only on iOS-2-era Foundation (NSMutableDictionary +
+//      @synchronized) with LRU eviction honouring countLimit + totalCostLimit.
+//      The macro rewrites every NSCache token in the AppDrop sources to ADCache,
+//      so there are zero call-site edits — same strategy as ADBezierPath /
+//      ADBlockOperation / the gesture recognizers. AppDropCache.m #undefs this
+//      so its @implementation keeps the real ADCache name. ----
+@interface ADCache : NSObject
+@property (copy) NSString *name;
+@property NSUInteger countLimit;
+@property NSUInteger totalCostLimit;
+@property (assign) id delegate;
+@property BOOL evictsObjectsWithDiscardedContent;
+- (id)objectForKey:(id)key;
+- (void)setObject:(id)obj forKey:(id)key;
+- (void)setObject:(id)obj forKey:(id)key cost:(NSUInteger)cost;
+- (void)removeObjectForKey:(id)key;
+- (void)removeAllObjects;
+@end
+
+#ifndef NSCache
+#define NSCache ADCache
+#endif
+
 // ---- UIInterfaceOrientationMask: iOS 6 NS_OPTIONS ----
 #ifndef UIInterfaceOrientationMaskPortrait
 typedef NSUInteger UIInterfaceOrientationMask;
