@@ -4,12 +4,25 @@
 #import "ParallelDownloader.h"
 #import "Localization.h"
 #import "MachOInspector.h"
+#import "IPAPackage.h"   // #163 — read the .ipa's real bundle id to verify the install on-device
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/mount.h>   // statfs — low-storage guard (#169)
+#include <sys/sysctl.h>  // hw.cpu64bit_capable — arm64-only guard (#164)
 
 extern char **environ;
+
+// #164 — YES iff this device's CPU can run 64-bit (arm64) code (Apple A7 and later: iPhone 5s+,
+// iPad Air / mini 2+). On every 32-bit device (A4/A5/A5X/A6/A6X — iPhone 4..5c, iPad 1..4, mini 1,
+// iPod 3..5) the sysctl is 0 or absent, so we return NO and treat it as 32-bit-only. An arm64-only
+// .ipa cannot run there at all (installs but never launches / shows no icon).
+static BOOL ADDeviceIs64BitCapable(void) {
+    int64_t cap = 0;
+    size_t sz = sizeof(cap);
+    if (sysctlbyname("hw.cpu64bit_capable", &cap, &sz, NULL, 0) != 0) return NO;
+    return cap != 0;
+}
 
 // #169 — low-storage install guard. ipainstaller unpacks the .ipa into
 // /var/mobile/Applications WHILE the .ipa still occupies tmp, so a download+install
@@ -768,6 +781,28 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
             return;
         }
 
+        // #164: arm64-only guard. A 64-bit-only build (no armv7 slice) installs "successfully"
+        // on a 32-bit device but never launches and shows no icon — the user just wasted a
+        // (sometimes ~1 GB) download. We read the Mach-O arch set from the downloaded file and
+        // fail-fast with a clear message. Only block when we POSITIVELY parsed an arch set, it
+        // has NO 32-bit ARM slice, AND this device can't run 64-bit — so a fat (armv7+arm64)
+        // build, a 64-bit-capable device, or any parse failure all proceed (false-negative safe).
+        {
+            MachOArch arch = [MachOInspector architecturesOfIPA:localPath];
+            BOOL hasArm32 = (arch & MachOArchARM32) != 0;
+            if (arch != MachOArchNone && !hasArm32 && !ADDeviceIs64BitCapable()) {
+                NSLog(@"[InstallManager] #164 arm64-only .ipa on a 32-bit device (arch=%lu): %@",
+                      (unsigned long)arch, job.url);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    job.state = @"failed";
+                    job.message = T(@"install.error.arch64");
+                    [self postChanged];
+                    [[NSFileManager defaultManager] removeItemAtPath:localPath error:nil];
+                });
+                return;
+            }
+        }
+
         // iOS 10+ branch: ipainstaller is broken on iOS 10 (silent failures with
         // "Installed successfully" stdout but no actual app appearing on the home
         // screen). Skip it entirely and save the .ipa to our Documents folder so
@@ -827,18 +862,31 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             NSString *out = nil;
             int exitCode = [self runIpainstallerOnFile:localPath capturedOutput:&out];
-            BOOL success = (exitCode == 0) || (out && [out.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
-            // #150 (iOS 9: "installs to 100% but the app isn't really installed"): if the
-            // installer output names a bundle id, confirm the app is actually registered
-            // (ipainstaller -l). Downgrade to failure ONLY on a confident "absent"; any
-            // unverifiable case keeps the optimistic result, so a genuinely-working install
-            // (e.g. iPad 4 / iOS 6) is never false-failed.
-            if (success) {
-                NSString *vbid = [self bundleIdFromInstallerOutput:out];
-                if (vbid.length && ![self verifyInstalledBundleId:vbid]) {
-                    success = NO;
-                    out = [(out ?: @"") stringByAppendingString:
-                        @"\n[AppDrop] post-install check: app not registered — the install did not take."];
+            BOOL claimed = (exitCode == 0) || (out && [out.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
+            BOOL success = claimed;
+            // ipainstaller's exit code is UNRELIABLE on several jailbreaks. The feedback screenshots
+            // show two opposite failure modes, both fixed by trusting the DEVICE over the exit code:
+            //   • #163/#120/#121: it exits 1 (output stuck at "Analyzing…/Installing…") yet the app
+            //     actually installed and appears on the home screen → false "Install failed".
+            //   • #150 (iOS 9): it prints "…successfully" / exits 0 yet the app isn't registered.
+            // So read the app's REAL bundle id from the downloaded .ipa's Info.plist (most reliable;
+            // fall back to parsing stdout) and ask the device whether it's actually installed.
+            NSString *vbid = [[IPAPackage metadataForIPA:localPath] objectForKey:@"bid"];
+            if (!vbid.length) vbid = [self bundleIdFromInstallerOutput:out];
+            if (vbid.length) {
+                if (!claimed) {
+                    // RESCUE (#163/#120/#121): only when POSITIVELY confirmed installed — a "couldn't
+                    // check" must NOT turn a real failure into a false success, so use the strict probe.
+                    if ([self isBundleIdDefinitelyInstalled:vbid]) success = YES;
+                } else if ([InstallManager iosMajorVersion] >= 9) {
+                    // DOWNGRADE (#150): claimed success but not registered. Gate to iOS 9 (where the
+                    // silent-fail exists); the tolerant verify returns YES when it can't list, so a
+                    // genuinely-working install (e.g. iPad 4 / iOS 6) is never false-failed.
+                    if (![self verifyInstalledBundleId:vbid]) {
+                        success = NO;
+                        out = [(out ?: @"") stringByAppendingString:
+                            @"\n[AppDrop] post-install check: app not registered — the install did not take."];
+                    }
                 }
             }
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -889,9 +937,11 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                     // branch above, so they're covered. iOS 6-9 users typically just
                     // need to retry, no point keeping garbage around.
                     job.state = @"failed";
-                    job.message = [NSString stringWithFormat:T(@"install.error.install_failed"),
-                                     exitCode,
-                                     out.length > 300 ? [out substringFromIndex:out.length-300] : out];
+                    // #121 ("I don't understand this error"): show a plain, actionable message
+                    // instead of the raw "(exit 1): Analyzing _inst_….ipa" jargon. The technical
+                    // output still goes to the device console for debugging.
+                    NSLog(@"[InstallManager] install failed (exit %d): %@", exitCode, out);
+                    job.message = T(@"install.error.install_failed");
                     [[NSFileManager defaultManager] removeItemAtPath:localPath error:nil];
                 }
                 [self postChanged];
@@ -932,7 +982,14 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         }
         return -1;
     }
+    return [self spawnInstaller:exec args:args capturedOutput:outOutput];
+}
 
+// Extracted from runIpainstallerArgs: — spawn the installer binary `exec` with [argv0, args…],
+// capture stdout+stderr (≤30 KB), and return the child's exit code (-1 on a spawn/pipe error).
+// Kept as its own method so the #120/#121 alternate-installer retry can target a specific binary.
+// Synchronous (spawns + waits) — call OFF the main thread.
+- (int)spawnInstaller:(const char *)exec args:(NSArray *)args capturedOutput:(NSString **)outOutput {
     int pipefd[2];
     if (pipe(pipefd) != 0) {
         if (outOutput) *outOutput = @"pipe() failed";
@@ -991,9 +1048,39 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     return exitCode;
 }
 
-// Install an .ipa file. Thin wrapper over -runIpainstallerArgs:capturedOutput:.
+// Install an .ipa file, with a one-shot ALTERNATE-installer retry (#120/#121).
+// ipainstaller and appinst are two different tools; some IPAs / jailbreaks install with one but
+// not the other. So: run the primary tool (ipainstaller-family if present); if it reports failure
+// AND a *different* tool (appinst-family) exists, retry once with it and keep whichever succeeded.
+// (`-l` / `-i` queries still go through runIpainstallerArgs:, which just uses the first installer.)
 - (int)runIpainstallerOnFile:(NSString *)path capturedOutput:(NSString **)outOutput {
-    return [self runIpainstallerArgs:(path.length ? @[path] : @[]) capturedOutput:outOutput];
+    NSArray *args = (path.length ? @[path] : @[]);
+    static const char *kIpaFamily[] = { "/usr/bin/ipainstaller", "/var/jb/usr/bin/ipainstaller", "/opt/procursus/bin/ipainstaller", NULL };
+    static const char *kAppFamily[] = { "/usr/bin/appinst", "/var/jb/usr/bin/appinst", NULL };
+    const char *primary = NULL, *alternate = NULL;
+    for (int i = 0; kIpaFamily[i]; i++) if (access(kIpaFamily[i], X_OK) == 0) { primary = kIpaFamily[i]; break; }
+    for (int i = 0; kAppFamily[i]; i++) if (access(kAppFamily[i], X_OK) == 0) { alternate = kAppFamily[i]; break; }
+    if (!primary) { primary = alternate; alternate = NULL; }   // appinst-only device: it's the primary
+    if (!primary) {
+        if (outOutput) *outOutput = T(@"install.error.no_ipainstaller");
+        return -1;
+    }
+
+    int rc = [self spawnInstaller:primary args:args capturedOutput:outOutput];
+    BOOL ok = (rc == 0) || (outOutput && *outOutput
+                            && [(*outOutput).lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
+    if (ok || !alternate) return rc;
+
+    // Primary failed and a different installer tool exists — retry once with it.
+    NSString *altOut = nil;
+    int altRc = [self spawnInstaller:alternate args:args capturedOutput:&altOut];
+    BOOL altOk = (altRc == 0) || (altOut
+                                  && [altOut.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
+    if (altOk) {
+        if (outOutput) *outOutput = altOut;
+        return altRc;
+    }
+    return rc;   // both tools failed → keep the primary tool's output for the error message
 }
 
 // #150: pull a reverse-DNS bundle id (e.g. com.foo.bar) out of ipainstaller's output so we can
@@ -1014,8 +1101,26 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     if (!bid.length) return YES;
     NSString *out = nil;
     int rc = [self runIpainstallerArgs:@[@"-l"] capturedOutput:&out];
-    if (rc != 0 || !out.length) return YES;            // can't verify → assume OK
-    return ([out rangeOfString:bid].location != NSNotFound);
+    if (rc != 0 || !out.length) return YES;            // can't list → assume OK
+    if ([out rangeOfString:bid].location != NSNotFound) return YES;   // listed → installed
+    // #163: `ipainstaller -l`'s output format varies by build (some print display names, not
+    // bundle ids), so its silence isn't proof of absence — it false-failed good installs.
+    // Cross-check with `-i <bid>`, which returns the app's info iff it's actually registered.
+    // Only when BOTH `-l` and `-i` say "absent" do we treat the install as failed.
+    return ([self installedVersionForBundleId:bid] != nil);
+}
+
+// #163 — STRICT installed-check for the rescue path. Unlike verifyInstalledBundleId: (which
+// returns YES when it can't list, so it never false-FAILS a claimed success), this returns YES
+// ONLY on a POSITIVE confirmation (`-l` lists the bid, or `-i <bid>` returns its info). A
+// "couldn't check" returns NO — we must not turn a genuine install failure into a false success.
+// Synchronous (spawns + waits) — call OFF the main thread.
+- (BOOL)isBundleIdDefinitelyInstalled:(NSString *)bid {
+    if (!bid.length) return NO;
+    NSString *out = nil;
+    int rc = [self runIpainstallerArgs:@[@"-l"] capturedOutput:&out];
+    if (rc == 0 && out.length && [out rangeOfString:bid].location != NSNotFound) return YES;
+    return ([self installedVersionForBundleId:bid] != nil);
 }
 
 // After a successful install the new icon often won't appear on SpringBoard until the icon

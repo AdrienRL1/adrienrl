@@ -2,6 +2,23 @@
 
 Older release notes are also available on the [GitHub Releases](https://github.com/AdrienRL1/AppDrop/releases) page.
 
+## AppDrop v3.1.2 — More reliable installs
+
+A small follow-up focused on installs, straight from your feedback.
+
+### Fixed
+- **False "Install failed"** — on some jailbreaks the installer reports an error even when the app actually installed and appears on your home screen. AppDrop now confirms the result on the device itself instead of trusting the installer's exit code, so a successful install is no longer shown as failed.
+
+### New
+- **64-bit (arm64) warning** — AppDrop now warns you *before* installing an app that's 64-bit only and can't run on a 32-bit device, instead of a silent install that never shows an icon.
+- **Automatic installer retry** — if an install fails, AppDrop retries once with the alternate on-device installer (`appinst`); some apps install with one tool but not the other.
+- **Clearer install errors** — a plain, actionable message ("try again, free up space, or try another version") instead of raw technical output.
+
+### Compatibility
+iOS 5.0 – 10.x (armv7 / 32-bit), jailbroken. Tested on iOS 6 (iPad 4).
+
+---
+
 ## AppDrop v3.1.1 — Stability, a tidier grid & smarter downloads
 
 A focused follow-up to v3.1, straight from your feedback.

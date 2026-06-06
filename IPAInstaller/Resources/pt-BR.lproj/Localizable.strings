@@ -184,7 +184,7 @@
 "chat.llm_unavailable" = "Serviço de IA indisponível. Pollinations.ai pode estar temporariamente fora do ar — tente novamente em alguns minutos.";
 "install.error.no_ipainstaller" = "ipainstaller não encontrado. Instale o pacote « IPA Installer Console » do Cydia (busque: appinst ou ipainstaller).";
 "install.error.spawn_failed" = "posix_spawn(%s) falhou: %s";
-"install.error.install_failed" = "Instalação falhou (exit %d): %@";
+"install.error.install_failed" = "Falha na instalação. Pode acontecer com apps muito grandes, ou quando falta espaço ou memória — tente de novo, libere espaço ou experimente outra versão.";
 "install.error.no_space" = "Espaço de armazenamento insuficiente para instalar este app (são necessários cerca de %@ livres). Libere espaço e tente novamente.";
 
 /* ===== App detail extras (v1.8.7) ===== */
@@ -249,6 +249,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "Este .ipa ainda está criptografado pelo FairPlay — vinculado ao Apple ID que o comprou na App Store, então não vai funcionar no seu dispositivo. Tente outro espelho na lista de Versões (o catálogo costuma ter várias fontes para o mesmo app).";
+"install.error.arch64" = "Este app é só de 64 bits (arm64) e não vai funcionar no seu dispositivo de 32 bits — foi feito para iPhones/iPads mais novos (iOS 11+). Não há nada para instalar aqui.";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Download";

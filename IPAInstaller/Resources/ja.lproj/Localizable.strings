@@ -184,7 +184,7 @@
 "chat.llm_unavailable" = "AIサービスが利用できません。Pollinations.aiが一時的に停止している可能性があります — 数分後に再試行してください。";
 "install.error.no_ipainstaller" = "ipainstaller が見つかりません。Cydia から「IPA Installer Console」パッケージをインストールしてください (検索: appinst または ipainstaller)。";
 "install.error.spawn_failed" = "posix_spawn(%s) が失敗: %s";
-"install.error.install_failed" = "インストール失敗 (exit %d): %@";
+"install.error.install_failed" = "インストールに失敗しました。非常に大きなアプリ、または空き容量やメモリが少ないときに起こることがあります。もう一度試す、空き容量を増やす、または別のバージョンを試してください。";
 "install.error.no_space" = "このアプリをインストールする空き容量が足りません（約%@の空きが必要）。空き容量を増やして再試行してください。";
 
 /* ===== App detail extras (v1.8.7) ===== */
@@ -249,6 +249,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "この .ipa はまだ FairPlay で暗号化されています — App Store で購入した Apple ID に紐づいているため、お使いのデバイスでは動作しません。バージョン一覧から別のミラーを試してください (カタログには同じアプリの複数のソースが含まれていることがよくあります)。";
+"install.error.arch64" = "このアプリは64ビット専用 (arm64) で、お使いの32ビットデバイスでは動作しません — より新しい iPhone/iPad (iOS 11以降) 向けに作られています。ここにインストールできるものはありません。";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "ダウンロード";

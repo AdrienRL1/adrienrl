@@ -190,7 +190,7 @@
 "chat.llm_unavailable" = "Yapay zeka hizmetine ulaşılamıyor. Pollinations.ai geçici olarak çökmüş olabilir — lütfen birkaç dakika sonra tekrar deneyin.";
 "install.error.no_ipainstaller" = "ipainstaller bulunamadı. Cydia'dan « IPA Installer Console » paketini yükleyin (arama kısmına: appinst veya ipainstaller yazın).";
 "install.error.spawn_failed" = "posix_spawn(%s) başarısız oldu: %s";
-"install.error.install_failed" = "Yükleme başarısız oldu (çıkış kodu %d): %@";
+"install.error.install_failed" = "Yükleme başarısız oldu. Çok büyük uygulamalarda ya da depolama/bellek azaldığında olabilir — tekrar dene, yer aç veya farklı bir sürüm dene.";
 "install.error.no_space" = "Bu uygulamayı yüklemek için yeterli boş alan yok (yaklaşık %@ boş alan gerekli). Yer açıp tekrar deneyin.";
 
 /* ===== App detail extras (v1.8.7) ===== */
@@ -255,6 +255,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "Bu .ipa dosyası hala FairPlay şifrelemeli — App Store'dan satın alan Apple ID'ye bağlı olduğu için cihazınızda çalışmayacaktır. Sürümler listesinden farklı bir alternatif kaynak (mirror) deneyin (katalogda genellikle aynı uygulama için birden fazla kaynak bulunur).";
+"install.error.arch64" = "Bu uygulama yalnızca 64 bittir (arm64) ve 32 bit cihazınızda çalışmaz — daha yeni iPhone/iPad'ler (iOS 11+) için yapılmıştır. Burada yüklenecek bir şey yok.";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "İndirme";

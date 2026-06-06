@@ -184,7 +184,7 @@
 "chat.llm_unavailable" = "AI 服务不可用。Pollinations.ai 可能暂时离线 — 请几分钟后重试。";
 "install.error.no_ipainstaller" = "找不到 ipainstaller。请从 Cydia 安装「IPA Installer Console」软件包 (搜索: appinst 或 ipainstaller)。";
 "install.error.spawn_failed" = "posix_spawn(%s) 失败: %s";
-"install.error.install_failed" = "安装失败 (exit %d): %@";
+"install.error.install_failed" = "安装失败。安装超大应用、或存储空间或内存不足时可能发生 — 请重试、释放一些空间，或尝试其他版本。";
 "install.error.no_space" = "存储空间不足，无法安装此应用（需要约 %@ 可用空间）。请清理空间后重试。";
 
 /* ===== App detail extras (v1.8.7) ===== */
@@ -249,6 +249,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "此 .ipa 仍受 FairPlay 加密保护 — 绑定到在 App Store 购买它的 Apple ID，因此无法在你的设备上运行。请从「版本」列表中尝试其他镜像 (目录中同一个应用通常有多个来源)。";
+"install.error.arch64" = "此应用仅支持 64 位 (arm64)，无法在你的 32 位设备上运行 — 它是为更新的 iPhone/iPad (iOS 11+) 构建的。这里没有可安装的内容。";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "下载";
