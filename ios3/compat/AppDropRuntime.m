@@ -275,6 +275,69 @@ static CGFloat AppDropImageScale(id self, SEL _cmd) {
 }
 @end
 
+#pragma mark - +[UIImage imageNamed:]  extension-optional  (iOS 3.1 quirk)
+// On iOS 4.0+ `[UIImage imageNamed:@"tab-search"]` resolves "tab-search.png"
+// (and the @2x variant) automatically. On iOS 3.1.3 imageNamed: requires the
+// EXPLICIT extension — an extensionless name returns nil. AppDrop loads its
+// tab-bar icons (tab-search / tab-install / tab-settings) and the default-theme
+// button/cell/card chrome (btn-blue, cell-bg, card-bg, linen, …) by bare name,
+// so on iOS 3 those images come back nil: the Search/Install/Settings tab icons
+// and the default-theme glossy buttons silently vanish (issues #3 / #5).
+//
+// Fix: swizzle imageNamed: to fall back to an explicit ".png" (and "@2x.png")
+// lookup ONLY when the original returned nil for an extensionless name. This is
+// a no-op on iOS 4+ (the original already succeeds) so the binary stays native
+// on 4–10.
+
+static IMP gOrigImageNamed = NULL;
+
+static UIImage *AppDropImageNamed(id self, SEL _cmd, NSString *name) {
+    UIImage *img = ((UIImage *(*)(id, SEL, NSString *))gOrigImageNamed)(self, _cmd, name);
+    if (img || ![name isKindOfClass:[NSString class]] || name.length == 0) return img;
+    if ([name pathExtension].length > 0) return img;   // already had an extension; nothing to retry
+
+    NSBundle *bundle = [NSBundle mainBundle];
+    CGFloat scale = 1.0f;
+    if ([[UIScreen mainScreen] respondsToSelector:@selector(scale)])
+        scale = [[UIScreen mainScreen] scale];
+
+    // Prefer the @2x asset on a 2x screen, then fall back to the 1x file.
+    if (scale >= 2.0f) {
+        NSString *p2 = [bundle pathForResource:[name stringByAppendingString:@"@2x"] ofType:@"png"];
+        if (p2) {
+            UIImage *i2 = [UIImage imageWithContentsOfFile:p2];
+            // imageWithContentsOfFile reads @2x files at scale 1.0 on iOS 3; if the
+            // runtime supports -scale we can rebuild at the right scale via CGImage.
+            if (i2 && [UIImage respondsToSelector:@selector(imageWithCGImage:scale:orientation:)]) {
+                i2 = [UIImage imageWithCGImage:i2.CGImage scale:2.0f orientation:UIImageOrientationUp];
+            }
+            if (i2) return i2;
+        }
+    }
+    NSString *p1 = [bundle pathForResource:name ofType:@"png"];
+    if (p1) {
+        UIImage *i1 = [UIImage imageWithContentsOfFile:p1];
+        if (i1) return i1;
+    }
+    return img;   // still nil — give the caller what the OS returned
+}
+
+@implementation UIImage (AppDropImageNamedExtImpl)
++ (void)load {
+    Class meta = object_getClass([UIImage class]);
+    Method m = class_getClassMethod([UIImage class], @selector(imageNamed:));
+    if (!m) return;
+    gOrigImageNamed = method_getImplementation(m);
+    // Swizzle in-place: replace the class method's IMP with our wrapper. Safe on
+    // every OS — the wrapper only adds a fallback when the original returns nil.
+    if (class_addMethod(meta, @selector(imageNamed:), (IMP)AppDropImageNamed, "@@:@")) {
+        // method didn't exist on this class object (shouldn't happen) — added it.
+    } else {
+        method_setImplementation(m, (IMP)AppDropImageNamed);
+    }
+}
+@end
+
 #pragma mark - NSUUID (CFUUID-backed)
 // Defined as a real class so the linker resolves _OBJC_CLASS_$_NSUUID at call
 // sites. On iOS 3/4 (no system NSUUID) this is the only implementation. On
@@ -312,6 +375,80 @@ static CGFloat AppDropScreenScale(id self, SEL _cmd) {
 + (void)load {
     if ([UIScreen instancesRespondToSelector:@selector(scale)]) return;
     class_addMethod([UIScreen class], @selector(scale), (IMP)AppDropScreenScale, "f@:");
+}
+@end
+
+#pragma mark - UIColor -getRed:green:blue:alpha: / -getWhite:alpha:  (iOS 5.0)
+// These component-extraction methods first shipped in iOS 5.0. On iOS 3.1.3 the
+// concrete colour classes (UIDeviceRGBColor / UIDeviceWhiteColor) do NOT respond
+// to them, so any call throws:
+//     *** -[UIDeviceRGBColor getRed:green:blue:alpha:]: unrecognized selector
+//         sent to instance ... NSInvalidArgumentException
+// This is exactly the crash hit on a theme switch: IOS6Theme's colour math
+// (ad_lum / ad_mix / ad_rgb) and UpdateNotesViewController decompose UIColors via
+// these selectors. We backfill them by going through the colour's CGColor — which
+// every UIColor has exposed since iOS 2.0 — and reading its components directly.
+//
+// Installed on [UIColor class]: class_addMethod on the (abstract) base class makes
+// the IMP reachable from the concrete subclasses via normal message lookup, while
+// CGColor dispatches to the real backing colour. No-op on iOS 5+ where the OS
+// already provides the methods, so the same binary stays native on 5–10.
+
+static BOOL AppDropColorGetRGBA(id self, SEL _cmd, CGFloat *r, CGFloat *g, CGFloat *b, CGFloat *a) {
+    CGColorRef cg = [(UIColor *)self CGColor];
+    if (!cg) return NO;
+    const CGFloat *comps = CGColorGetComponents(cg);
+    size_t n = CGColorGetNumberOfComponents(cg);
+    if (!comps) return NO;
+    CGFloat rr, gg, bb, aa;
+    if (n >= 4) {              // RGBA
+        rr = comps[0]; gg = comps[1]; bb = comps[2]; aa = comps[3];
+    } else if (n == 2) {       // White + alpha — promote to grey RGB
+        rr = gg = bb = comps[0]; aa = comps[1];
+    } else if (n == 1) {       // White only
+        rr = gg = bb = comps[0]; aa = 1.0f;
+    } else {
+        return NO;
+    }
+    if (r) *r = rr;
+    if (g) *g = gg;
+    if (b) *b = bb;
+    if (a) *a = aa;
+    return YES;
+}
+
+static BOOL AppDropColorGetWhiteAlpha(id self, SEL _cmd, CGFloat *w, CGFloat *a) {
+    CGColorRef cg = [(UIColor *)self CGColor];
+    if (!cg) return NO;
+    const CGFloat *comps = CGColorGetComponents(cg);
+    size_t n = CGColorGetNumberOfComponents(cg);
+    if (!comps) return NO;
+    CGFloat ww, aa;
+    if (n >= 4) {              // RGBA → luma-ish grey (matches Apple's behaviour closely enough)
+        ww = 0.299f*comps[0] + 0.587f*comps[1] + 0.114f*comps[2]; aa = comps[3];
+    } else if (n == 2) {       // White + alpha
+        ww = comps[0]; aa = comps[1];
+    } else if (n == 1) {       // White only
+        ww = comps[0]; aa = 1.0f;
+    } else {
+        return NO;
+    }
+    if (w) *w = ww;
+    if (a) *a = aa;
+    return YES;
+}
+
+@implementation UIColor (AppDropComponentGettersImpl)
++ (void)load {
+    // CGFloat is `float` on armv6/armv7 (32-bit) → encoding "^f" for each pointer.
+    if (![UIColor instancesRespondToSelector:@selector(getRed:green:blue:alpha:)]) {
+        class_addMethod([UIColor class], @selector(getRed:green:blue:alpha:),
+                        (IMP)AppDropColorGetRGBA, "c@:^f^f^f^f");
+    }
+    if (![UIColor instancesRespondToSelector:@selector(getWhite:alpha:)]) {
+        class_addMethod([UIColor class], @selector(getWhite:alpha:),
+                        (IMP)AppDropColorGetWhiteAlpha, "c@:^f^f");
+    }
 }
 @end
 
@@ -554,6 +691,18 @@ static CGFloat AppDropEstimateBarItemWidth(UIBarButtonItem *item) {
     return 44.0f;
 }
 
+@interface ADTransparentToolbar : UIToolbar {
+}
+- (void)drawRect:(CGRect)rect;
+@end
+
+@implementation ADTransparentToolbar
+- (void)drawRect:(CGRect)rect {
+    // Draw nothing — transparent background on every iOS, including iOS 3 where
+    // setBackgroundImage:forToolbarPosition:barMetrics: doesn't exist.
+}
+@end
+
 static UIBarButtonItem *AppDropWrapBarItems(NSArray *items, BOOL reverseOrder) {
     NSUInteger count = [items count];
     if (count == 0) return nil;
@@ -575,9 +724,13 @@ static UIBarButtonItem *AppDropWrapBarItems(NSArray *items, BOOL reverseOrder) {
     width += 12.0f;                          // small leading/trailing breathing room
     if (width < 44.0f) width = (CGFloat)count * 44.0f;   // floor: keep buttons tappable
 
-    UIToolbar *bar = [[[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, width, 44)] autorelease];
+    ADTransparentToolbar *bar = [[[ADTransparentToolbar alloc] initWithFrame:CGRectMake(0, 0, width, 44)] autorelease];
     // Transparent so it blends into the navigation bar instead of drawing a
-    // second opaque toolbar background on top of it.
+    // second opaque toolbar background on top of it. On iOS 5+ the empty
+    // background image clears the chrome; on iOS 3/4 (no setBackgroundImage:…)
+    // the ADTransparentToolbar -drawRect: override below draws NOTHING, so the
+    // old black-translucent box (issue #4: black space + black-on-black icons in
+    // the Search nav bar) never appears.
     bar.barStyle = UIBarStyleBlackTranslucent;
     bar.translucent = YES;
     bar.backgroundColor = [UIColor clearColor];
@@ -699,6 +852,91 @@ static void AppDropDismissVC(id self, SEL _cmd, BOOL animated, void (^completion
                         @selector(dismissViewControllerAnimated:completion:),
                         (IMP)AppDropDismissVC, "v@:c@?");
     }
+}
+@end
+
+#pragma mark - viewWillLayoutSubviews / viewDidLayoutSubviews bridge  (iOS 5.0)
+// -[UIViewController viewWillLayoutSubviews] / -viewDidLayoutSubviews first
+// shipped in iOS 5.0. AppDrop puts ALL of its frame math in these callbacks
+// (CategoryViewController/SearchViewController/CatalogViewController/… set their
+// scroll-view contentSize and re-flow tiles there). On iOS 3.1.3 UIKit NEVER
+// calls them, so the home grid's UIScrollView keeps a zero contentSize and the
+// long pages simply don't scroll — and there's no scroll indicator (issue #1).
+//
+// Fix: swizzle -[UIView layoutSubviews] (called by UIKit on every iOS since 2.0
+// whenever a view lays out). When the laid-out view is a UIViewController's
+// ROOT view (its nextResponder is that controller), drive the controller's
+// viewWillLayoutSubviews / viewDidLayoutSubviews around the normal layout. This
+// is gated to iOS < 5.0 (CoreFoundation < 675.00) so on 5+ the OS keeps firing
+// the callbacks itself and we don't double-invoke them.
+
+static IMP gOrigViewLayoutSubviews = NULL;
+static IMP gVCLayoutNoopIMP = NULL;
+
+static void AppDropVCLayoutNoop(id self, SEL _cmd) {
+    // No-op base implementation of viewWillLayoutSubviews / viewDidLayoutSubviews
+    // so subclasses' [super viewWillLayoutSubviews] calls don't throw on iOS 3/4
+    // (UIViewController gained these in iOS 5.0).
+    (void)self; (void)_cmd;
+}
+
+// YES only when -vc-'s class provides a REAL override of -sel- (not the no-op
+// base IMP we installed above, and not a missing method). Prevents us from
+// "driving" layout on plain controllers that never opted in.
+static BOOL AppDropVCOverridesLayout(UIViewController *vc, SEL sel) {
+    Class c = [vc class];
+    Method m = class_getInstanceMethod(c, sel);
+    if (!m) return NO;
+    IMP imp = method_getImplementation(m);
+    return imp != gVCLayoutNoopIMP;
+}
+
+static void AppDropViewLayoutSubviews(id self, SEL _cmd) {
+    UIView *v = (UIView *)self;
+    UIViewController *vc = nil;
+    @try {
+        id next = [v nextResponder];
+        if ([next isKindOfClass:[UIViewController class]]) {
+            UIViewController *cand = (UIViewController *)next;
+            // Only the controller's ROOT view drives its layout callbacks.
+            if (cand.isViewLoaded && cand.view == v) vc = cand;
+        }
+    } @catch (__unused id e) {}
+
+    BOOL doWill = vc && AppDropVCOverridesLayout(vc, @selector(viewWillLayoutSubviews));
+    BOOL doDid  = vc && AppDropVCOverridesLayout(vc, @selector(viewDidLayoutSubviews));
+
+    if (doWill) {
+        @try { [vc viewWillLayoutSubviews]; } @catch (__unused id e) {}
+    }
+    if (gOrigViewLayoutSubviews) {
+        ((void (*)(id, SEL))gOrigViewLayoutSubviews)(self, _cmd);
+    }
+    if (doDid) {
+        @try { [vc viewDidLayoutSubviews]; } @catch (__unused id e) {}
+    }
+}
+
+@interface UIView (AppDropLayoutBridge) @end
+@implementation UIView (AppDropLayoutBridge)
++ (void)load {
+    // Only needed on iOS < 5.0; on 5+ UIKit already fires the VC layout callbacks.
+    // CoreFoundation 675.00 == iOS 5.0; below that we install the bridge.
+    if (kCFCoreFoundationVersionNumber >= 675.00) return;
+    // No-op base impls so the subclasses' [super viewWill/DidLayoutSubviews] resolve.
+    if (![UIViewController instancesRespondToSelector:@selector(viewWillLayoutSubviews)]) {
+        class_addMethod([UIViewController class], @selector(viewWillLayoutSubviews),
+                        (IMP)AppDropVCLayoutNoop, "v@:");
+    }
+    if (![UIViewController instancesRespondToSelector:@selector(viewDidLayoutSubviews)]) {
+        class_addMethod([UIViewController class], @selector(viewDidLayoutSubviews),
+                        (IMP)AppDropVCLayoutNoop, "v@:");
+    }
+    gVCLayoutNoopIMP = (IMP)AppDropVCLayoutNoop;
+    Method m = class_getInstanceMethod([UIView class], @selector(layoutSubviews));
+    if (!m) return;
+    gOrigViewLayoutSubviews = method_getImplementation(m);
+    method_setImplementation(m, (IMP)AppDropViewLayoutSubviews);
 }
 @end
 
