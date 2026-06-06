@@ -22,6 +22,10 @@
 //                                       (iOS 7 NSStringDrawing; bridged to the
 //                                        iOS 2-era UIStringDrawing size/draw API)
 //   * UIImage +imageWithData:scale:     (iOS 6 API)
+//   * +[UIView animateWithDuration:...]  (iOS 4.0 block animations; all three
+//                                        variants — bridged to the iOS-2
+//                                        begin/commit API, completion fired via
+//                                        animationDidStop:finished:context:)
 //   * NSUUID                            (iOS 6 class; CFUUID-backed)
 //   * NSJSONSerialization               (iOS 5 class; cJSON-backed) — see
 //                                        AppDropJSON.m, installed the same way.
@@ -658,6 +662,143 @@ static void AppDropDismissVC(id self, SEL _cmd, BOOL animated, void (^completion
         class_addMethod([UIViewController class],
                         @selector(dismissViewControllerAnimated:completion:),
                         (IMP)AppDropDismissVC, "v@:c@?");
+    }
+}
+@end
+
+#pragma mark - +[UIView animateWithDuration:...] block animations  (iOS 4.0)
+
+// The block-based UIView animation CLASS methods are iOS 4.0+:
+//     +animateWithDuration:animations:
+//     +animateWithDuration:animations:completion:
+//     +animateWithDuration:delay:options:animations:completion:
+// The 5.1 SDK declares them so call sites compile, but on iOS 3.1.3 they are
+// unrecognized selectors on the UIView METACLASS — this is EXACTLY the crash
+// this backport hit:
+//     *** +[UIView animateWithDuration:animations:completion:]:
+//         unrecognized selector sent to class 0x3839c028   (= UIView metaclass)
+//     → objc_msgSend dereferences a bogus class → EXC_BAD_ACCESS (SIGBUS)
+// It fires from every animated menu/transition: ADNumberPickerSheet (sheet
+// slide in/out), CategoryViewController (Home tab edit-mode + layout),
+// CategoryTileView (tile fade-in), AppTileView (tap bounce) and
+// AppDetailViewController (banner resize).
+//
+// We bridge to the iOS-2-era begin/commit animation API
+// (+beginAnimations:context: … +commitAnimations), run the animations block
+// synchronously between begin and commit (matching UIKit), and deliver the
+// completion via the classic animationDidStop:finished:context: delegate
+// callback. The completion block is heap-copied with _Block_copy (blocks are
+// NOT ObjC objects on iOS 3 — see AppDropBlocks.h) and released after it fires.
+// The collector self-retains for the duration of the transition (the +1 from
+// +alloc is balanced by -autorelease in the didStop callback), so it survives
+// regardless of whether this build's UIView retains the animation delegate.
+// No-op on iOS 4+ where UIKit already answers these selectors.
+
+@interface ADAnimationCompletion : NSObject {
+    void (^_completion)(BOOL);   // heap block, owned via _Block_copy
+}
+- (id)initWithCompletion:(void (^)(BOOL))completion;
+@end
+
+@implementation ADAnimationCompletion
+- (id)initWithCompletion:(void (^)(BOOL))completion {
+    if ((self = [super init])) {
+        if (completion) _completion = (void (^)(BOOL))_Block_copy((const void *)completion);
+    }
+    return self;
+}
+- (void)animationDidStop:(NSString *)animationID
+                finished:(NSNumber *)finished
+                 context:(void *)context {
+    if (_completion) _completion([finished boolValue]);
+    [self autorelease];   // balance the self-retain taken before +commitAnimations
+}
+- (void)dealloc {
+    if (_completion) _Block_release((const void *)_completion);
+    [super dealloc];
+}
+@end
+
+static void AppDropRunBlockAnimation(NSTimeInterval duration,
+                                     NSTimeInterval delay,
+                                     UIViewAnimationCurve curve,
+                                     BOOL hasCurve,
+                                     void (^animations)(void),
+                                     void (^completion)(BOOL)) {
+    // No animations block: UIKit still fires the completion (with finished=YES).
+    // Approximate by invoking it on the next main-runloop turn. Mirror the
+    // _Block_copy / _Block_release pattern used by the modal bridge above.
+    if (!animations) {
+        if (completion) {
+            void (^heap)(BOOL) = (void (^)(BOOL))_Block_copy((const void *)completion);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                heap(YES);
+                _Block_release((const void *)heap);
+            });
+        }
+        return;
+    }
+
+    [UIView beginAnimations:nil context:NULL];
+    [UIView setAnimationDuration:duration];
+    if (delay > 0.0)  [UIView setAnimationDelay:delay];
+    if (hasCurve)     [UIView setAnimationCurve:curve];
+    if (completion) {
+        ADAnimationCompletion *col =
+            [[ADAnimationCompletion alloc] initWithCompletion:completion];
+        [UIView setAnimationDelegate:col];   // see note above re: lifetime / +1
+        [UIView setAnimationDidStopSelector:@selector(animationDidStop:finished:context:)];
+    }
+    animations();
+    [UIView commitAnimations];
+}
+
+// IMP shapes match the three selectors. NSTimeInterval is double ('d');
+// NSUInteger is encoded 'L' on 32-bit armv6 (matching the rest of this file);
+// blocks are '@?'.
+static void AppDropAnimateDurationAnimations(id cls, SEL _cmd,
+                                             NSTimeInterval duration,
+                                             void (^animations)(void)) {
+    AppDropRunBlockAnimation(duration, 0.0, 0, NO, animations, NULL);
+}
+
+static void AppDropAnimateDurationAnimationsCompletion(id cls, SEL _cmd,
+                                                       NSTimeInterval duration,
+                                                       void (^animations)(void),
+                                                       void (^completion)(BOOL)) {
+    AppDropRunBlockAnimation(duration, 0.0, 0, NO, animations, completion);
+}
+
+static void AppDropAnimateDurationDelayOptions(id cls, SEL _cmd,
+                                               NSTimeInterval duration,
+                                               NSTimeInterval delay,
+                                               NSUInteger options,
+                                               void (^animations)(void),
+                                               void (^completion)(BOOL)) {
+    // UIViewAnimationOptions packs the curve in bits 16-17, and the values map
+    // 1:1 onto UIViewAnimationCurve (EaseInOut=0, EaseIn=1, EaseOut=2,
+    // Linear=3). All other options (BeginFromCurrentState, AllowUserInteraction,
+    // …) have no iOS-3 begin/commit equivalent and are harmless to drop.
+    UIViewAnimationCurve curve = (UIViewAnimationCurve)((options >> 16) & 0x3);
+    AppDropRunBlockAnimation(duration, delay, curve, YES, animations, completion);
+}
+
+@interface UIView (AppDropBlockAnimations) @end
+@implementation UIView (AppDropBlockAnimations)
++ (void)load {
+    // Class methods live on the metaclass; +respondsToSelector: tests them.
+    Class meta = object_getClass((id)[UIView class]);
+    if (![UIView respondsToSelector:@selector(animateWithDuration:animations:)]) {
+        class_addMethod(meta, @selector(animateWithDuration:animations:),
+                        (IMP)AppDropAnimateDurationAnimations, "v@:d@?");
+    }
+    if (![UIView respondsToSelector:@selector(animateWithDuration:animations:completion:)]) {
+        class_addMethod(meta, @selector(animateWithDuration:animations:completion:),
+                        (IMP)AppDropAnimateDurationAnimationsCompletion, "v@:d@?@?");
+    }
+    if (![UIView respondsToSelector:@selector(animateWithDuration:delay:options:animations:completion:)]) {
+        class_addMethod(meta, @selector(animateWithDuration:delay:options:animations:completion:),
+                        (IMP)AppDropAnimateDurationDelayOptions, "v@:ddL@?@?");
     }
 }
 @end
