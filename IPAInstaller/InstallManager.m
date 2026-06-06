@@ -4,6 +4,7 @@
 #import "ParallelDownloader.h"
 #import "Localization.h"
 #import "MachOInspector.h"
+#import "InProcessInstaller.h"
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -791,6 +792,21 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 // exit code, or -1 if no installer binary is found (outOutput then holds a friendly message).
 // Synchronous (spawns + waits) — call OFF the main thread.
 - (int)runIpainstallerArgs:(NSArray *)args capturedOutput:(NSString **)outOutput {
+    // v3 / iOS 3 support: prefer installing in-process via MobileInstallationInstall
+    // (no external helper binary needed). This is the "install an .ipa" case:
+    // a single path argument (NOT the "-i <bid>" version query, which has no
+    // MobileInstallation equivalent and must fall through to the CLI tool below).
+    // On iOS 3.1.3 the «IPA Installer Console» package can't be installed at all
+    // (it requires firmware >= 4.0), so this in-process path is the ONLY way to
+    // install there — and on iOS 5-7 it also lets AppDrop work with no ipainstaller
+    // present, matching what autopear's ipainstaller / AppSync's appinst do internally.
+    if (args.count == 1 && ![args[0] isEqualToString:@"-i"]) {
+        NSString *path = [args[0] description];
+        if (path.length && [path hasPrefix:@"/"] && [InProcessInstaller isAvailable]) {
+            return [InProcessInstaller installIPAAtPath:path capturedOutput:outOutput];
+        }
+    }
+
     // Candidate installer paths, in priority order:
     //   - /usr/bin/ipainstaller        (legacy / iOS 5-9 jailbreaks: autopear's package)
     //   - /usr/bin/appinst             (newer alias used by some repos)

@@ -267,6 +267,20 @@ if command -v dpkg-deb >/dev/null; then
     mkdir -p "$deb/Applications" "$deb/DEBIAN"
     cp -R "$app" "$deb/Applications/"
     cp "$SRC/control" "$deb/DEBIAN/control" 2>/dev/null || true
+    # iOS 3 packaging fixups (the shared control targets iOS 5-10):
+    #   - lower the firmware floor 5.0 -> 3.0
+    #   - drop the external installer dep — AppDrop now installs in-process via
+    #     MobileInstallationInstall, and «IPA Installer Console» / appinst both
+    #     require firmware >= 4.0 so Cydia can't install them on iOS 3 anyway.
+    #     (AppSync Unified is still needed to allow unsigned/cracked .ipas.)
+    if [ -f "$deb/DEBIAN/control" ]; then
+        sed -i \
+            -e 's/firmware (>= 5\.0)/firmware (>= 3.0)/g' \
+            -e 's/, *com\.autopear\.installipa *| *ai\.akemi\.appinst//g' \
+            -e 's/com\.autopear\.installipa *| *ai\.akemi\.appinst, *//g' \
+            -e 's/compatible_min::ios5\.0/compatible_min::ios3.0/g' \
+            "$deb/DEBIAN/control"
+    fi
     if [ -d "$SRC/Layout/DEBIAN" ]; then
         cp -f "$SRC/Layout/DEBIAN/postinst" "$deb/DEBIAN/" 2>/dev/null || true
         cp -f "$SRC/Layout/DEBIAN/postrm"   "$deb/DEBIAN/" 2>/dev/null || true
