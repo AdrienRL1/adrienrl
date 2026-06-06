@@ -2,12 +2,13 @@ Package: ca.adrien.appdrop
 Name: AppDrop
 Version: 3.1.2
 Architecture: iphoneos-arm
-Description: Browse 43,000+ iOS apps by category and install them on iOS 5-10. Fully iPad-optimized. v3.1.2: fixes a false "install failed" message when the app actually installed, and warns before installing a 64-bit-only (arm64) app that can't run on a 32-bit device. (17 themes + dark mode, Favorites & folders, app sharing, 8 languages.)
+Description: Browse 43,000+ iOS apps by category and install them on iOS 3-10. Fully iPad-optimized. v3.1.2: fixes a false "install failed" message when the app actually installed, and warns before installing a 64-bit-only (arm64) app that can't run on a 32-bit device. (17 themes + dark mode, Favorites & folders, app sharing, 8 languages.)
 Homepage: https://github.com/AdrienRL1/AppDrop
 Depiction: https://adrienrl1.github.io/cydia/depiction.html
 Icon: https://adrienrl1.github.io/cydia/PackageIcon.png
 Maintainer: Adrien Ruest-Lorquet
 Author: Adrien Ruest-Lorquet
 Section: Utilities
-Depends: firmware (>= 5.0), ai.akemi.appsyncunified | net.angelxwind.appsyncunified | com.linusyang.appsync, com.autopear.installipa | ai.akemi.appinst
-Tag: compatible_min::ios5.0
+Depends: firmware (>= 3.0), ai.akemi.appsyncunified | net.angelxwind.appsyncunified | com.linusyang.appsync
+Recommends: com.autopear.installipa | ai.akemi.appinst
+Tag: compatible_min::ios3.0

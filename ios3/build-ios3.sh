@@ -267,17 +267,20 @@ if command -v dpkg-deb >/dev/null; then
     mkdir -p "$deb/Applications" "$deb/DEBIAN"
     cp -R "$app" "$deb/Applications/"
     cp "$SRC/control" "$deb/DEBIAN/control" 2>/dev/null || true
-    # iOS 3 packaging fixups (the shared control targets iOS 5-10):
-    #   - lower the firmware floor 5.0 -> 3.0
-    #   - drop the external installer dep — AppDrop now installs in-process via
-    #     MobileInstallationInstall, and «IPA Installer Console» / appinst both
-    #     require firmware >= 4.0 so Cydia can't install them on iOS 3 anyway.
-    #     (AppSync Unified is still needed to allow unsigned/cracked .ipas.)
+    # iOS 3 packaging fixups. The shared control already targets iOS 3
+    # (firmware >= 3.0, compatible_min::ios3.0). These seds are idempotent
+    # safety nets in case the shared control is ever bumped back to iOS 5,
+    # plus they strip the optional external-installer Recommends line:
+    # AppDrop installs in-process via MobileInstallationInstall, and «IPA
+    # Installer Console» / appinst both require firmware >= 4.0 so Cydia
+    # can't install them on iOS 3 anyway. (AppSync Unified is still needed
+    # to allow unsigned/cracked .ipas, so it stays in Depends.)
     if [ -f "$deb/DEBIAN/control" ]; then
         sed -i \
             -e 's/firmware (>= 5\.0)/firmware (>= 3.0)/g' \
             -e 's/, *com\.autopear\.installipa *| *ai\.akemi\.appinst//g' \
             -e 's/com\.autopear\.installipa *| *ai\.akemi\.appinst, *//g' \
+            -e '/^Recommends: *com\.autopear\.installipa *| *ai\.akemi\.appinst *$/d' \
             -e 's/compatible_min::ios5\.0/compatible_min::ios3.0/g' \
             "$deb/DEBIAN/control"
     fi
