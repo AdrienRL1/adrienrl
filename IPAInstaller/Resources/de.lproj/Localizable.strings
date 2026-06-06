@@ -2,7 +2,7 @@
 
 "tab.catalog" = "Katalog";
 "tab.search" = "Suche";
-"search.placeholder" = "157.000 alte Apps durchsuchen...";
+"search.placeholder" = "43.000+ Apps durchsuchen...";
 "search.hint_empty" = "Tippen, um den Katalog zu durchsuchen";
 "search.searching" = "Suchen...";
 "search.no_results" = "Keine passenden Apps gefunden";
@@ -15,6 +15,22 @@
 "catalog.filters" = "Filter";
 "catalog.search_placeholder" = "Suchen (Titel oder Bundle-ID)";
 "catalog.loading" = "Katalog wird geladen...";
+"catalog.retry" = "Katalog nicht verfügbar – zum Wiederholen tippen.";
+"suggestcat.title" = "Kategorie vorschlagen";
+"suggestcat.action" = "Falsche Kategorie? Eine vorschlagen";
+"suggestcat.current" = "Aktuell: %@";
+"suggestcat.pick_category" = "Kategorie wählen";
+"suggestcat.pick_subgenre" = "Bereich wählen";
+"suggestcat.subgenre_required" = "Bitte einen Bereich wählen.";
+"suggestcat.none" = "Allgemein";
+"suggestcat.submit" = "Senden";
+"suggestcat.thanks" = "Danke! Dein Vorschlag wurde zur Prüfung gesendet.";
+"versions.load_failed" = "Fehlgeschlagen: %@";
+"versions.available_header" = "%lu Versionen verfügbar";
+"versions.count" = "%lu Versionen";
+"versions.unknown_size" = "unbekannte Größe";
+"catalog.decompress_failed" = "Entpacken fehlgeschlagen";
+"catalog.unavailable" = "Katalog nicht verfügbar";
 "catalog.loading_more" = "Lädt...";
 "catalog.network_error" = "Netzwerkfehler: %@";
 "catalog.tap_retry" = "Zum Wiederholen tippen";
@@ -102,6 +118,7 @@
 
 "common.ok" = "OK";
 "common.cancel" = "Abbrechen";
+"common.ios_unknown" = "unbekannt";
 
 "common.done" = "Fertig";
 "filter.title" = "Filter";
@@ -167,7 +184,8 @@
 "chat.llm_unavailable" = "KI-Dienst nicht verfügbar. Pollinations.ai ist möglicherweise vorübergehend offline — bitte in einigen Minuten erneut versuchen.";
 "install.error.no_ipainstaller" = "ipainstaller nicht gefunden. Installieren Sie das Paket « IPA Installer Console » aus Cydia (Suche: appinst oder ipainstaller).";
 "install.error.spawn_failed" = "posix_spawn(%s) fehlgeschlagen: %s";
-"install.error.install_failed" = "Installation fehlgeschlagen (Exit %d): %@";
+"install.error.install_failed" = "Installation fehlgeschlagen. Das kann bei sehr großen Apps oder wenig Speicher passieren — versuche es erneut, schaffe Speicher frei oder probiere eine andere Version.";
+"install.error.no_space" = "Nicht genügend Speicherplatz, um diese App zu installieren (ca. %@ frei erforderlich). Schaffe Platz und versuche es erneut.";
 
 /* ===== App detail extras (v1.8.7) ===== */
 "app.fallback_title" = "App";
@@ -231,6 +249,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "Diese .ipa ist noch FairPlay-verschlüsselt — an die Apple ID gebunden, mit der sie im App Store gekauft wurde, und läuft daher nicht auf Ihrem Gerät. Versuchen Sie einen anderen Spiegelserver aus der Versionen-Liste (der Katalog hat oft mehrere Quellen für dieselbe App).";
+"install.error.arch64" = "Diese App ist nur 64-Bit (arm64) und läuft nicht auf Ihrem 32-Bit-Gerät — sie wurde für neuere iPhones/iPads (iOS 11+) entwickelt. Hier gibt es nichts zu installieren.";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Download";
@@ -294,6 +313,7 @@
 "settings.download_folder_custom_msg" = "Absoluten Pfad eingeben, z. B. /var/mobile/Documents/AppDrop. Leer lassen, um zum Standard zurückzukehren. Der Ordner wird beim ersten Speichern erstellt.";
 "settings.keep_ipa" = "IPA nach Installation behalten";
 "settings.allow_encrypted" = "Verschlüsselte IPAs zulassen (erweitert)";
+"settings.auto_switch_mirror" = "Langsamen Mirror autom. wechseln";
 "install.saved_at_suffix" = "gespeichert unter %@";
 "install.saved_alert_title" = "IPA gespeichert";
 "install.saved_alert_msg" = "Gespeichert unter:\n%@\n\nIn Filza öffnen zum Installieren. Falls Filza mit Signaturfehler (0xe800B001) scheitert, das Paket „appinst“ aus Cydia installieren und erneut versuchen.";
@@ -312,6 +332,7 @@
 /* v1.7 category menu */
 "categories.title" = "Kategorien";
 "categories.all" = "Alle Apps";
+"categories.all_in_cat" = "Alle";
 "catalog.browse_categories" = "Kategorien";
 "cat.Games" = "Spiele";
 "cat.Entertainment" = "Unterhaltung";
@@ -358,7 +379,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "Willkommen bei AppDrop";
-"categories.welcome_sub" = "Durchsuche %@ klassische iOS-Apps & -Spiele";
+"categories.welcome_sub" = "Durchsuche %@ iOS-Apps & -Spiele";
 "categories.napps" = "%@ Apps";
 
 /* v1.7 support/donate */
@@ -391,6 +412,14 @@
 "feedback.error" = "Senden fehlgeschlagen — prüfe deine Verbindung";
 "feedback.empty" = "Bitte schreibe zuerst dein Feedback.";
 "feedback.not_configured" = "Feedback ist noch nicht eingerichtet — versuche es nach dem nächsten Update.";
+
+/* v3.1 crash reporter */
+"crash.prompt_title" = "AppDrop ist abgestürzt";
+"crash.prompt_msg" = "AppDrop ist in deiner letzten Sitzung abgestürzt. Einen anonymen Absturzbericht senden, um bei der Behebung zu helfen? Es werden keine persönlichen Daten übermittelt.";
+"crash.send" = "Bericht senden";
+"crash.decline" = "Nicht jetzt";
+"crash.thanks_title" = "Danke!";
+"crash.thanks_msg" = "Bericht gesendet. Das hilft wirklich, das Problem zu beheben.";
 
 "tab.home" = "Start";
 
@@ -453,6 +482,7 @@
 "folder.short" = "Ordner";
 "folder.add_title" = "Zu einem Ordner hinzufügen";
 "folder.new" = "Neuer Ordner";
+"folder.untitled" = "Ohne Titel";
 "folder.create" = "Erstellen";
 "folder.edit" = "Bearbeiten";
 "folder.rename" = "Umbenennen";
@@ -506,3 +536,18 @@
 "upload.err_toobig" = "Datei zu groß (max. %d MB).";
 "upload.err_read" = "Datei konnte nicht gelesen werden.";
 "upload.err_send" = "Senden fehlgeschlagen";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "Typ";
+"upload.type_catalog" = "App/Spiel";
+"upload.type_revival" = "Läuft";
+"upload.type_mods" = "Modifiziert";
+"upload.cat_choose" = "Kategorie wählen";
+"upload.cat_required" = "Wähle eine Kategorie für diese App.";
+"upload.cat_pick_title" = "Kategorie";
+"upload.cat_inherited" = "App bereits in AppDrop: Kategorie wird aus dem Katalog übernommen.";
+"upload.cat_footer" = "Erforderlich für eine App, die noch nicht in AppDrop ist.";
+"upload.err_encrypted" = "Diese App ist verschlüsselt (FairPlay-DRM) und kann nicht geteilt werden. Wähle eine entschlüsselte Version.";
+"upload.err_nodesc" = "Füge eine Beschreibung hinzu.";
+"upload.desc_ph_req" = "Beschreibung (erforderlich)";
+"upload.desc_ph_opt" = "Beschreibung (optional)";
+"upload.analyzing" = "Analysiere…";

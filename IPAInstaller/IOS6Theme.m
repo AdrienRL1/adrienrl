@@ -483,11 +483,22 @@ static UIImage *ad_roundedCard(UIColor *fill, UIColor *border) {
 
 + (void)styleSearchBar:(UISearchBar *)searchBar {
     if (!searchBar) return;
-    // DEFAULT + LIGHT COLOUR = stock iOS 6 search bar (light field on white content; v2.0 never
-    // styled it). Reset everything so switching back from a dark theme restores the original look.
-    if (![self isDark]) {
+    // DEFAULT = stock iOS 6 search bar (light field on white content). Reset everything so switching
+    // back from another theme restores the original look.
+    if ([self isDefaultTheme]) {
         searchBar.barStyle = UIBarStyleDefault;
         searchBar.tintColor = nil;
+        if ([searchBar respondsToSelector:@selector(setBackgroundImage:)]) searchBar.backgroundImage = nil;
+        if ([searchBar respondsToSelector:@selector(setSearchFieldBackgroundImage:forState:)])
+            [searchBar setSearchFieldBackgroundImage:nil forState:UIControlStateNormal];
+        ad_styleFields(searchBar, [UIColor blackColor], UIKeyboardAppearanceDefault);
+        return;
+    }
+    // #88: LIGHT-COLOURED themes — tint the search-bar chrome with the accent so it matches the
+    // coloured nav bar (it used to stay stock grey). Keep the stock light rounded field + dark text.
+    if (![self isDark]) {
+        searchBar.barStyle = UIBarStyleDefault;
+        searchBar.tintColor = [self accent];
         if ([searchBar respondsToSelector:@selector(setBackgroundImage:)]) searchBar.backgroundImage = nil;
         if ([searchBar respondsToSelector:@selector(setSearchFieldBackgroundImage:forState:)])
             [searchBar setSearchFieldBackgroundImage:nil forState:UIControlStateNormal];
@@ -731,7 +742,10 @@ static UIImage *ad_roundedCard(UIColor *fill, UIColor *border) {
 + (UIColor *)placeholderColor {
     UIColor *c = gCache[@"placeholder"];
     if (c) return c;
-    c = [self isDark] ? [UIColor colorWithRed:0.50 green:0.50 blue:0.54 alpha:1.0]
+    // Dark mode: the old 0.50 grey (~lum 128) on a 0.17 cell was unreadable on the iPad 1's
+    // aged LCD (measured ~6:1, washed out on-device). Brightened to ~0.82 so placeholders —
+    // which double as the field labels on the upload form — are clearly legible. (#170b)
+    c = [self isDark] ? [UIColor colorWithRed:0.82 green:0.82 blue:0.85 alpha:1.0]
                       : [UIColor lightGrayColor];
     gCache[@"placeholder"] = c;
     return c;

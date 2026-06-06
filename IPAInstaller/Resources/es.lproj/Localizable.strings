@@ -2,7 +2,7 @@
 
 "tab.catalog" = "Catálogo";
 "tab.search" = "Buscar";
-"search.placeholder" = "Buscar 157.000 apps clásicas...";
+"search.placeholder" = "Buscar 43.000+ apps...";
 "search.hint_empty" = "Escribe para buscar en el catálogo";
 "search.searching" = "Buscando...";
 "search.no_results" = "Sin resultados";
@@ -15,6 +15,22 @@
 "catalog.filters" = "Filtros";
 "catalog.search_placeholder" = "Buscar (título o bundle ID)";
 "catalog.loading" = "Cargando catálogo...";
+"catalog.retry" = "Catálogo no disponible — toca para reintentar.";
+"suggestcat.title" = "Sugerir categoría";
+"suggestcat.action" = "¿Categoría incorrecta? Sugiere una";
+"suggestcat.current" = "Actual: %@";
+"suggestcat.pick_category" = "Elige una categoría";
+"suggestcat.pick_subgenre" = "Elige una sección";
+"suggestcat.subgenre_required" = "Por favor, elige una sección.";
+"suggestcat.none" = "General";
+"suggestcat.submit" = "Enviar";
+"suggestcat.thanks" = "¡Gracias! Tu sugerencia fue enviada para revisión.";
+"versions.load_failed" = "Error: %@";
+"versions.available_header" = "%lu versiones disponibles";
+"versions.count" = "%lu versiones";
+"versions.unknown_size" = "tamaño desconocido";
+"catalog.decompress_failed" = "error de descompresión";
+"catalog.unavailable" = "catálogo no disponible";
 "catalog.loading_more" = "Cargando...";
 "catalog.network_error" = "Error de red: %@";
 "catalog.tap_retry" = "Toca para reintentar";
@@ -102,6 +118,7 @@
 
 "common.ok" = "OK";
 "common.cancel" = "Cancelar";
+"common.ios_unknown" = "desconocido";
 
 "common.done" = "Aceptar";
 "filter.title" = "Filtros";
@@ -167,7 +184,8 @@
 "chat.llm_unavailable" = "Servicio de IA no disponible. Pollinations.ai puede estar temporalmente fuera de línea — inténtalo de nuevo en unos minutos.";
 "install.error.no_ipainstaller" = "ipainstaller no encontrado. Instala el paquete « IPA Installer Console » desde Cydia (busca: appinst o ipainstaller).";
 "install.error.spawn_failed" = "posix_spawn(%s) falló: %s";
-"install.error.install_failed" = "Instalación fallida (salida %d): %@";
+"install.error.install_failed" = "Error en la instalación. Puede pasar con apps muy grandes, o cuando queda poco espacio o memoria — inténtalo de nuevo, libera espacio o prueba otra versión.";
+"install.error.no_space" = "No hay suficiente almacenamiento para instalar esta app (se necesitan unos %@ libres). Libera espacio e inténtalo de nuevo.";
 
 /* ===== App detail extras (v1.8.7) ===== */
 "app.fallback_title" = "App";
@@ -231,6 +249,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "Este .ipa sigue cifrado con FairPlay — vinculado al Apple ID que lo compró en la App Store, por lo que no funcionará en tu dispositivo. Prueba con otro espejo de la lista de Versiones (el catálogo suele tener varias fuentes para la misma app).";
+"install.error.arch64" = "Esta app es solo de 64 bits (arm64) y no funcionará en tu dispositivo de 32 bits — fue creada para iPhone/iPad más nuevos (iOS 11+). No hay nada que instalar aquí.";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Descarga";
@@ -294,6 +313,7 @@
 "settings.download_folder_custom_msg" = "Introduce una ruta absoluta, p. ej. /var/mobile/Documents/AppDrop. Déjala vacía para volver al valor por defecto. La carpeta se crea al primer guardado.";
 "settings.keep_ipa" = "Conservar IPA tras instalar";
 "settings.allow_encrypted" = "Permitir IPA cifrados (avanzado)";
+"settings.auto_switch_mirror" = "Cambiar de espejo si va lento";
 "install.saved_at_suffix" = "guardado en %@";
 "install.saved_alert_title" = "IPA guardado";
 "install.saved_alert_msg" = "Guardado en:\n%@\n\nÁbrelo en Filza para instalar. Si Filza falla con un error de firma (0xe800B001), instala el paquete «appinst» desde Cydia y vuelve a intentar.";
@@ -312,6 +332,7 @@
 /* v1.7 category menu */
 "categories.title" = "Categorías";
 "categories.all" = "Todas las apps";
+"categories.all_in_cat" = "Todo";
 "catalog.browse_categories" = "Categorías";
 "cat.Games" = "Juegos";
 "cat.Entertainment" = "Entretenimiento";
@@ -358,7 +379,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "Te damos la bienvenida a AppDrop";
-"categories.welcome_sub" = "Explora %@ apps y juegos clásicos de iOS";
+"categories.welcome_sub" = "Explora %@ apps y juegos de iOS";
 "categories.napps" = "%@ apps";
 
 /* v1.7 support/donate */
@@ -391,6 +412,14 @@
 "feedback.error" = "Error al enviar — revisa tu conexión";
 "feedback.empty" = "Escribe primero tu comentario.";
 "feedback.not_configured" = "Los comentarios aún no están configurados — inténtalo tras la próxima actualización.";
+
+/* v3.1 crash reporter */
+"crash.prompt_title" = "AppDrop se cerró inesperadamente";
+"crash.prompt_msg" = "AppDrop se cerró inesperadamente en tu última sesión. ¿Enviar un informe de error anónimo para ayudar a solucionarlo? No se incluye ningún dato personal.";
+"crash.send" = "Enviar informe";
+"crash.decline" = "Ahora no";
+"crash.thanks_title" = "¡Gracias!";
+"crash.thanks_msg" = "Informe enviado. Esto ayuda mucho a solucionar el problema.";
 
 "tab.home" = "Inicio";
 
@@ -453,6 +482,7 @@
 "folder.short" = "Carpeta";
 "folder.add_title" = "Añadir a una carpeta";
 "folder.new" = "Nueva carpeta";
+"folder.untitled" = "Sin título";
 "folder.create" = "Crear";
 "folder.edit" = "Editar";
 "folder.rename" = "Renombrar";
@@ -506,3 +536,18 @@
 "upload.err_toobig" = "Archivo demasiado grande (máx. %d MB).";
 "upload.err_read" = "No se pudo leer el archivo.";
 "upload.err_send" = "Error al enviar";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "Tipo";
+"upload.type_catalog" = "App/Juego";
+"upload.type_revival" = "Funciona";
+"upload.type_mods" = "Modificada";
+"upload.cat_choose" = "Elegir una categoría";
+"upload.cat_required" = "Elige una categoría para esta app.";
+"upload.cat_pick_title" = "Categoría";
+"upload.cat_inherited" = "App ya en AppDrop: la categoría se hereda del catálogo.";
+"upload.cat_footer" = "Obligatorio para una app que aún no está en AppDrop.";
+"upload.err_encrypted" = "Esta app está cifrada (DRM FairPlay) y no se puede compartir. Elige una versión descifrada.";
+"upload.err_nodesc" = "Añade una descripción.";
+"upload.desc_ph_req" = "Descripción (obligatoria)";
+"upload.desc_ph_opt" = "Descripción (opcional)";
+"upload.analyzing" = "Analizando…";

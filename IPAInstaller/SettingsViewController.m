@@ -179,7 +179,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     if (s == SectionLanguage) return 1;
     if (s == SectionDisplay) return 4;  // theme + catalogue density + home density + Favoris toggle (both idioms)
     if (s == SectionUpdates) return 2;   // installed version + latest release
-    if (s == SectionDownload) return 5;  // simultaneous downloads + parallel streams + folder + keep-ipa + allow-encrypted
+    if (s == SectionDownload) return 6;  // simultaneous downloads + parallel streams + folder + keep-ipa + allow-encrypted + auto-switch-mirror
     if (s == SectionArchive) return 3;   // email + access key + secret key
     if (s == SectionDiag) return 2;
     if (s == SectionCache) return 1;
@@ -381,7 +381,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
                 forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
             cell.detailTextLabel.text = nil;
-        } else {
+        } else if (ip.row == 4) {
             // row 4 — allow installing FairPlay-encrypted IPAs (advanced). The app normally
             // blocks them (they won't launch on a different Apple ID); power users with an
             // on-device decryptor enable this. Default OFF. (Reddit + feedback #47.)
@@ -393,6 +393,21 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
             [sw2 addTarget:self action:@selector(allowEncryptedToggled:)
                 forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw2;
+            cell.detailTextLabel.text = nil;
+        } else {
+            // row 5 — #171 (AndryTheBeast, level 2): auto-switch slow mirrors. ON (default) = smart
+            // auto-switch (but it leaves a near-done mirror alone); OFF = stay on the current mirror
+            // no matter what, and switch manually by pausing + resuming.
+            cell.textLabel.text = T(@"settings.auto_switch_mirror");
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            cell.accessoryType = UITableViewCellAccessoryNone;
+            UISwitch *sw3 = [[UISwitch alloc] initWithFrame:CGRectZero];
+            NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+            sw3.on = ([d objectForKey:@"IPAInstall.AutoSwitchMirror"] == nil) ? YES
+                       : [d boolForKey:@"IPAInstall.AutoSwitchMirror"];
+            [sw3 addTarget:self action:@selector(autoSwitchMirrorToggled:)
+                forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw3;
             cell.detailTextLabel.text = nil;
         }
     } else if (ip.section == SectionArchive) {
@@ -851,6 +866,13 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
+// #171 (AndryTheBeast, level 2): auto-switch slow mirrors (Settings → Download). Default ON.
+// OFF = AppDrop stays on the current mirror; the user switches by pausing + resuming.
+- (void)autoSwitchMirrorToggled:(UISwitch *)sw {
+    [[NSUserDefaults standardUserDefaults] setBool:sw.on forKey:@"IPAInstall.AutoSwitchMirror"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
 // v3.0: catalogue columns — a native iOS 6 wheel to pick the number of apps per row (1 = Liste on
 // iPhone). Persists IPAInstall.GridColumns + posts the shared notification so Catalogue + Recherche
 // re-lay-out live; the Settings row's value refreshes too.
@@ -913,50 +935,55 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     [[NSNotificationCenter defaultCenter] postNotificationName:CollectionStoreDidChangeNotification object:nil];
 }
 
-#pragma mark - Simultaneous-downloads picker (v2.0)
+#pragma mark - Simultaneous-downloads picker (v2.0 → v3.1.1 native wheel)
 
+// Same iOS 5/6 spinning wheel as the apps-per-row picker (ADNumberPickerSheet), per user request.
 - (void)showMaxDownloadsPicker {
-    UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:T(@"settings.max_downloads")
-                                                       delegate:self
-                                              cancelButtonTitle:nil
-                                         destructiveButtonTitle:nil
-                                              otherButtonTitles:nil];
-    sheet.tag = 96;
-    NSInteger current = [InstallManager maxConcurrentDownloads];
-    for (NSInteger n = 1; n <= 8; n++) {
-        NSString *title = [NSString stringWithFormat:@"%ld", (long)n];
-        if (n == current) title = [title stringByAppendingString:@" ✓"];
-        [sheet addButtonWithTitle:title];
-    }
-    [sheet addButtonWithTitle:T(@"common.cancel")];
-    sheet.cancelButtonIndex = 8;
-    [sheet showInView:self.view];
+    NSArray *vals = @[@1,@2,@3,@4,@5,@6,@7,@8];
+    NSMutableArray *labels = [NSMutableArray array];
+    for (NSNumber *v in vals) [labels addObject:[NSString stringWithFormat:@"%ld", (long)v.integerValue]];
+    AD_WEAK typeof(self) ws = self;
+    [ADNumberPickerSheet presentInView:self.view
+                                 title:T(@"settings.max_downloads")
+                                values:vals
+                                labels:labels
+                         selectedValue:[InstallManager maxConcurrentDownloads]
+                                onPick:^(NSInteger value) {
+        [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"IPAInstall.MaxConcurrentDownloads"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [[InstallManager shared] pumpQueue];   // apply now: if raised, start more queued installs
+        // In-place value update (avoids the dark-theme reload bug — see showGridColumnsPicker).
+        UITableViewCell *c = [ws.table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:SectionDownload]];
+        if (c) c.detailTextLabel.text = [NSString stringWithFormat:@"%ld", (long)value];
+    }];
 }
 
-#pragma mark - Parallel-streams picker (v1.2 build 9)
+#pragma mark - Parallel-streams picker (v1.2 build 9 → v3.1.1 native wheel)
 
 - (void)showParallelStreamsPicker {
-    UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:T(@"settings.parallel_streams")
-                                                       delegate:self
-                                              cancelButtonTitle:nil
-                                         destructiveButtonTitle:nil
-                                              otherButtonTitles:nil];
-    sheet.tag = 98;
-    NSInteger current = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefParallelStreams];
-    if (current <= 0) current = 4;
+    NSMutableArray *vals = [NSMutableArray array];
+    NSMutableArray *labels = [NSMutableArray array];
     for (NSInteger i = 0; i < kStreamChoicesCount; i++) {
         NSInteger n = kStreamChoices[i];
-        NSString *title = (n == 1)
-            ? T(@"settings.streams_off")
-            : [NSString stringWithFormat:T(@"settings.streams_n"), (long)n];
-        if (n == current) {
-            title = [title stringByAppendingString:@" ✓"];
-        }
-        [sheet addButtonWithTitle:title];
+        [vals addObject:[NSNumber numberWithInteger:n]];
+        [labels addObject:(n == 1) ? T(@"settings.streams_off")
+                                   : [NSString stringWithFormat:T(@"settings.streams_n"), (long)n]];
     }
-    [sheet addButtonWithTitle:T(@"common.cancel")];
-    sheet.cancelButtonIndex = kStreamChoicesCount;
-    [sheet showInView:self.view];
+    NSInteger current = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefParallelStreams];
+    if (current <= 0) current = 4;
+    AD_WEAK typeof(self) ws = self;
+    [ADNumberPickerSheet presentInView:self.view
+                                 title:T(@"settings.parallel_streams")
+                                values:vals
+                                labels:labels
+                         selectedValue:current
+                                onPick:^(NSInteger value) {
+        [[NSUserDefaults standardUserDefaults] setInteger:value forKey:kPrefParallelStreams];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        UITableViewCell *c = [ws.table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:SectionDownload]];
+        if (c) c.detailTextLabel.text = (value == 1) ? T(@"settings.streams_off")
+                                                     : [NSString stringWithFormat:T(@"settings.streams_n"), (long)value];
+    }];
 }
 
 #pragma mark - Language picker
@@ -1019,30 +1046,8 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
         }
         return;
     }
-    if (sheet.tag == 96) {
-        // Simultaneous-downloads picker (buttons 0…7 → 1…8 downloads).
-        if (idx == sheet.cancelButtonIndex) return;
-        if (idx >= 0 && idx < 8) {
-            [[NSUserDefaults standardUserDefaults] setInteger:(idx + 1) forKey:@"IPAInstall.MaxConcurrentDownloads"];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [[InstallManager shared] pumpQueue];   // apply now: if raised, start more queued installs
-            [self.table reloadSections:[NSIndexSet indexSetWithIndex:SectionDownload]
-                       withRowAnimation:UITableViewRowAnimationNone];
-        }
-        return;
-    }
-    if (sheet.tag == 98) {
-        // Parallel-streams picker
-        if (idx == sheet.cancelButtonIndex) return;
-        if (idx >= 0 && idx < kStreamChoicesCount) {
-            NSInteger choice = kStreamChoices[idx];
-            [[NSUserDefaults standardUserDefaults] setInteger:choice forKey:kPrefParallelStreams];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [self.table reloadSections:[NSIndexSet indexSetWithIndex:SectionDownload]
-                       withRowAnimation:UITableViewRowAnimationNone];
-        }
-        return;
-    }
+    // (Simultaneous-downloads tag 96 + parallel-streams tag 98 now use the native wheel
+    //  ADNumberPickerSheet — see showMaxDownloadsPicker / showParallelStreamsPicker.)
     if (sheet.tag != 99) return;
     if (idx == sheet.cancelButtonIndex) return;
     if (idx == 0) {

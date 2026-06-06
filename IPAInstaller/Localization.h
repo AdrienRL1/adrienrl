@@ -55,5 +55,11 @@ extern NSString *const kLocalizationDidChangeNotification;
 // the key on iOS 6+; nil propagating into an `@{...}` literal then crashes the app).
 NSString *AppDropT(NSString *key);
 
+// #171: format a "min iOS" version for DISPLAY. A nil/empty value, or an all-zero one ("0", "0.0",
+// "0.0.0"), means the catalog has no real minimum → show a localized "unknown" instead of a
+// meaningless "0.0.0" (feedback #119). Any real version is returned unchanged. Display-only; the
+// raw value is still used for the compatibility checks.
+NSString *ADDisplayIOS(NSString *minOS);
+
 // Shortcut macro
 #define T(key) AppDropT(key)

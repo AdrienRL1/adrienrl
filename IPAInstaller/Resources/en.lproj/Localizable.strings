@@ -3,7 +3,7 @@
 /* ===== Tab bar ===== */
 "tab.catalog" = "Catalog";
 "tab.search" = "Search";
-"search.placeholder" = "Search 157,000 vintage apps...";
+"search.placeholder" = "Search 43,000+ apps...";
 "search.hint_empty" = "Type to search the catalog";
 "search.searching" = "Searching...";
 "search.no_results" = "No matching apps found";
@@ -17,6 +17,22 @@
 "catalog.filters" = "Filters";
 "catalog.search_placeholder" = "Search (title or bundle ID)";
 "catalog.loading" = "Loading catalog...";
+"catalog.retry" = "Catalog unavailable — tap to retry.";
+"suggestcat.title" = "Suggest category";
+"suggestcat.action" = "Wrong category? Suggest one";
+"suggestcat.current" = "Current: %@";
+"suggestcat.pick_category" = "Choose a category";
+"suggestcat.pick_subgenre" = "Choose a section";
+"suggestcat.subgenre_required" = "Please choose a section.";
+"suggestcat.none" = "General";
+"suggestcat.submit" = "Send";
+"suggestcat.thanks" = "Thanks! Your suggestion was sent for review.";
+"versions.load_failed" = "Failed: %@";
+"versions.available_header" = "%lu versions available";
+"versions.count" = "%lu versions";
+"versions.unknown_size" = "unknown size";
+"catalog.decompress_failed" = "decompression failed";
+"catalog.unavailable" = "catalog unavailable";
 "catalog.loading_more" = "Loading...";
 "catalog.network_error" = "Network error: %@";
 "catalog.tap_retry" = "Tap to retry";
@@ -109,6 +125,7 @@
 /* ===== Common buttons ===== */
 "common.ok" = "OK";
 "common.cancel" = "Cancel";
+"common.ios_unknown" = "unknown";
 
 "common.done" = "Done";
 /* ===== Catalog filter ===== */
@@ -175,7 +192,8 @@
 "chat.llm_unavailable" = "AI service unavailable. Pollinations.ai may be temporarily down — please try again in a few minutes.";
 "install.error.no_ipainstaller" = "ipainstaller not found. Install the « IPA Installer Console » package from Cydia (search: appinst or ipainstaller).";
 "install.error.spawn_failed" = "posix_spawn(%s) failed: %s";
-"install.error.install_failed" = "Install failed (exit %d): %@";
+"install.error.install_failed" = "Install failed. This can happen with very large apps, or when storage or memory is low — try again, free up some space, or try a different version.";
+"install.error.no_space" = "Not enough free storage to install this app (about %@ free needed). Free up space and try again.";
 
 /* ===== App detail extras (v1.8.7) ===== */
 "app.fallback_title" = "App";
@@ -239,6 +257,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "This .ipa is still FairPlay-encrypted — tied to the Apple ID that purchased it on the App Store, so it won't run on your device. Try a different mirror from the Versions list (the catalog often has multiple sources for the same app).";
+"install.error.arch64" = "This app is 64-bit only (arm64) and won't run on your 32-bit device — it was built for newer iPhones/iPads (iOS 11+). Nothing to install here.";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "Download";
@@ -302,6 +321,7 @@
 "settings.download_folder_custom_msg" = "Enter an absolute path, e.g. /var/mobile/Documents/AppDrop. Leave empty to revert to the default. The folder is created on first save.";
 "settings.keep_ipa" = "Keep IPA after install";
 "settings.allow_encrypted" = "Allow encrypted IPAs (advanced)";
+"settings.auto_switch_mirror" = "Auto-switch slow mirrors";
 "install.saved_at_suffix" = "saved at %@";
 "install.saved_alert_title" = "IPA saved";
 "install.saved_alert_msg" = "Saved to:\n%@\n\nOpen it in Filza to install. If Filza fails with a signature error (0xe800B001), install the “appinst” package from Cydia and retry.";
@@ -320,6 +340,7 @@
 /* v1.7 category menu */
 "categories.title" = "Categories";
 "categories.all" = "All apps";
+"categories.all_in_cat" = "All";
 "catalog.browse_categories" = "Categories";
 "cat.Games" = "Games";
 "cat.Entertainment" = "Entertainment";
@@ -366,7 +387,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "Welcome to AppDrop";
-"categories.welcome_sub" = "Browse %@ vintage iOS apps & games";
+"categories.welcome_sub" = "Browse %@ iOS apps & games";
 "categories.napps" = "%@ apps";
 
 /* v1.7 support/donate */
@@ -399,6 +420,14 @@
 "feedback.error" = "Send failed — check your connection";
 "feedback.empty" = "Please write your feedback first.";
 "feedback.not_configured" = "Feedback isn't set up yet — try again after the next update.";
+
+/* v3.1 crash reporter */
+"crash.prompt_title" = "AppDrop crashed";
+"crash.prompt_msg" = "AppDrop crashed during your last session. Send an anonymous crash report to help fix it? No personal data is included.";
+"crash.send" = "Send report";
+"crash.decline" = "Not now";
+"crash.thanks_title" = "Thank you!";
+"crash.thanks_msg" = "Report sent. This really helps fix the problem.";
 
 "tab.home" = "Home";
 
@@ -461,6 +490,7 @@
 "folder.short" = "Folder";
 "folder.add_title" = "Add to a folder";
 "folder.new" = "New folder";
+"folder.untitled" = "Untitled";
 "folder.create" = "Create";
 "folder.edit" = "Edit";
 "folder.rename" = "Rename";
@@ -514,3 +544,18 @@
 "upload.err_toobig" = "File too large (max %d MB).";
 "upload.err_read" = "Could not read the file.";
 "upload.err_send" = "Sending failed";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "Type";
+"upload.type_catalog" = "App/Game";
+"upload.type_revival" = "Works";
+"upload.type_mods" = "Modded";
+"upload.cat_choose" = "Choose a category";
+"upload.cat_required" = "Choose a category for this app.";
+"upload.cat_pick_title" = "Category";
+"upload.cat_inherited" = "App already in AppDrop: the category is inherited from the catalogue.";
+"upload.cat_footer" = "Required for an app that isn't already in AppDrop.";
+"upload.err_encrypted" = "This app is encrypted (FairPlay DRM) and can't be shared. Choose a decrypted version.";
+"upload.err_nodesc" = "Add a description.";
+"upload.desc_ph_req" = "Description (required)";
+"upload.desc_ph_opt" = "Description (optional)";
+"upload.analyzing" = "Analyzing…";

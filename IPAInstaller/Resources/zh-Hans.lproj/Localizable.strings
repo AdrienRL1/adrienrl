@@ -2,7 +2,7 @@
 
 "tab.catalog" = "目录";
 "tab.search" = "搜索";
-"search.placeholder" = "搜索 157,000 个老应用...";
+"search.placeholder" = "搜索 43,000+ 个应用...";
 "search.hint_empty" = "输入以搜索目录";
 "search.searching" = "搜索中...";
 "search.no_results" = "未找到匹配应用";
@@ -15,6 +15,22 @@
 "catalog.filters" = "筛选";
 "catalog.search_placeholder" = "搜索 (标题或 bundle ID)";
 "catalog.loading" = "正在加载目录...";
+"catalog.retry" = "目录不可用 — 点按重试。";
+"suggestcat.title" = "建议分类";
+"suggestcat.action" = "分类有误？提个建议";
+"suggestcat.current" = "当前：%@";
+"suggestcat.pick_category" = "选择分类";
+"suggestcat.pick_subgenre" = "选择子分类";
+"suggestcat.subgenre_required" = "请选择一个子分类。";
+"suggestcat.none" = "通用";
+"suggestcat.submit" = "发送";
+"suggestcat.thanks" = "谢谢！你的建议已提交审核。";
+"versions.load_failed" = "失败：%@";
+"versions.available_header" = "%lu 个版本";
+"versions.count" = "%lu 个版本";
+"versions.unknown_size" = "大小未知";
+"catalog.decompress_failed" = "解压失败";
+"catalog.unavailable" = "目录不可用";
 "catalog.loading_more" = "加载中...";
 "catalog.network_error" = "网络错误: %@";
 "catalog.tap_retry" = "点按重试";
@@ -102,6 +118,7 @@
 
 "common.ok" = "好";
 "common.cancel" = "取消";
+"common.ios_unknown" = "未知";
 
 "common.done" = "完成";
 "filter.title" = "筛选";
@@ -167,7 +184,8 @@
 "chat.llm_unavailable" = "AI 服务不可用。Pollinations.ai 可能暂时离线 — 请几分钟后重试。";
 "install.error.no_ipainstaller" = "找不到 ipainstaller。请从 Cydia 安装「IPA Installer Console」软件包 (搜索: appinst 或 ipainstaller)。";
 "install.error.spawn_failed" = "posix_spawn(%s) 失败: %s";
-"install.error.install_failed" = "安装失败 (exit %d): %@";
+"install.error.install_failed" = "安装失败。安装超大应用、或存储空间或内存不足时可能发生 — 请重试、释放一些空间，或尝试其他版本。";
+"install.error.no_space" = "存储空间不足，无法安装此应用（需要约 %@ 可用空间）。请清理空间后重试。";
 
 /* ===== App detail extras (v1.8.7) ===== */
 "app.fallback_title" = "应用";
@@ -231,6 +249,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "此 .ipa 仍受 FairPlay 加密保护 — 绑定到在 App Store 购买它的 Apple ID，因此无法在你的设备上运行。请从「版本」列表中尝试其他镜像 (目录中同一个应用通常有多个来源)。";
+"install.error.arch64" = "此应用仅支持 64 位 (arm64)，无法在你的 32 位设备上运行 — 它是为更新的 iPhone/iPad (iOS 11+) 构建的。这里没有可安装的内容。";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "下载";
@@ -294,6 +313,7 @@
 "settings.download_folder_custom_msg" = "输入绝对路径,例如 /var/mobile/Documents/AppDrop。留空可恢复默认。文件夹将在首次保存时创建。";
 "settings.keep_ipa" = "安装后保留 IPA";
 "settings.allow_encrypted" = "允许加密的 IPA（高级）";
+"settings.auto_switch_mirror" = "镜像慢时自动切换";
 "install.saved_at_suffix" = "已保存至 %@";
 "install.saved_alert_title" = "IPA 已保存";
 "install.saved_alert_msg" = "保存至:\n%@\n\n在 Filza 中打开以进行安装。如果 Filza 报签名错误 (0xe800B001),请从 Cydia 安装“appinst”包后重试。";
@@ -312,6 +332,7 @@
 /* v1.7 category menu */
 "categories.title" = "分类";
 "categories.all" = "全部应用";
+"categories.all_in_cat" = "全部";
 "catalog.browse_categories" = "分类";
 "cat.Games" = "游戏";
 "cat.Entertainment" = "娱乐";
@@ -358,7 +379,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "欢迎使用 AppDrop";
-"categories.welcome_sub" = "浏览 %@ 款经典 iOS 应用和游戏";
+"categories.welcome_sub" = "浏览 %@ 款 iOS 应用和游戏";
 "categories.napps" = "%@ 款";
 
 /* v1.7 support/donate */
@@ -391,6 +412,14 @@
 "feedback.error" = "发送失败——请检查网络连接";
 "feedback.empty" = "请先填写你的反馈。";
 "feedback.not_configured" = "反馈功能尚未配置——请在下次更新后再试。";
+
+/* v3.1 crash reporter */
+"crash.prompt_title" = "AppDrop 已崩溃";
+"crash.prompt_msg" = "AppDrop 上次使用时崩溃了。是否发送匿名崩溃报告以帮助修复？不包含任何个人数据。";
+"crash.send" = "发送报告";
+"crash.decline" = "暂不";
+"crash.thanks_title" = "谢谢！";
+"crash.thanks_msg" = "报告已发送。这对修复问题很有帮助。";
 
 "tab.home" = "主页";
 
@@ -453,6 +482,7 @@
 "folder.short" = "文件夹";
 "folder.add_title" = "添加到文件夹";
 "folder.new" = "新建文件夹";
+"folder.untitled" = "无标题";
 "folder.create" = "创建";
 "folder.edit" = "编辑";
 "folder.rename" = "重命名";
@@ -506,3 +536,18 @@
 "upload.err_toobig" = "文件太大（最多 %d MB）。";
 "upload.err_read" = "无法读取文件。";
 "upload.err_send" = "发送失败";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "类型";
+"upload.type_catalog" = "应用";
+"upload.type_revival" = "可用";
+"upload.type_mods" = "修改";
+"upload.cat_choose" = "选择类别";
+"upload.cat_required" = "请为此应用选择一个类别。";
+"upload.cat_pick_title" = "类别";
+"upload.cat_inherited" = "应用已在 AppDrop 中：类别将沿用目录中的设置。";
+"upload.cat_footer" = "对于尚未收录到 AppDrop 的应用为必填项。";
+"upload.err_encrypted" = "此应用已加密（FairPlay DRM），无法分享。请选择已解密的版本。";
+"upload.err_nodesc" = "请添加说明。";
+"upload.desc_ph_req" = "说明（必填）";
+"upload.desc_ph_opt" = "说明（可选）";
+"upload.analyzing" = "正在分析…";

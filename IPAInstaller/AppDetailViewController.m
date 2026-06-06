@@ -8,6 +8,7 @@
 #import "DeviceInfo.h"
 #import "CollectionStore.h"
 #import "MachOInspector.h"
+#import "CategorySuggestViewController.h"
 
 @interface AppDetailViewController () <UIAlertViewDelegate>
 @property (nonatomic, strong) UIImageView *iconView;
@@ -325,7 +326,15 @@ static UIImage *ADCancelGlyph(void) {
     [self updateFavoriteButton];
     NSMutableArray *rightItems = [NSMutableArray arrayWithObject:self.favBtn];   // ★ rightmost
     NSString *bid = self.app[@"bundleId"];
-    if (bid.length) {
+    // #171: Works Today / Modded apps show ONLY their own grouped versions (revivalVersions) — NEVER
+    // the catalogue's builds for that bundle id (a Twitter mod must not list every normal-Twitter
+    // build). So the button appears for them only when there are 2+ contributed versions to switch
+    // between; catalogue apps keep the bundle-id-driven Versions list as before.
+    id revVers = self.app[@"revivalVersions"];
+    BOOL hasGroupedVersions = ([revVers isKindOfClass:[NSArray class]] && [revVers count] > 1);
+    BOOL isRevivalOrModded = ([self.app[@"isRevival"] boolValue] || [self.app[@"isModded"] boolValue]);
+    BOOL showVersions = isRevivalOrModded ? hasGroupedVersions : (bid.length > 0);
+    if (showVersions) {
         [rightItems addObject:[[UIBarButtonItem alloc] initWithTitle:T(@"app.versions")
                                                                style:UIBarButtonItemStyleBordered
                                                               target:self
@@ -360,6 +369,13 @@ static UIImage *ADCancelGlyph(void) {
     [self updateFavoriteButton];
 }
 
+// #156: open the moderated "suggest a category" screen for this catalogue app.
+- (void)suggestCategoryTapped {
+    CategorySuggestViewController *vc = [[CategorySuggestViewController alloc]
+        initWithBundleId:self.app[@"bundleId"] name:self.app[@"title"]];
+    [self.navigationController pushViewController:vc animated:YES];
+}
+
 - (void)laterTapped {
     BOOL was = [[CollectionStore shared] isInLater:[CollectionStore keyForApp:self.app]];
     [[CollectionStore shared] toggleLater:self.app];
@@ -370,10 +386,21 @@ static UIImage *ADCancelGlyph(void) {
 }
 
 - (void)versionsTapped {
+    NSString *t = self.app[@"title"] ?: T(@"app.versions");
+    // #171: grouped Works Today / Modded app → show its OWN versions (from revival.json/mods.json),
+    // not the catalogue's builds for that bundle id.
+    id revVers = self.app[@"revivalVersions"];
+    if ([revVers isKindOfClass:[NSArray class]] && [revVers count] > 1) {
+        VersionsViewController *vc = [[VersionsViewController alloc] initWithVersions:revVers title:t];
+        [self.navigationController pushViewController:vc animated:YES];
+        return;
+    }
+    // A Works Today / Modded app must NOT fall through to the catalogue's versions for its bundle id
+    // (BlueBlips/BlueTweety share Twitter's bid — they'd otherwise list every normal-Twitter build).
+    if ([self.app[@"isRevival"] boolValue] || [self.app[@"isModded"] boolValue]) return;
     NSString *bid = self.app[@"bundleId"];
     if (!bid.length) return;
-    VersionsViewController *vc = [[VersionsViewController alloc] initWithBundleId:bid
-                                                                              title:self.app[@"title"] ?: T(@"app.versions")];
+    VersionsViewController *vc = [[VersionsViewController alloc] initWithBundleId:bid title:t];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
@@ -712,8 +739,15 @@ static UIImage *ADCancelGlyph(void) {
     }
     if (desc) descText = [self cleanMarkdown:desc[@"text"]];
 
-    // Info text below (offset by verdict banner if shown)
-    self.infoView = [[ADVerticalTextView alloc] initWithFrame:CGRectMake(0, contentY, w, b.size.height - contentY)];
+    // Info text below (offset by verdict banner if shown). For catalogue apps we reserve a
+    // bottom bar for the "suggest category" action (#156); revival/modded apps have no category.
+    // Suggest-category only applies to the categorized 43k catalog — NOT to "Works today" (revival)
+    // or "Modded" apps, which live in their own sections and have no catalog category. (v3.1.1)
+    BOOL showSuggestCat = ([self.app[@"bundleId"] length] > 0)
+        && ![self.app[@"isRevival"] boolValue]
+        && ![self.app[@"isModded"] boolValue];
+    CGFloat suggestH = showSuggestCat ? 54.0f : 0.0f;
+    self.infoView = [[ADVerticalTextView alloc] initWithFrame:CGRectMake(0, contentY, w, b.size.height - contentY - suggestH)];
     self.infoView.backgroundColor = [IOS6Theme contentBackgroundColor];
     self.infoView.textColor = [IOS6Theme labelDark];
     self.infoView.font = [UIFont systemFontOfSize:13];
@@ -731,7 +765,7 @@ static UIImage *ADCancelGlyph(void) {
         @"%@ : %@\n%@ : %@\n%@ : %@\n%@ : %@\n%@ : %@\n\n%@ : %@\n\n%@ :\n%@",
         T(@"app.info_bundle_id"), self.app[@"bundleId"] ?: @"?",
         T(@"app.info_version"), self.app[@"version"] ?: @"?",
-        T(@"app.info_min_ios"), self.app[@"minOS"] ?: @"?",
+        T(@"app.info_min_ios"), ADDisplayIOS(self.app[@"minOS"]),
         T(@"app.info_platform"), [self platformDescription:[self.app[@"platform"] integerValue]],
         T(@"app.info_size"), sizeStr,
         T(@"app.info_file"), [self softWrap:fname],
@@ -748,7 +782,7 @@ static UIImage *ADCancelGlyph(void) {
         // (with creator credit), the basics, and the project link the button opens.
         NSMutableString *body = [NSMutableString string];
         if (hasRevNotes) [body appendFormat:@"%@\n\n", revNotes];
-        [body appendFormat:@"%@ : %@", T(@"app.info_min_ios"), self.app[@"minOS"] ?: @"?"];
+        [body appendFormat:@"%@ : %@", T(@"app.info_min_ios"), ADDisplayIOS(self.app[@"minOS"])];
         NSString *link = self.app[@"revivalLink"];
         if ([link isKindOfClass:[NSString class]] && link.length)
             [body appendFormat:@"\n%@ : %@", T(@"app.info_project"), [self softWrap:link]];
@@ -764,6 +798,26 @@ static UIImage *ADCancelGlyph(void) {
         }
     }
     [self.view addSubview:self.infoView];
+
+    if (showSuggestCat) {
+        // #156: a real, themed button pinned to the bottom — propose the right category (moderated).
+        // (FlexibleTopMargin keeps the strip at the bottom; the button inside follows its width.)
+        UIView *strip = [[UIView alloc] initWithFrame:CGRectMake(0, b.size.height - suggestH, w, suggestH)];
+        strip.backgroundColor = [IOS6Theme contentBackgroundColor];
+        strip.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+        UIView *sep = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 0.5)];
+        sep.backgroundColor = [IOS6Theme separatorColor];
+        sep.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [strip addSubview:sep];
+        UIButton *sc = [UIButton buttonWithType:UIButtonTypeCustom];
+        sc.frame = CGRectMake(12, 8, w - 24, suggestH - 16);
+        sc.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        [sc setTitle:T(@"suggestcat.action") forState:UIControlStateNormal];
+        [IOS6Theme styleGrayButton:sc];   // themed rounded button (light + dark)
+        [sc addTarget:self action:@selector(suggestCategoryTapped) forControlEvents:UIControlEventTouchUpInside];
+        [strip addSubview:sc];
+        [self.view addSubview:strip];
+    }
 }
 
 // Insert zero-width break opportunities into long, space-less strings (download URLs,

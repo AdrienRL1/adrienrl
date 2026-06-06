@@ -114,6 +114,12 @@ AD_BLOCK_ACCESSORS(onPick, setOnPick, _onPickBlock, void(^)(NSString *))
     [IOS6Theme styleGroupedHeaderFooter:v];
 }
 
+// iOS 5/6 grouped tables drop a cell.backgroundColor set in cellForRow:, so dark-mode cells
+// stayed white with unreadable (light) text. Re-apply the themed colour here (where it sticks).
+- (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)ip {
+    cell.backgroundColor = [IOS6Theme cellColor];
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *c = [tv dequeueReusableCellWithIdentifier:@"fp"];
     if (!c) c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"fp"];

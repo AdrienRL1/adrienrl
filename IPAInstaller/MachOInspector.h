@@ -26,6 +26,17 @@ typedef NS_ENUM(NSInteger, MachOInspectionResult) {
     MachOInspectionResultEncrypted,
 };
 
+// #164: which CPU architectures an .ipa's main executable contains. A 32-bit device
+// (armv6/armv7/armv7s — every iOS 5-9 device + the 32-bit iOS 10 ones) can ONLY run a
+// binary that has a 32-bit ARM slice; an arm64-ONLY build installs but never launches /
+// shows no icon. We use this to warn before wasting a (possibly ~1 GB) install.
+typedef NS_OPTIONS(NSUInteger, MachOArch) {
+    MachOArchNone   = 0,
+    MachOArchARM32  = 1 << 0,   // CPU_TYPE_ARM (armv6/armv7/armv7s) — runs on 32-bit devices
+    MachOArchARM64  = 1 << 1,   // CPU_TYPE_ARM64 — requires a 64-bit-capable device (A7+)
+    MachOArchOther  = 1 << 2,   // anything else (x86/…) — shouldn't appear in an iOS IPA
+};
+
 @interface MachOInspector : NSObject
 
 // Inspect the main executable Mach-O inside an .ipa. The .ipa is treated as
@@ -39,6 +50,11 @@ typedef NS_ENUM(NSInteger, MachOInspectionResult) {
 // commands. Safe to call from any thread; doesn't retain the file.
 + (MachOInspectionResult)inspectIPA:(NSString *)ipaPath;
 
+// #164: report the CPU architecture set of the .ipa's main executable (parses the fat header,
+// or a thin Mach-O's own magic/cputype). Returns MachOArchNone on any parse/read error — so a
+// caller treats "couldn't tell" as "don't block". Reads at most ~32 KB. Safe on any thread.
++ (MachOArch)architecturesOfIPA:(NSString *)ipaPath;
+
 // Probe a REMOTE .ipa over HTTP **without downloading it** — uses Range requests to read only
 // the ZIP tail + the main binary's first ~32 KB (a few tens of KB total). Lets the catalog warn
 // "this version is FairPlay-encrypted (won't run)" and recommend a decrypted version, before any
@@ -50,5 +66,13 @@ typedef NS_ENUM(NSInteger, MachOInspectionResult) {
 // Synchronous, no-network cache lookup. Returns the cached MachOInspectionResult, or -1 if this
 // URL hasn't been probed yet (so a caller can show a cached badge instantly, then probe if absent).
 + (NSInteger)cachedResultForURL:(NSString *)url;
+
+// Generic single-file extractor that reuses the same ZIP plumbing. Walks the central directory and,
+// among entries whose full path passes `match` (STORED or DEFLATE only), inflates the one with the
+// LARGEST uncompressed size — so an icon lookup grabs the highest-resolution variant. Output capped
+// at `maxBytes`. Returns the file bytes, or nil if nothing matches / on any parse error. Any thread.
++ (NSData *)extractLargestEntryFromIPA:(NSString *)ipaPath
+                              matching:(BOOL (^)(NSString *entryName))match
+                              maxBytes:(NSUInteger)maxBytes;
 
 @end

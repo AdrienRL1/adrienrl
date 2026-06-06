@@ -2,7 +2,7 @@
 
 "tab.catalog" = "カタログ";
 "tab.search" = "検索";
-"search.placeholder" = "157,000の旧アプリを検索...";
+"search.placeholder" = "43,000以上のアプリを検索...";
 "search.hint_empty" = "カタログを検索するには入力";
 "search.searching" = "検索中...";
 "search.no_results" = "該当アプリなし";
@@ -15,6 +15,22 @@
 "catalog.filters" = "フィルタ";
 "catalog.search_placeholder" = "検索 (タイトル または バンドル ID)";
 "catalog.loading" = "カタログを読み込み中...";
+"catalog.retry" = "カタログを取得できません — タップして再試行。";
+"suggestcat.title" = "カテゴリを提案";
+"suggestcat.action" = "カテゴリが違う？提案する";
+"suggestcat.current" = "現在：%@";
+"suggestcat.pick_category" = "カテゴリを選択";
+"suggestcat.pick_subgenre" = "セクションを選択";
+"suggestcat.subgenre_required" = "セクションを選択してください。";
+"suggestcat.none" = "一般";
+"suggestcat.submit" = "送信";
+"suggestcat.thanks" = "ありがとう！提案を確認のため送信しました。";
+"versions.load_failed" = "失敗：%@";
+"versions.available_header" = "%lu 個のバージョン";
+"versions.count" = "%lu 個のバージョン";
+"versions.unknown_size" = "サイズ不明";
+"catalog.decompress_failed" = "解凍に失敗しました";
+"catalog.unavailable" = "カタログを利用できません";
 "catalog.loading_more" = "読み込み中...";
 "catalog.network_error" = "ネットワークエラー: %@";
 "catalog.tap_retry" = "タップして再試行";
@@ -102,6 +118,7 @@
 
 "common.ok" = "OK";
 "common.cancel" = "キャンセル";
+"common.ios_unknown" = "不明";
 
 "common.done" = "完了";
 "filter.title" = "フィルタ";
@@ -167,7 +184,8 @@
 "chat.llm_unavailable" = "AIサービスが利用できません。Pollinations.aiが一時的に停止している可能性があります — 数分後に再試行してください。";
 "install.error.no_ipainstaller" = "ipainstaller が見つかりません。Cydia から「IPA Installer Console」パッケージをインストールしてください (検索: appinst または ipainstaller)。";
 "install.error.spawn_failed" = "posix_spawn(%s) が失敗: %s";
-"install.error.install_failed" = "インストール失敗 (exit %d): %@";
+"install.error.install_failed" = "インストールに失敗しました。非常に大きなアプリ、または空き容量やメモリが少ないときに起こることがあります。もう一度試す、空き容量を増やす、または別のバージョンを試してください。";
+"install.error.no_space" = "このアプリをインストールする空き容量が足りません（約%@の空きが必要）。空き容量を増やして再試行してください。";
 
 /* ===== App detail extras (v1.8.7) ===== */
 "app.fallback_title" = "アプリ";
@@ -231,6 +249,7 @@
 
 /* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
 "install.error.fairplay" = "この .ipa はまだ FairPlay で暗号化されています — App Store で購入した Apple ID に紐づいているため、お使いのデバイスでは動作しません。バージョン一覧から別のミラーを試してください (カタログには同じアプリの複数のソースが含まれていることがよくあります)。";
+"install.error.arch64" = "このアプリは64ビット専用 (arm64) で、お使いの32ビットデバイスでは動作しません — より新しい iPhone/iPad (iOS 11以降) 向けに作られています。ここにインストールできるものはありません。";
 
 /* ===== v1.2 build 9 — Parallel chunked downloads ===== */
 "settings.section_download" = "ダウンロード";
@@ -294,6 +313,7 @@
 "settings.download_folder_custom_msg" = "絶対パスを入力してください(例:/var/mobile/Documents/AppDrop)。空のままにすると既定値に戻ります。フォルダは初回保存時に作成されます。";
 "settings.keep_ipa" = "インストール後にIPAを保持";
 "settings.allow_encrypted" = "暗号化されたIPAを許可（上級者向け）";
+"settings.auto_switch_mirror" = "遅いミラーを自動切替";
 "install.saved_at_suffix" = "%@ に保存しました";
 "install.saved_alert_title" = "IPAを保存しました";
 "install.saved_alert_msg" = "保存先:\n%@\n\nFilzaで開いてインストール。Filzaが署名エラー(0xe800B001)で失敗する場合は、Cydiaから「appinst」パッケージをインストールして再試行してください。";
@@ -312,6 +332,7 @@
 /* v1.7 category menu */
 "categories.title" = "カテゴリ";
 "categories.all" = "すべてのアプリ";
+"categories.all_in_cat" = "すべて";
 "catalog.browse_categories" = "カテゴリ";
 "cat.Games" = "ゲーム";
 "cat.Entertainment" = "エンターテインメント";
@@ -358,7 +379,7 @@
 
 /* v1.7 category home */
 "categories.welcome" = "AppDrop へようこそ";
-"categories.welcome_sub" = "%@ 件のクラシック iOS アプリ・ゲームを見る";
+"categories.welcome_sub" = "%@ 件の iOS アプリ・ゲームを見る";
 "categories.napps" = "%@ 件";
 
 /* v1.7 support/donate */
@@ -391,6 +412,14 @@
 "feedback.error" = "送信に失敗 — 接続を確認してください";
 "feedback.empty" = "先にフィードバックを入力してください。";
 "feedback.not_configured" = "フィードバックはまだ設定されていません — 次回のアップデート後にお試しください。";
+
+/* v3.1 crash reporter */
+"crash.prompt_title" = "AppDrop がクラッシュしました";
+"crash.prompt_msg" = "前回の使用中に AppDrop がクラッシュしました。問題の修正に役立てるため、匿名のクラッシュレポートを送信しますか？個人情報は含まれません。";
+"crash.send" = "レポートを送信";
+"crash.decline" = "今はしない";
+"crash.thanks_title" = "ありがとうございます！";
+"crash.thanks_msg" = "レポートを送信しました。問題の修正に大いに役立ちます。";
 
 "tab.home" = "ホーム";
 
@@ -453,6 +482,7 @@
 "folder.short" = "フォルダ";
 "folder.add_title" = "フォルダに追加";
 "folder.new" = "新規フォルダ";
+"folder.untitled" = "無題";
 "folder.create" = "作成";
 "folder.edit" = "編集";
 "folder.rename" = "名前を変更";
@@ -506,3 +536,18 @@
 "upload.err_toobig" = "ファイルが大きすぎます（最大 %d MB）。";
 "upload.err_read" = "ファイルを読み込めませんでした。";
 "upload.err_send" = "送信に失敗しました";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "種類";
+"upload.type_catalog" = "アプリ";
+"upload.type_revival" = "動作";
+"upload.type_mods" = "改造";
+"upload.cat_choose" = "カテゴリを選択";
+"upload.cat_required" = "このアプリのカテゴリを選んでください。";
+"upload.cat_pick_title" = "カテゴリ";
+"upload.cat_inherited" = "このアプリは既に AppDrop にあります。カテゴリはカタログから引き継がれます。";
+"upload.cat_footer" = "AppDrop にまだないアプリには必須です。";
+"upload.err_encrypted" = "このアプリは暗号化されており（FairPlay DRM）共有できません。復号済みのバージョンを選んでください。";
+"upload.err_nodesc" = "説明を入力してください。";
+"upload.desc_ph_req" = "説明（必須）";
+"upload.desc_ph_opt" = "説明（任意）";
+"upload.analyzing" = "解析中…";

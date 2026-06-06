@@ -1,6 +1,6 @@
 # AppDrop
 
-> Browse 43,000+ vintage iOS apps (2008–2014) — every archived version included — and install them on your jailbroken device.
+> Browse 43,000+ iOS apps (2008–2014) — every archived version included — and install them on your jailbroken device.
 
 <p align="center">
   <img src="screenshots/appdrop-icon.png" width="120" height="120" alt="AppDrop icon">
@@ -11,11 +11,11 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/v3-home.png" width="600" alt="AppDrop home — browse vintage apps by category on iPad">
+  <img src="screenshots/v3-home.png" width="600" alt="AppDrop home — browse apps by category on iPad">
 </p>
 
 <p align="center">
-  <b>📱 Runs natively on iPhone, iPod touch & iPad</b> — a clean list or grid on iPhone/iPod, and on iPad a <b>true iPad interface</b> (multi-column grids, large tiles, landscape), not a blown-up phone layout.
+  <b> Runs natively on iPhone, iPod touch & iPad</b> — a clean list or grid on iPhone/iPod, and on iPad a <b>true iPad interface</b> (multi-column grids, large tiles, landscape), not a blown-up phone layout.
 </p>
 
 ---
@@ -29,7 +29,7 @@
 
 ## Features
 
-- **43,000+ vintage apps** — browsable **by category** right from the home screen, with every archived version of each app available
+- **43,000+ apps** — browsable **by category** right from the home screen, with every archived version of each app available
 - **Native on iPhone, iPod touch & iPad** — a clean list or grid on the phone / iPod, and a true multi-column iPad interface (large tiles, landscape) on iPad — never a stretched-up phone app
 - **Auto-updating catalog** — downloaded on first launch and refreshed automatically when new apps are added, so you never reinstall the app just for new content
 - **"Works Today"** — a section for apps confirmed still running on old iOS (patched, revived, or community-made), with one-tap install and update detection
@@ -103,7 +103,7 @@ AppDrop's in-app updater checks GitHub Releases hourly and, when a new version i
 
 <img src="screenshots/v3-home.png" width="500" alt="Categories home on iPad">
 
-The home screen sorts 43,000+ vintage apps into categories (Games, Utilities, Entertainment…), with quick tiles for **All apps**, **Works Today**, **Favorites**, **Download later** and **Modded apps**. Tap a category to browse it, and rearrange or resize the tiles to make the home yours.
+The home screen sorts 43,000+ apps into categories (Games, Utilities, Entertainment…), with quick tiles for **All apps**, **Works Today**, **Favorites**, **Download later** and **Modded apps**. Tap a category to browse it, and rearrange or resize the tiles to make the home yours.
 
 ### The catalog
 

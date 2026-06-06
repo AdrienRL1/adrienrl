@@ -96,6 +96,56 @@ static inline uint32_t bswap32(uint32_t x) {
     return result;
 }
 
++ (MachOArch)architecturesOfIPA:(NSString *)ipaPath {
+    if (!ipaPath.length) return MachOArchNone;
+    FILE *fp = fopen([ipaPath fileSystemRepresentation], "rb");
+    if (!fp) return MachOArchNone;
+    if (fseeko(fp, 0, SEEK_END) != 0) { fclose(fp); return MachOArchNone; }
+    off_t fileSize = ftello(fp);
+
+    MOReader reader = ^NSData *(off_t off, size_t len) {
+        if (off < 0 || len == 0) return nil;
+        NSMutableData *d = [NSMutableData dataWithLength:len];
+        if (!d) return nil;
+        if (fseeko(fp, off, SEEK_SET) != 0) return nil;
+        size_t got = fread(d.mutableBytes, 1, len, fp);
+        d.length = got;
+        return d;
+    };
+
+    MachOArch arch = MachOArchNone;
+    @try { arch = [self archUsingReader:reader fileSize:fileSize]; }
+    @catch (NSException *e) { NSLog(@"[MachOInspector] arch exception: %@", e); arch = MachOArchNone; }
+    fclose(fp);
+    return arch;
+}
+
++ (NSData *)extractLargestEntryFromIPA:(NSString *)ipaPath
+                              matching:(BOOL (^)(NSString *entryName))match
+                              maxBytes:(NSUInteger)maxBytes {
+    if (!ipaPath.length || !match || maxBytes == 0) return nil;
+    FILE *fp = fopen([ipaPath fileSystemRepresentation], "rb");
+    if (!fp) return nil;
+    if (fseeko(fp, 0, SEEK_END) != 0) { fclose(fp); return nil; }
+    off_t fileSize = ftello(fp);
+
+    MOReader reader = ^NSData *(off_t off, size_t len) {
+        if (off < 0 || len == 0) return nil;
+        NSMutableData *d = [NSMutableData dataWithLength:len];
+        if (!d) return nil;
+        if (fseeko(fp, off, SEEK_SET) != 0) return nil;
+        size_t got = fread(d.mutableBytes, 1, len, fp);
+        d.length = got;
+        return d;
+    };
+
+    NSData *result = nil;
+    @try { result = [self extractLargestUsingReader:reader fileSize:fileSize matching:match maxBytes:maxBytes]; }
+    @catch (NSException *e) { NSLog(@"[MachOInspector] extract exception: %@", e); result = nil; }
+    fclose(fp);
+    return result;
+}
+
 + (void)inspectURL:(NSString *)url completion:(void (^)(MachOInspectionResult result))completion {
     NSInteger cached = [self cachedResultForURL:url];
     if (cached >= 0) {
@@ -254,6 +304,62 @@ static inline uint32_t bswap32(uint32_t x) {
     return MachOInspectionResultUnknown;
 }
 
+// #164: walk the central directory exactly like inspectUsingReader:, but for the main-binary
+// entry return its ARCHITECTURE SET instead of the encryption verdict. Kept as a separate path
+// (rather than refactoring the proven encryption walk) so it can't destabilise installs.
++ (MachOArch)archUsingReader:(MOReader)readBytes fileSize:(off_t)fileSize {
+    if (fileSize < 22) return MachOArchNone;
+
+    off_t searchStart = fileSize > (off_t)65557 ? fileSize - 65557 : 0;
+    size_t searchLen = (size_t)(fileSize - searchStart);
+    NSData *tail = readBytes(searchStart, searchLen);
+    if (!tail || tail.length != searchLen) return MachOArchNone;
+
+    const uint8_t *tb = tail.bytes;
+    NSInteger eocdr = -1;
+    for (NSInteger i = (NSInteger)searchLen - 22; i >= 0; i--) {
+        if (tb[i] == 0x50 && tb[i+1] == 0x4b && tb[i+2] == 0x05 && tb[i+3] == 0x06) { eocdr = i; break; }
+    }
+    if (eocdr < 0) return MachOArchNone;
+
+    uint32_t cdSize = le32(tb + eocdr + 12);
+    uint32_t cdOff  = le32(tb + eocdr + 16);
+    if (cdOff == 0xFFFFFFFFu || cdSize == 0xFFFFFFFFu) return MachOArchNone;  // ZIP64
+    if ((off_t)cdOff + (off_t)cdSize > fileSize) return MachOArchNone;
+    if (cdSize > 16 * 1024 * 1024) return MachOArchNone;
+
+    NSData *cd = readBytes(cdOff, cdSize);
+    if (!cd || cd.length != cdSize) return MachOArchNone;
+
+    const uint8_t *cdp = cd.bytes;
+    const uint8_t *cdEnd = cdp + cd.length;
+    while (cdp + 46 <= cdEnd) {
+        if (le32(cdp) != ZIP_CD_SIG) break;
+        uint16_t method   = le16(cdp + 10);
+        uint32_t compSize = le32(cdp + 20);
+        uint16_t fnLen    = le16(cdp + 28);
+        uint16_t exLen    = le16(cdp + 30);
+        uint16_t cmLen    = le16(cdp + 32);
+        uint32_t lhOff    = le32(cdp + 42);
+
+        if (cdp + 46 + (size_t)fnLen + exLen + cmLen > cdEnd) break;
+        const uint8_t *fn = cdp + 46;
+
+        if ([self filenameLooksLikeMainBinary:fn length:fnLen]) {
+            NSData *binData = [self binaryHeaderForEntryWithReader:readBytes
+                                                        lfhOffset:lhOff
+                                                       compMethod:method
+                                                         compSize:compSize];
+            if (binData) {
+                MachOArch a = [self archOfMachOBytes:binData];
+                if (a != MachOArchNone) return a;
+            }
+        }
+        cdp += 46 + fnLen + exLen + cmLen;
+    }
+    return MachOArchNone;
+}
+
 + (BOOL)filenameLooksLikeMainBinary:(const uint8_t *)fn length:(uint16_t)len {
     if (len < 10) return NO;
     if (memcmp(fn, "Payload/", 8) != 0) return NO;
@@ -271,40 +377,56 @@ static inline uint32_t bswap32(uint32_t x) {
     return YES;
 }
 
-+ (MachOInspectionResult)peekEntryWithReader:(MOReader)readBytes
-                                   lfhOffset:(uint32_t)lhOff
-                                  compMethod:(uint16_t)method
-                                    compSize:(uint32_t)compSize {
+// Read a central-directory entry's local header, inflate up to 32 KB of its data, and return
+// those bytes IFF they begin with a recognizable Mach-O / fat magic. nil on any parse/inflate
+// error or non-Mach-O content. Shared by the encryption check (peekEntryWithReader:) and the
+// architecture check (archUsingReader:) so the fiddly ZIP/inflate logic lives in one place.
++ (NSData *)binaryHeaderForEntryWithReader:(MOReader)readBytes
+                                 lfhOffset:(uint32_t)lhOff
+                                compMethod:(uint16_t)method
+                                  compSize:(uint32_t)compSize {
     NSData *lfhData = readBytes((off_t)lhOff, 30);
-    if (!lfhData || lfhData.length != 30) return MachOInspectionResultUnknown;
+    if (!lfhData || lfhData.length != 30) return nil;
     const uint8_t *lfh = lfhData.bytes;
-    if (le32(lfh) != ZIP_LFH_SIG) return MachOInspectionResultUnknown;
+    if (le32(lfh) != ZIP_LFH_SIG) return nil;
     uint16_t lfnLen = le16(lfh + 26);
     uint16_t lexLen = le16(lfh + 28);
     off_t dataOff = (off_t)lhOff + 30 + lfnLen + lexLen;
 
     size_t maxRead = MIN((size_t)compSize, (size_t)32768);
-    if (maxRead < 28) return MachOInspectionResultUnknown;
+    if (maxRead < 28) return nil;
     NSData *raw = readBytes(dataOff, maxRead);
-    if (!raw || raw.length == 0) return MachOInspectionResultUnknown;
+    if (!raw || raw.length == 0) return nil;
 
     NSData *binData = nil;
     if (method == ZIP_METHOD_STORED) {
         binData = raw;
     } else if (method == ZIP_METHOD_DEFLATE) {
         binData = [self inflateRaw:raw maxOutput:32768];
-        if (!binData) return MachOInspectionResultUnknown;
+        if (!binData) return nil;
     } else {
-        return MachOInspectionResultUnknown;
+        return nil;
     }
 
-    if (binData.length < 28) return MachOInspectionResultUnknown;
+    if (binData.length < 28) return nil;
     uint32_t magic = le32(binData.bytes);
     if (magic != M_FAT_MAGIC && magic != M_FAT_CIGAM
         && magic != M_MH_MAGIC && magic != M_MH_CIGAM
         && magic != M_MH_MAGIC_64 && magic != M_MH_CIGAM_64) {
-        return MachOInspectionResultUnknown;
+        return nil;
     }
+    return binData;
+}
+
++ (MachOInspectionResult)peekEntryWithReader:(MOReader)readBytes
+                                   lfhOffset:(uint32_t)lhOff
+                                  compMethod:(uint16_t)method
+                                    compSize:(uint32_t)compSize {
+    NSData *binData = [self binaryHeaderForEntryWithReader:readBytes
+                                                lfhOffset:lhOff
+                                               compMethod:method
+                                                 compSize:compSize];
+    if (!binData) return MachOInspectionResultUnknown;
     return [self inspectMachOBytes:binData];
 }
 
@@ -326,6 +448,97 @@ static inline uint32_t bswap32(uint32_t x) {
     out.length = maxLen - strm.avail_out;
     if (out.length < 28) return nil;
     return out;
+}
+
+// Full multi-shot inflate (raw deflate). Loops until Z_STREAM_END or `maxLen` is exceeded —
+// unlike inflateRaw (single-shot, ≤32 KB) this recovers a whole file (e.g. an icon PNG).
++ (NSData *)inflateFull:(NSData *)compressed maxOutput:(size_t)maxLen {
+    z_stream strm;
+    memset(&strm, 0, sizeof(strm));
+    if (inflateInit2(&strm, -MAX_WBITS) != Z_OK) return nil;
+    NSMutableData *out = [NSMutableData data];
+    uint8_t buf[16384];
+    strm.next_in = (Bytef *)compressed.bytes;
+    strm.avail_in = (uInt)compressed.length;
+    int ret = Z_OK;
+    do {
+        strm.next_out = buf;
+        strm.avail_out = sizeof(buf);
+        ret = inflate(&strm, Z_NO_FLUSH);
+        if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR) { inflateEnd(&strm); return nil; }
+        size_t have = sizeof(buf) - strm.avail_out;
+        if (have) [out appendBytes:buf length:have];
+        if (out.length > maxLen) { inflateEnd(&strm); return nil; }
+        if (ret == Z_BUF_ERROR && strm.avail_in == 0) break;   // no more input
+    } while (ret != Z_STREAM_END);
+    inflateEnd(&strm);
+    return out.length ? out : nil;
+}
+
+// Reader-driven sibling of inspectUsingReader: instead of looking for the main binary, it returns
+// the bytes of the largest central-directory entry whose name passes `match`.
++ (NSData *)extractLargestUsingReader:(MOReader)readBytes fileSize:(off_t)fileSize
+                             matching:(BOOL (^)(NSString *))match maxBytes:(NSUInteger)maxBytes {
+    if (fileSize < 22) return nil;
+    off_t searchStart = fileSize > (off_t)65557 ? fileSize - 65557 : 0;
+    size_t searchLen = (size_t)(fileSize - searchStart);
+    NSData *tail = readBytes(searchStart, searchLen);
+    if (!tail || tail.length != searchLen) return nil;
+
+    const uint8_t *tb = tail.bytes;
+    NSInteger eocdr = -1;
+    for (NSInteger i = (NSInteger)searchLen - 22; i >= 0; i--) {
+        if (tb[i] == 0x50 && tb[i+1] == 0x4b && tb[i+2] == 0x05 && tb[i+3] == 0x06) { eocdr = i; break; }
+    }
+    if (eocdr < 0) return nil;
+
+    uint32_t cdSize = le32(tb + eocdr + 12);
+    uint32_t cdOff  = le32(tb + eocdr + 16);
+    if (cdOff == 0xFFFFFFFFu || cdSize == 0xFFFFFFFFu) return nil;
+    if ((off_t)cdOff + (off_t)cdSize > fileSize) return nil;
+    if (cdSize > 16 * 1024 * 1024) return nil;
+
+    NSData *cd = readBytes(cdOff, cdSize);
+    if (!cd || cd.length != cdSize) return nil;
+
+    const uint8_t *cdp = cd.bytes;
+    const uint8_t *cdEnd = cdp + cd.length;
+    uint32_t bestLhOff = 0, bestComp = 0, bestUncomp = 0; uint16_t bestMethod = 0; BOOL found = NO;
+    while (cdp + 46 <= cdEnd) {
+        if (le32(cdp) != ZIP_CD_SIG) break;
+        uint16_t method     = le16(cdp + 10);
+        uint32_t compSize   = le32(cdp + 20);
+        uint32_t uncompSize = le32(cdp + 24);
+        uint16_t fnLen      = le16(cdp + 28);
+        uint16_t exLen      = le16(cdp + 30);
+        uint16_t cmLen      = le16(cdp + 32);
+        uint32_t lhOff      = le32(cdp + 42);
+        if (cdp + 46 + (size_t)fnLen + exLen + cmLen > cdEnd) break;
+        if (method == ZIP_METHOD_STORED || method == ZIP_METHOD_DEFLATE) {
+            NSString *name = [[NSString alloc] initWithBytes:cdp + 46 length:fnLen encoding:NSUTF8StringEncoding];
+            if (!name) name = [[NSString alloc] initWithBytes:cdp + 46 length:fnLen encoding:NSASCIIStringEncoding];
+            if (name && match(name) && (!found || uncompSize > bestUncomp)) {
+                found = YES; bestUncomp = uncompSize; bestLhOff = lhOff; bestComp = compSize; bestMethod = method;
+            }
+        }
+        cdp += 46 + fnLen + exLen + cmLen;
+    }
+    if (!found || bestComp == 0) return nil;
+    if (bestUncomp != 0 && bestUncomp > maxBytes) return nil;
+    if (bestComp > maxBytes + 2 * 1024 * 1024) return nil;   // sanity vs compressed payload
+
+    NSData *lfhData = readBytes((off_t)bestLhOff, 30);
+    if (!lfhData || lfhData.length != 30) return nil;
+    const uint8_t *lfh = lfhData.bytes;
+    if (le32(lfh) != ZIP_LFH_SIG) return nil;
+    uint16_t lfnLen = le16(lfh + 26);
+    uint16_t lexLen = le16(lfh + 28);
+    off_t dataOff = (off_t)bestLhOff + 30 + lfnLen + lexLen;
+
+    NSData *raw = readBytes(dataOff, (size_t)bestComp);
+    if (!raw || raw.length != (size_t)bestComp) return nil;
+    if (bestMethod == ZIP_METHOD_STORED) return (raw.length <= maxBytes) ? raw : nil;
+    return [self inflateFull:raw maxOutput:maxBytes];
 }
 
 #pragma mark - Mach-O parsing
@@ -389,6 +602,43 @@ static inline uint32_t bswap32(uint32_t x) {
         cmdOff += cmdsize;
     }
     return MachOInspectionResultDecrypted;   // no LC_ENCRYPTION_INFO → homebrew/adhoc, never DRM'd
+}
+
++ (MachOArch)archFlagForCPUType:(uint32_t)cputype {
+    if (cputype == CPU_TYPE_ARM)   return MachOArchARM32;   // armv6/armv7/armv7s — all 32-bit ARM
+    if (cputype == CPU_TYPE_ARM64) return MachOArchARM64;
+    return MachOArchOther;
+}
+
+// #164: enumerate the CPU architectures present. For a fat binary, OR together every slice's
+// cputype; for a thin binary, classify by its own magic/cputype. MachOArchNone on malformed
+// input (caller treats that as "couldn't tell → don't block").
++ (MachOArch)archOfMachOBytes:(NSData *)binData {
+    if (binData.length < 8) return MachOArchNone;
+    const uint8_t *bytes = binData.bytes;
+    size_t len = binData.length;
+    uint32_t magic = le32(bytes);
+
+    if (magic == M_FAT_MAGIC || magic == M_FAT_CIGAM) {
+        uint32_t nfat = be32(bytes + 4);
+        if (nfat == 0 || nfat > 16) return MachOArchNone;
+        MachOArch arch = MachOArchNone;
+        for (uint32_t i = 0; i < nfat; i++) {
+            size_t archOff = 8 + (size_t)i * 20;       // fat_arch is 20 bytes (cputype @ +0)
+            if (archOff + 4 > len) break;              // header truncated in our 32 KB peek
+            arch |= [self archFlagForCPUType:be32(bytes + archOff)];
+        }
+        return arch;
+    }
+    if (magic == M_MH_MAGIC || magic == M_MH_CIGAM) {          // thin 32-bit Mach-O
+        uint32_t cputype = le32(bytes + 4);
+        if (magic == M_MH_CIGAM) cputype = bswap32(cputype);
+        return [self archFlagForCPUType:cputype];
+    }
+    if (magic == M_MH_MAGIC_64 || magic == M_MH_CIGAM_64) {    // thin 64-bit Mach-O
+        return MachOArchARM64;
+    }
+    return MachOArchNone;
 }
 
 @end

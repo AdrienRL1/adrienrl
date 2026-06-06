@@ -377,6 +377,13 @@ static UIImage *ADDownloadLaterNavGlyph(void) {
     return self.jobs.count == 0 ? 44 : 72;
 }
 
+// iOS 5/6 grouped tables drop a cell.backgroundColor set in cellForRow:, so the dark-mode
+// "no downloads" placeholder cell stayed white with unreadable (light) text. Re-apply the themed
+// colour here (JobCell already self-themes in layoutSubviews, so this just matches it).
+- (void)tableView:(UITableView *)tv willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)ip {
+    cell.backgroundColor = [IOS6Theme cellColor];
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     if (self.jobs.count == 0) {
         UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:@"empty"];

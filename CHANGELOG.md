@@ -2,6 +2,74 @@
 
 Older release notes are also available on the [GitHub Releases](https://github.com/AdrienRL1/AppDrop/releases) page.
 
+## AppDrop v3.1.2 — More reliable installs
+
+A small follow-up focused on installs, straight from your feedback.
+
+### Fixed
+- **False "Install failed"** — on some jailbreaks the installer reports an error even when the app actually installed and appears on your home screen. AppDrop now confirms the result on the device itself instead of trusting the installer's exit code, so a successful install is no longer shown as failed.
+
+### New
+- **64-bit (arm64) warning** — AppDrop now warns you *before* installing an app that's 64-bit only and can't run on a 32-bit device, instead of a silent install that never shows an icon.
+- **Automatic installer retry** — if an install fails, AppDrop retries once with the alternate on-device installer (`appinst`); some apps install with one tool but not the other.
+- **Clearer install errors** — a plain, actionable message ("try again, free up space, or try another version") instead of raw technical output.
+
+### Compatibility
+iOS 5.0 – 10.x (armv7 / 32-bit), jailbroken. Tested on iOS 6 (iPad 4).
+
+---
+
+## AppDrop v3.1.1 — Stability, a tidier grid & smarter downloads
+
+A focused follow-up to v3.1, straight from your feedback.
+
+### Fixed
+- **Background crash on iOS 5–10** — the app could be killed by the system the moment you switched away from it. This was by far the most common crash; it's fixed.
+- **A rare crash while browsing or searching** the catalogue is fixed too.
+- **"Works Today" & "Modded"** now group an app's different versions into a single row (tap **Versions** to choose one) instead of listing duplicates, and exact duplicates were removed.
+- Those two lists now look **exactly like the catalogue** (same rows / grid) instead of oversized tiles, and a modded/revival app's **Versions** list no longer mixes in the normal app's builds.
+- Cleaner text under the app tiles when you pack many per row (just the name when there's no room for more), a real app count in the search bar, "Unknown" instead of "iOS 0.0.0", and the version in Settings now reads **3.1.1**.
+
+### New
+- **The grid adapts when you rotate** — turn the device and AppDrop keeps the tile size steady (more columns in landscape) instead of leaving the count fixed. The home tiles do the same.
+- **iOS-6 wheel pickers** for **Simultaneous downloads** and **Parallel streams** (Settings → Download), matching the apps-per-row picker.
+- **Smarter mirror switching** — it no longer drops a working-but-slow mirror near the end of a download, so you keep your progress. A new **Auto-switch slow mirrors** toggle (Settings → Download) lets you turn the automatic switching off.
+
+### iPad
+- The catalogue now defaults to **5 apps per row**.
+
+### Compatibility
+iOS 5.0 – 10.x (armv7 / 32-bit), jailbroken. Tested on iOS 6 (iPad 4, iPhone 5) and iOS 10.3.3 (iPad mini 2).
+
+---
+
+## AppDrop v3.1 — Suggest-a-category, automatic crash reports, safer uploads & a pile of fixes
+
+A community + maintenance release on top of v3.0. You can now **suggest a better category** for any app, AppDrop can **send an anonymous crash report** in one tap if it crashed last time, and **"Share an app"** is safer. Plus a long list of fixes straight from your feedback.
+
+### New
+- **Suggest a category** — propose a better category/subgenre for any catalog app, through a moderated review.
+- **Automatic crash reports** — if AppDrop crashed last session, it offers to send an anonymous report (no personal data), so iOS 7–10 crashes we can't reproduce finally get a real backtrace.
+- **Safer "Share an app"** — a description is now mandatory, FairPlay-encrypted IPAs are blocked *before* upload, and the app's icon + metadata are auto-extracted from the IPA.
+
+### Fixed
+- **iOS 9** — installs that silently failed at 100% (the app wasn't actually installed) are now verified and reliable.
+- **iPad 1 / iOS 5.1.1** — the catalog could hang forever on *"Downloading catalog…"*; added a timeout + retry.
+- **Installed but missing from the home screen** — reliable automatic icon-cache refresh.
+- **Freeze** when scrolling to the end of an app's versions list.
+- **Browse a whole genre again** — an *"All apps"* tile was restored at the top of each category.
+- **AppSync dependency conflict** (lukezgd vs skyglow) — alternative packages are now accepted.
+- **Pause then resume** restarted the download from 0 — it now resumes via HTTP Range.
+- **Low storage** — an install could fill the disk to *"0 bytes"* instead of stopping; added a pre-install free-space check that aborts cleanly with a clear message.
+- **Search bar** didn't follow the theme on the light-coloured themes.
+- **Dark mode** — unreadable text on several menus on iOS 5 (form placeholders, section headers, cell backgrounds).
+- Localized *"Works today"* descriptions (English included) and size units in MB/GB; full 8-language coverage.
+
+### Compatibility
+iOS 5.0 – 10.x (armv7 / 32-bit), jailbroken. Tested on iPad 1 (iOS 5.1.1), iPhone 5 (iOS 6.1.4), iPad 4 (iOS 6.1.3).
+
+---
+
 ## AppDrop v3.0 — Themes, dark mode, Favorites & folders, and a layout that's finally yours
 
 The biggest visual update yet. Seventeen colour themes with a full dark mode, a home screen you can rearrange like widgets, Favorites and named folders, a "download later" queue, a new (and growing) Modded-apps section, moderated app sharing, pause/resume downloads, and FairPlay detection that warns you *before* a download — plus dozens of fixes across all 8 languages.

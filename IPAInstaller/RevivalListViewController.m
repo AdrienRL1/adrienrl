@@ -1,5 +1,6 @@
 #import "RevivalListViewController.h"
 #import "RevivalCatalog.h"
+#import "ModdedCatalog.h"
 #import "Localization.h"
 #import "IOS6Theme.h"
 #import "AppRowCell.h"
@@ -71,9 +72,26 @@ static NSString *RevHumanSize(long long bytes) {
                target:self action:@selector(filtersTapped)];
     self.allApps = self.customAppDicts ?: [[RevivalCatalog shared] appDicts];
     self.apps = [self applyFilter:[CatalogFilter load_] to:self.allApps];
-    self.tpr = MAX(1, [AppRowCell tilesPerRowForWidth:[self gridWidth]]);
-    self.tableView.rowHeight = [AppRowCell gridRowHeight];
+    [self applyGridMetrics];   // #171: list-vs-grid + row height + separators EXACTLY like the catalogue
     [self installHeader];
+    // #142: refresh in-session when the hosted Works-Today / Modded list updates.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(revivalListDidChange) name:RevivalCatalogDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+        selector:@selector(revivalListDidChange) name:ModdedCatalogDidChangeNotification object:nil];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+// #142: the hosted Works-Today / Modded list was refreshed mid-session → reload our data + view.
+- (void)revivalListDidChange {
+    self.allApps = [self.uploadTarget isEqualToString:@"mods"]
+        ? [[ModdedCatalog shared] appDicts]
+        : (self.customAppDicts ?: [[RevivalCatalog shared] appDicts]);
+    self.apps = [self applyFilter:[CatalogFilter load_] to:self.allApps];
+    [self.tableView reloadData];
 }
 
 - (NSArray *)applyFilter:(CatalogFilter *)f to:(NSArray *)apps {
@@ -120,12 +138,26 @@ static NSString *RevHumanSize(long long bytes) {
 
 #pragma mark - Layout
 
+// #171: list-vs-grid decided by the density setting on BOTH idioms — exactly like the catalogue
+// (CatalogViewController -useGrid). n==1 → single-column list (CatalogAppCell); n≥2 → packed tile grid.
+- (BOOL)useGrid {
+    return [AppRowCell tilesPerRowForWidth:[self gridWidth]] > 1;
+}
+
+// Row height + separators driven by the same density, mirroring CatalogViewController.
+- (void)applyGridMetrics {
+    CGFloat w = [self gridWidth];
+    self.tpr = MAX(1, [AppRowCell tilesPerRowForWidth:w]);
+    self.tableView.rowHeight = [AppRowCell gridRowHeightForWidth:w];
+    self.tableView.separatorStyle = [self useGrid] ? UITableViewCellSeparatorStyleNone
+                                                   : UITableViewCellSeparatorStyleSingleLine;
+}
+
 - (void)viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
     NSInteger t = MAX(1, [AppRowCell tilesPerRowForWidth:[self gridWidth]]);
     if (t != self.tpr) {
-        self.tpr = t;
-        self.tableView.rowHeight = [AppRowCell gridRowHeight];
+        [self applyGridMetrics];   // density / rotation changed the column count → re-pack like the catalogue
         [self.tableView reloadData];
     }
 }
@@ -175,70 +207,72 @@ static NSString *RevHumanSize(long long bytes) {
 #pragma mark - Table
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    if (UI_USER_INTERFACE_IDIOM() != UIUserInterfaceIdiomPad) return self.apps.count;  // iPhone: one row per app
-    if (self.tpr < 1) self.tpr = 1;
-    return (self.apps.count + self.tpr - 1) / self.tpr;
+    NSInteger n = [AppRowCell tilesPerRowForWidth:tv.bounds.size.width];   // catalogue logic, both idioms
+    if (n <= 1) return self.apps.count;                                    // list: one app per row
+    return (self.apps.count + n - 1) / n;                                  // grid: packed rows
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    // ===== iPhone: single-app list row. AppRowCell is an iPad-grid component and renders
-    // wrong stretched full-width on a phone (icon centered over the text — feedback #12/#35);
-    // mirror the catalogue's iPhone row (CatalogAppCell) instead. =====
-    if (UI_USER_INTERFACE_IDIOM() != UIUserInterfaceIdiomPad) {
-        static NSString *cellId = @"revCell";
-        CatalogAppCell *cell = [tv dequeueReusableCellWithIdentifier:cellId];
-        if (!cell) cell = [[CatalogAppCell alloc] initWithStyle:UITableViewCellStyleDefault
-                                                reuseIdentifier:cellId];
-        NSDictionary *app = (ip.row < (NSInteger)self.apps.count) ? self.apps[ip.row] : nil;
-        cell.appTitleLabel.text = app[@"title"] ?: @"?";
-        long long size = [app[@"size"] longLongValue];
-        cell.appSubtitleLabel.text = [NSString stringWithFormat:@"v%@ — min iOS %@ — %@",
-                                        app[@"version"] ?: @"?", app[@"minOS"] ?: @"?", RevHumanSize(size)];
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        cell.selectionStyle = UITableViewCellSelectionStyleBlue;
-        NSString *iconUrl = app[@"icon"];
-        CGSize sz = CGSizeMake(kRevIconSize, kRevIconSize);
-        UIImage *cached = [[IconLoader shared] cachedImageForURL:iconUrl targetSize:sz];
-        if (cached) {
-            cell.appIconView.image = cached;
-        } else {
-            cell.appIconView.image = nil;
-            NSString *expected = app[@"title"];
-            [[IconLoader shared] loadImageForURL:iconUrl targetSize:sz via:nil completion:^(UIImage *img) {
-                if (!img) return;
-                CatalogAppCell *vis = (CatalogAppCell *)[self.tableView cellForRowAtIndexPath:ip];
-                if (![vis isKindOfClass:[CatalogAppCell class]]) return;
-                if (ip.row >= (NSInteger)self.apps.count) return;
-                if (![self.apps[ip.row][@"title"] isEqual:expected]) return;
-                vis.appIconView.image = img;
-            }];
-        }
-        return cell;
+    AD_WEAK typeof(self) ws = self;
+    // ===== Grid: multi-tile row (iPad always; iPhone when density > list) — exactly the catalogue =====
+    if ([AppRowCell tilesPerRowForWidth:tv.bounds.size.width] > 1) {
+        static NSString *rid = @"revrow";
+        AppRowCell *c = [tv dequeueReusableCellWithIdentifier:rid];
+        if (!c) c = [[AppRowCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:rid];
+        NSInteger n = [AppRowCell tilesPerRowForWidth:tv.bounds.size.width];
+        c.tilesPerRow = n;
+        c.onTileTap = ^(NSDictionary *app) {
+            if (!app) return;
+            AppDetailViewController *d = [[AppDetailViewController alloc] initWithApp:app allowVersionSwitch:NO];
+            [ws.navigationController pushViewController:d animated:YES];
+        };
+        NSInteger start = ip.row * n;
+        NSMutableArray *slice = [NSMutableArray array];
+        for (NSInteger i = start; i < start + n && i < (NSInteger)self.apps.count; i++)
+            [slice addObject:self.apps[i]];
+        [c setApps:slice];
+        return c;
     }
 
-    // ===== iPad: multi-tile grid row =====
-    static NSString *rid = @"revrow";
-    AppRowCell *c = [tv dequeueReusableCellWithIdentifier:rid];
-    if (!c) c = [[AppRowCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:rid];
-    c.tilesPerRow = self.tpr;
-    AD_WEAK typeof(self) ws = self;
-    c.onTileTap = ^(NSDictionary *app) {
-        if (!app) return;
-        AppDetailViewController *d = [[AppDetailViewController alloc] initWithApp:app allowVersionSwitch:NO];
-        [ws.navigationController pushViewController:d animated:YES];
-    };
-    NSInteger start = ip.row * self.tpr;
-    NSMutableArray *slice = [NSMutableArray array];
-    for (NSInteger i = start; i < start + self.tpr && i < (NSInteger)self.apps.count; i++)
-        [slice addObject:self.apps[i]];
-    [c setApps:slice];
-    return c;
+    // ===== List: one app per row (CatalogAppCell) — exactly the catalogue's list cell =====
+    static NSString *cellId = @"revCell";
+    CatalogAppCell *cell = [tv dequeueReusableCellWithIdentifier:cellId];
+    if (!cell) cell = [[CatalogAppCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                            reuseIdentifier:cellId];
+    NSDictionary *app = (ip.row < (NSInteger)self.apps.count) ? self.apps[ip.row] : nil;
+    cell.appTitleLabel.text = app[@"title"] ?: @"?";
+    long long size = [app[@"size"] longLongValue];
+    NSString *sizeStr = size > 0 ? RevHumanSize(size) : @"?";
+    NSString *metaLine = [NSString stringWithFormat:@"v%@ — min iOS %@ — %@",
+                          app[@"version"] ?: @"?", ADDisplayIOS(app[@"minOS"]), sizeStr];
+    NSString *fname = app[@"fileName"] ?: @"";
+    cell.appSubtitleLabel.text = fname.length ? [NSString stringWithFormat:@"%@\n%@", metaLine, fname] : metaLine;
+    cell.accessoryType = UITableViewCellAccessoryNone;            // catalogue list rows carry no disclosure
+    cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+    NSString *iconUrl = app[@"icon"];
+    CGSize sz = CGSizeMake(kRevIconSize, kRevIconSize);
+    UIImage *cached = [[IconLoader shared] cachedImageForURL:iconUrl targetSize:sz];
+    if (cached) {
+        cell.appIconView.image = cached;
+    } else {
+        cell.appIconView.image = nil;
+        NSString *expected = app[@"title"];
+        [[IconLoader shared] loadImageForURL:iconUrl targetSize:sz via:nil completion:^(UIImage *img) {
+            if (!img) return;
+            CatalogAppCell *vis = (CatalogAppCell *)[ws.tableView cellForRowAtIndexPath:ip];
+            if (![vis isKindOfClass:[CatalogAppCell class]]) return;
+            if (ip.row >= (NSInteger)ws.apps.count) return;
+            if (![ws.apps[ip.row][@"title"] isEqual:expected]) return;
+            vis.appIconView.image = img;
+        }];
+    }
+    return cell;
 }
 
-// iPhone taps go through the table row (iPad taps are handled by the tile's onTileTap).
+// List-mode taps go through the table row; grid-mode taps are handled by the tile's onTileTap.
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
-    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) return;
+    if ([AppRowCell tilesPerRowForWidth:tv.bounds.size.width] > 1) return;   // grid: tile handles the tap
     if (ip.row >= (NSInteger)self.apps.count) return;
     NSDictionary *app = self.apps[ip.row];
     AppDetailViewController *d = [[AppDetailViewController alloc] initWithApp:app allowVersionSwitch:NO];

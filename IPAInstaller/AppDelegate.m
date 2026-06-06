@@ -11,6 +11,7 @@
 #import "Localization.h"
 #import "UpdateChecker.h"
 #import "CheckpointLog.h"
+#import "CrashReporter.h"
 
 // v1.7: a "house" glyph for the Accueil (home) tab. Returns an alpha mask that iOS
 // tints exactly like the other tab icons — no PNG to bundle, crisp at any scale.
@@ -247,6 +248,14 @@ static UIImage *AppDropFavoritesTabIcon(void) {
             [a show];
         });
     }
+
+    // If AppDrop crashed during the previous session, offer (one prompt per crash) to send
+    // the on-device crash log via the anonymous feedback channel. This is how we get real
+    // backtraces for crashes on iOS versions / devices we can't reproduce (e.g. the iPhone 4S
+    // iOS 9.3.6 rotation crash). Deferred well past launch so it never competes with the first
+    // content build, and so it queues AFTER the catalog-quality notice rather than racing it.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ [CrashReporter checkAndOfferReport]; });
 
     return YES;
 }
