@@ -513,11 +513,18 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     static const NSTimeInterval kSlowCheckWindow = 30.0;             // observe over 30s
 
     __block long long lastReceived = 0;
-    __block NSDate *lastTick = [NSDate date];
+    // NOTE (iOS 3 / MRC): under -fno-objc-arc, object-typed __block variables are
+    // NOT retained when the block is copied. An autoreleased `[NSDate date]` stored
+    // here is dead as soon as the enclosing autorelease pool drains — and the
+    // download blocks below run 30s+ later on a background thread, so any message
+    // to it (e.g. timeIntervalSinceNow) crashes in objc_msgSend (EXC_BAD_ACCESS).
+    // Store wall-clock as a primitive NSTimeInterval (double) instead — no object
+    // lifetime to manage, identical behaviour on iOS 3–10.
+    __block NSTimeInterval lastTick = CFAbsoluteTimeGetCurrent();
     // Slow-mirror detection state. We sample the byte counter every kSlowCheckWindow
     // seconds; if avg throughput in that window is under the threshold AND we have
     // retry budget, we trip slowAbort which the isCancelled block returns YES for.
-    __block NSDate *windowStart = [NSDate date];
+    __block NSTimeInterval windowStart = CFAbsoluteTimeGetCurrent();
     __block long long windowStartBytes = 0;
     __block BOOL slowAbort = NO;
 
@@ -541,7 +548,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         // Only consider slow-mirror abort if we still have retry budget — otherwise
         // there's no point dropping the connection.
         if (attempt < kMaxMirrorAttempts - 1) {
-            NSTimeInterval elapsed = -[windowStart timeIntervalSinceNow];
+            NSTimeInterval elapsed = CFAbsoluteTimeGetCurrent() - windowStart;
             if (elapsed >= kSlowCheckWindow) {
                 long long delta = lastReceived - windowStartBytes;
                 double bps = elapsed > 0 ? delta / elapsed : 0;
@@ -552,15 +559,15 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                     return YES;
                 }
                 // Healthy speed — reset the window and keep going.
-                windowStart = [NSDate date];
+                windowStart = CFAbsoluteTimeGetCurrent();
                 windowStartBytes = lastReceived;
             }
         }
         return NO;
     }
                      progress:^(long long received, long long total) {
-        NSDate *now = [NSDate date];
-        NSTimeInterval dt = [now timeIntervalSinceDate:lastTick];
+        NSTimeInterval now = CFAbsoluteTimeGetCurrent();
+        NSTimeInterval dt = now - lastTick;
         double bps = dt > 0 ? (received - lastReceived) / dt : 0;
         lastReceived = received;
         lastTick = now;

@@ -100,7 +100,12 @@
         [chunkErrArr addObject:[NSNull null]];
         [chunkCodeArr addObject:@0];
     }
-    __block NSDate *lastAggregateFire = [NSDate distantPast];
+    // NOTE (iOS 3 / MRC): under -fno-objc-arc, object-typed __block variables are
+    // NOT retained on block copy, so an autoreleased NSDate stored here would be
+    // freed before the chunk progress blocks fire on their background threads
+    // (crash in objc_msgSend). Use a primitive NSTimeInterval; 0 acts as
+    // "distant past" so the first tick always fires.
+    __block NSTimeInterval lastAggregateFire = 0;
     NSLock *lock = [[NSLock alloc] init];
     __block BOOL anyChunkFailed = NO;
 
@@ -133,8 +138,8 @@
             long long aggregateReceived = 0;
             [lock lock];
             chunkBytesArr[idx] = @(chunkReceived);
-            NSDate *now = [NSDate date];
-            if ([now timeIntervalSinceDate:lastAggregateFire] > 0.3) {
+            NSTimeInterval now = CFAbsoluteTimeGetCurrent();
+            if (now - lastAggregateFire > 0.3) {
                 shouldFire = YES;
                 lastAggregateFire = now;
                 for (NSInteger j = 0; j < streamCount; j++) {
