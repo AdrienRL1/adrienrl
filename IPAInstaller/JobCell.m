@@ -5,7 +5,14 @@
 @interface JobCell ()
 @property (nonatomic, strong) UILabel *nameLabel;
 @property (nonatomic, strong) UILabel *messageLabel;
-@property (nonatomic, strong) UIProgressView *progressBar;
+// Custom 2-view progress bar (track + fill). The system UIProgressView's
+// -setTrackTintColor:/-setProgressTintColor: are iOS 5+ selectors and DON'T
+// exist on iOS 3.1.3 → calling them threw NSInvalidArgumentException
+// ("unrecognized selector") and crashed the app. This mirrors the custom bar
+// already used in AppDetailViewController and is fully theme-driven on every OS.
+@property (nonatomic, strong) UIView *progressBar;   // track
+@property (nonatomic, strong) UIView *progressFill;  // themed fill
+@property (nonatomic, assign) CGFloat progressFrac;  // 0..1, re-applied on layout
 @end
 
 @implementation JobCell
@@ -36,8 +43,14 @@
         _messageLabel.shadowOffset = CGSizeMake(0, 1);
         [self.contentView addSubview:_messageLabel];
 
-        _progressBar = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleBar];
+        _progressBar = [[UIView alloc] init];   // track
+        _progressBar.clipsToBounds = YES;
+        if ([_progressBar.layer respondsToSelector:@selector(setCornerRadius:)])
+            _progressBar.layer.cornerRadius = 4.5;
         [self.contentView addSubview:_progressBar];
+
+        _progressFill = [[UIView alloc] init];   // themed fill
+        [_progressBar addSubview:_progressFill];
     }
     return self;
 }
@@ -50,6 +63,15 @@
     _nameLabel.frame = CGRectMake(pad, 6, w, 16);
     _messageLabel.frame = CGRectMake(pad, 24, w, 28);
     _progressBar.frame = CGRectMake(pad, b.size.height - 14, w, 9);
+    // Re-apply the fill width after track resize (rotation / reuse).
+    CGFloat trackW = _progressBar.bounds.size.width;
+    _progressFill.frame = CGRectMake(0, 0, trackW * MAX(0, MIN(1, self.progressFrac)), 9);
+}
+
+- (void)setProgressFrac:(CGFloat)frac {
+    _progressFrac = MAX(0, MIN(1, frac));
+    CGFloat trackW = self.progressBar.bounds.size.width;
+    self.progressFill.frame = CGRectMake(0, 0, trackW * _progressFrac, 9);
 }
 
 - (void)configureWithJob:(InstallJob *)job {
@@ -71,7 +93,7 @@
     }
     self.progressBar.hidden = NO;
     // Dark-aware track (the default groove is near-white → glares in dark mode).
-    self.progressBar.trackTintColor = dk ? [UIColor colorWithWhite:0.30 alpha:1.0]
+    self.progressBar.backgroundColor = dk ? [UIColor colorWithWhite:0.30 alpha:1.0]
                                           : [UIColor colorWithWhite:0.82 alpha:1.0];
 
     NSString *etaStr = @"";
@@ -90,23 +112,23 @@
     NSString *detail = [NSString stringWithFormat:@"%@  •  %ld%%%@",
                           job.message ?: job.state, (long)job.progress, etaStr];
     self.messageLabel.text = detail;
-    self.progressBar.progress = MAX(0, MIN(1, job.progress / 100.0));
+    self.progressFrac = job.progress / 100.0;
 
     if ([job.state isEqualToString:@"completed"]) {
-        self.progressBar.progressTintColor = [UIColor colorWithRed:0.20 green:0.65 blue:0.22 alpha:1.0];
+        self.progressFill.backgroundColor = [UIColor colorWithRed:0.20 green:0.65 blue:0.22 alpha:1.0];
         self.messageLabel.textColor = dk ? [UIColor colorWithRed:0.42 green:0.82 blue:0.48 alpha:1.0]
                                           : [UIColor colorWithRed:0.10 green:0.45 blue:0.10 alpha:1.0];
     } else if ([job.state isEqualToString:@"failed"]) {
-        self.progressBar.progressTintColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.15 alpha:1.0];
+        self.progressFill.backgroundColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.15 alpha:1.0];
         self.messageLabel.textColor = dk ? [UIColor colorWithRed:0.96 green:0.46 blue:0.46 alpha:1.0]
                                           : [UIColor colorWithRed:0.65 green:0.10 blue:0.10 alpha:1.0];
     } else if ([job.state isEqualToString:@"cancelled"]) {
         // Orange: not an error, but the download isn't going to finish.
-        self.progressBar.progressTintColor = [UIColor colorWithRed:0.95 green:0.60 blue:0.10 alpha:1.0];
+        self.progressFill.backgroundColor = [UIColor colorWithRed:0.95 green:0.60 blue:0.10 alpha:1.0];
         self.messageLabel.textColor = dk ? [UIColor colorWithRed:0.98 green:0.72 blue:0.34 alpha:1.0]
                                           : [UIColor colorWithRed:0.65 green:0.40 blue:0.05 alpha:1.0];
     } else {
-        self.progressBar.progressTintColor = [UIColor colorWithRed:0.22 green:0.47 blue:0.85 alpha:1.0];
+        self.progressFill.backgroundColor = [UIColor colorWithRed:0.22 green:0.47 blue:0.85 alpha:1.0];
         self.messageLabel.textColor = [IOS6Theme labelGray];
     }
 }
