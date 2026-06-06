@@ -59,9 +59,16 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                                                     userInfo:nil
                                                      repeats:YES];
         CPLog(@"  InstallManager.init: notification observers");
+        // iOS 3 backport: UIApplicationDidEnterBackgroundNotification is a weak-imported
+        // iOS 4.0+ symbol. On 3.1.3 it resolves to NULL, and reading its value to pass as
+        // the `name:` argument dereferences 0 -> EXC_BAD_ACCESS (SIGBUS) at launch, the moment
+        // InstallManager is first touched (opening any app detail page). iOS 3 has no
+        // multitasking / background state anyway, so we register with the constant's literal
+        // string value: identical behaviour on iOS 4+ (the observer fires on backgrounding),
+        // and a harmless no-op observer on iOS 3 (the notification is simply never posted).
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                   selector:@selector(saveJobsToDisk)
-                                                      name:UIApplicationDidEnterBackgroundNotification
+                                                      name:@"UIApplicationDidEnterBackgroundNotification"
                                                     object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                   selector:@selector(saveJobsToDisk)

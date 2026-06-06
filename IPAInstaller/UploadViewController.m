@@ -61,7 +61,14 @@ enum { D_NAME, D_DESC, D_MINIOS, D_VERSION, D_MOD, D_BID, D_CREDIT, D_COUNT };
 #pragma mark - Keyboard
 
 - (void)kbShow:(NSNotification *)n {
-    CGRect f = [[n.userInfo objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    // iOS 3 backport: UIKeyboardFrameEndUserInfoKey is weak-imported (iOS 3.2+) and resolves to
+    // NULL on 3.1.3 — referencing the symbol crashes, and userInfo[NULL] would throw. Look the
+    // key up by its literal string (its value equals its name) and fall back to the iOS-2
+    // UIKeyboardBoundsUserInfoKey, which 3.x actually posts.
+    NSValue *fv = [n.userInfo objectForKey:@"UIKeyboardFrameEndUserInfoKey"];
+    if (!fv) fv = [n.userInfo objectForKey:@"UIKeyboardBoundsUserInfoKey"];
+    if (!fv) return;
+    CGRect f = [fv CGRectValue];
     f = [self.view convertRect:f fromView:nil];
     CGFloat overlap = MAX(0, self.view.bounds.size.height - f.origin.y);
     UIEdgeInsets in = self.tableView.contentInset; in.bottom = overlap;

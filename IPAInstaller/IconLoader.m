@@ -235,11 +235,18 @@ static UIImage *IconForceDecode(UIImage *image) {
 
     CGImageSourceRef src = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
     if (!src) return nil;
-    NSDictionary *opts = @{
-        (__bridge id)kCGImageSourceCreateThumbnailFromImageAlways: (__bridge id)kCFBooleanTrue,
-        (__bridge id)kCGImageSourceCreateThumbnailWithTransform:   (__bridge id)kCFBooleanTrue,
-        (__bridge id)kCGImageSourceThumbnailMaxPixelSize: @((int)MAX(px.width, px.height)),
-    };
+    // iOS 3 backport: the kCGImageSource* thumbnail keys are weak-imported (iOS 4+ in the 5.1 SDK).
+    // If any resolves to NULL on an old device, putting it in a dictionary literal as a key throws
+    // (NSInvalidArgumentException, "nil key") and takes down every icon decode. Build the options
+    // dict defensively so a missing key is simply skipped — ImageIO then full-decodes + we downscale,
+    // which is exactly the pre-thumbnail-API behaviour.
+    NSMutableDictionary *opts = [NSMutableDictionary dictionary];
+    if (&kCGImageSourceCreateThumbnailFromImageAlways != NULL)
+        opts[(__bridge id)kCGImageSourceCreateThumbnailFromImageAlways] = (__bridge id)kCFBooleanTrue;
+    if (&kCGImageSourceCreateThumbnailWithTransform != NULL)
+        opts[(__bridge id)kCGImageSourceCreateThumbnailWithTransform]   = (__bridge id)kCFBooleanTrue;
+    if (&kCGImageSourceThumbnailMaxPixelSize != NULL)
+        opts[(__bridge id)kCGImageSourceThumbnailMaxPixelSize] = @((int)MAX(px.width, px.height));
     CGImageRef thumb = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)opts);
     CFRelease(src);
     if (!thumb) return nil;

@@ -155,7 +155,14 @@ static UIImage * __attribute__((unused)) AppDropFeedbackBarIcon(void) {
 #pragma mark - Keyboard
 
 - (void)kbShow:(NSNotification *)n {
-    CGRect f = [n.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    // iOS 3 backport: UIKeyboardFrameEndUserInfoKey is weak-imported (iOS 3.2+) and resolves to
+    // NULL on 3.1.3 — referencing the symbol crashes, and userInfo[NULL] would throw. Look the
+    // key up by its literal string (its value equals its name) and fall back to the iOS-2
+    // UIKeyboardBoundsUserInfoKey, which 3.x actually posts.
+    NSValue *fv = [n.userInfo objectForKey:@"UIKeyboardFrameEndUserInfoKey"];
+    if (!fv) fv = [n.userInfo objectForKey:@"UIKeyboardBoundsUserInfoKey"];
+    if (!fv) return;
+    CGRect f = [fv CGRectValue];
     f = [self.view convertRect:f fromView:nil];
     self.kbCutoff = f.origin.y;     // top of the keyboard, in this view's coords
     [self applyLayout];
