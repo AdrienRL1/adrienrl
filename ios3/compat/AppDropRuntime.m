@@ -702,6 +702,57 @@ static void AppDropDismissVC(id self, SEL _cmd, BOOL animated, void (^completion
 }
 @end
 
+#pragma mark - -[UITableView setBackgroundView:] / backgroundView  (iOS 3.2)
+
+// UITableView -backgroundView / -setBackgroundView: debut in iOS 3.2. The 5.1
+// SDK declares them so call sites compile, but on a real iOS 3.1.3 device the
+// selectors don't exist on UITableView, so the first assignment throws:
+//     *** -[UITableView setBackgroundView:]: unrecognized selector
+//         → uncaught NSInvalidArgumentException → SIGABRT
+// AppDrop sets `table.backgroundView = nil` in several controllers (and
+// -[RootViewController buildTable] does it unconditionally) to strip the light
+// iOS-6 grouped backdrop, so the app aborts the moment a table is built.
+//
+// We install both selectors (only when absent, i.e. on 3.x). The stored view is
+// kept as an associated object with retain semantics; a non-nil view is inserted
+// as the table's lowest subview, nil just removes the previously stored one. On
+// 3.1.3 the grouped backdrop the app removes doesn't exist, so `= nil` is a
+// harmless no-op; the real insert/remove keeps a future non-nil assignment sane.
+
+static const char kAppDropTableBackgroundViewKey;
+
+static id AppDropTableBackgroundView(id self, SEL _cmd) {
+    return objc_getAssociatedObject(self, &kAppDropTableBackgroundViewKey);
+}
+
+static void AppDropTableSetBackgroundView(id self, SEL _cmd, id bgView) {
+    UIView *old = objc_getAssociatedObject(self, &kAppDropTableBackgroundViewKey);
+    if (old == bgView) return;
+    if (old) [old removeFromSuperview];
+    // OBJC_ASSOCIATION_RETAIN (=01401) so the view lives as long as the table.
+    objc_setAssociatedObject(self, &kAppDropTableBackgroundViewKey, bgView,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (bgView) {
+        UIView *table = (UIView *)self;
+        [bgView setFrame:[table bounds]];
+        [table insertSubview:bgView atIndex:0];
+    }
+}
+
+@interface UITableView (AppDropBackgroundViewShim) @end
+@implementation UITableView (AppDropBackgroundViewShim)
++ (void)load {
+    if (![UITableView instancesRespondToSelector:@selector(backgroundView)]) {
+        class_addMethod([UITableView class], @selector(backgroundView),
+                        (IMP)AppDropTableBackgroundView, "@@:");
+    }
+    if (![UITableView instancesRespondToSelector:@selector(setBackgroundView:)]) {
+        class_addMethod([UITableView class], @selector(setBackgroundView:),
+                        (IMP)AppDropTableSetBackgroundView, "v@:@");
+    }
+}
+@end
+
 #pragma mark - +[UIView animateWithDuration:...] block animations  (iOS 4.0)
 
 // The block-based UIView animation CLASS methods are iOS 4.0+:
