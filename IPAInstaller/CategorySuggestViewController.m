@@ -29,7 +29,20 @@ static NSString *csLocSub(NSString *s) { return csLocName(@"sub.", s); }
 @property (nonatomic, assign) BOOL sending;
 @end
 
-@implementation CategorySuggestViewController
+@implementation CategorySuggestViewController {
+    // iOS 3: blocks aren't ObjC objects, so a synthesized @property(copy) block
+    // setter calls objc_setProperty(copy=YES) → -copyWithZone: on the block →
+    // Bus error (signal 10). Back the block manually via the C blocks runtime —
+    // see AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+    void (^_onPickBlock)(NSString *category, NSString *subgenre);
+}
+@dynamic onPick;
+AD_BLOCK_ACCESSORS(onPick, setOnPick, _onPickBlock, void(^)(NSString *category, NSString *subgenre))
+
+- (void)dealloc {
+    if (_onPickBlock) _Block_release((const void *)_onPickBlock);
+    [super dealloc];
+}
 
 - (instancetype)initWithBundleId:(NSString *)bid name:(NSString *)name {
     if ((self = [super initWithStyle:UITableViewStyleGrouped])) {

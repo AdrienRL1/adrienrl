@@ -4,11 +4,23 @@
 @interface NCRequest : NSObject <NSURLConnectionDataDelegate>
 @property (nonatomic, strong) NSMutableData *buffer;
 @property (nonatomic, strong) NSHTTPURLResponse *response;
-@property (nonatomic, copy) void (^completion)(NSData *, NSHTTPURLResponse *, NSError *);
 @property (nonatomic, strong) NSURLConnection *connection;
 @end
 
-@implementation NCRequest
+@implementation NCRequest {
+    // iOS 3: blocks aren't ObjC objects, so a synthesized @property(copy) block
+    // setter calls objc_setProperty(copy=YES) → -copyWithZone: on the block →
+    // Bus error (signal 10). Back the block manually through the C blocks runtime
+    // (_Block_copy/_Block_release) — see AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+    void (^_completionBlock)(NSData *, NSHTTPURLResponse *, NSError *);
+}
+@dynamic completion;
+AD_BLOCK_ACCESSORS(completion, setCompletion, _completionBlock, void(^)(NSData *, NSHTTPURLResponse *, NSError *))
+
+- (void)dealloc {
+    if (_completionBlock) _Block_release((const void *)_completionBlock);
+    [super dealloc];
+}
 
 - (void)start:(NSURLRequest *)req {
     self.buffer = [NSMutableData data];
