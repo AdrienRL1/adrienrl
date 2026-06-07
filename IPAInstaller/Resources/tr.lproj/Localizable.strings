@@ -551,3 +551,10 @@
 "upload.desc_ph_req" = "Açıklama (zorunlu)";
 "upload.desc_ph_opt" = "Açıklama (isteğe bağlı)";
 "upload.analyzing" = "Çözümleniyor…";
+
+/* v3.1.3 — respring + same-category guard */
+"settings.respring" = "Respring";
+"settings.respring_msg" = "Ana ekran (SpringBoard) yeniden başlatılsın mı? Yüklenen bir uygulamanın simgesi görünmediyse kullanın. Ekran birkaç saniye kararır.";
+"suggestcat.same_category" = "Bu uygulama zaten o kategoride. Değişiklik önermek için farklı bir kategori veya bölüm seç.";
+"settings.clear_catalog" = "Katalog önbelleğini temizle (yeniden indir)";
+"settings.catalog_cleared_msg" = "Katalog önbelleği temizlendi. AppDrop en güncel kataloğu şimdi yeniden indiriyor (çevrimdışıysan bir sonraki açılışta).";

@@ -31,9 +31,7 @@ static void cpAppend(NSString *line) {
         // 2) NSLog — convenient on Mac during dev, also lands in syslog
         NSLog(@"AppDrop %@", line);
         // 3) disk attempts
-        cpAppendAtPath(@"/tmp/appdrop-launch.log", line);
         cpAppendAtPath(@"/var/mobile/Documents/appdrop-launch.log", line);
-        cpAppendAtPath([NSTemporaryDirectory() stringByAppendingPathComponent:@"appdrop-launch.log"], line);
     } @catch (__unused id e) {}
 }
 
@@ -53,12 +51,8 @@ void CPLogReset(void) {
     @try {
         // Best-effort wipe on each disk path; syslog isn't wipeable but the
         // boundary line below is enough to identify a fresh launch.
-        FILE *f1 = fopen("/tmp/appdrop-launch.log", "w");
-        if (f1) fclose(f1);
         FILE *f2 = fopen("/var/mobile/Documents/appdrop-launch.log", "w");
         if (f2) fclose(f2);
-        FILE *f3 = fopen([[NSTemporaryDirectory() stringByAppendingPathComponent:@"appdrop-launch.log"] fileSystemRepresentation], "w");
-        if (f3) fclose(f3);
     } @catch (__unused id e) {}
     CPLog(@"=== launch begin ===");
 }

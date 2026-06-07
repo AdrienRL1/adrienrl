@@ -491,9 +491,12 @@ static NSString *uvLocSub(NSString *s) { return uvLocName(@"sub.", s); }
     if ([MachOInspector inspectIPA:self.chosenPath] == MachOInspectionResultEncrypted) {
         [self alert:T(@"upload.title") msg:T(@"upload.err_encrypted")]; return;
     }
-    NSData *fileData = [NSData dataWithContentsOfFile:self.chosenPath];
-    if (!fileData.length) { [self alert:T(@"upload.title") msg:T(@"upload.err_read")]; return; }
-    NSString *b64 = [self base64:fileData];
+    NSString *b64;
+    {
+        NSData *fileData = [NSData dataWithContentsOfFile:self.chosenPath];
+        if (!fileData.length) { [self alert:T(@"upload.title") msg:T(@"upload.err_read")]; return; }
+        b64 = [self base64:fileData];
+    }
     if (!b64.length) { [self alert:T(@"upload.title") msg:T(@"upload.err_read")]; return; }
 
     [self.view endEditing:YES];

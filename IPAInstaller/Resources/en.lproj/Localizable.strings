@@ -559,3 +559,10 @@
 "upload.desc_ph_req" = "Description (required)";
 "upload.desc_ph_opt" = "Description (optional)";
 "upload.analyzing" = "Analyzing…";
+
+/* v3.1.3 — respring + same-category guard */
+"settings.respring" = "Respring";
+"settings.respring_msg" = "Restart the home screen (SpringBoard)? Use this if an installed app's icon didn't appear. The screen goes black for a few seconds.";
+"suggestcat.same_category" = "This app is already in that category. Pick a different category or section to suggest a change.";
+"settings.clear_catalog" = "Clear catalog cache (re-download)";
+"settings.catalog_cleared_msg" = "Catalog cache cleared. AppDrop is re-downloading the latest catalogue now (or on next launch if you're offline).";

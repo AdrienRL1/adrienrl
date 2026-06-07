@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include "mbedtls/ssl.h"
 #include "mbedtls/entropy.h"
@@ -15,6 +16,41 @@
 #include "mbedtls/error.h"
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/debug.h"
+
+// Shared mbedTLS DRBG, seeded once (dispatch_once). Re-seeding the CTR-DRBG from the
+// entropy pool on every request/redirect/chunk is expensive on the A4 (slow CPU). We
+// seed ONE global context once and feed it to every handshake. ctr_drbg_random is NOT
+// reentrant, and we call it from several threads at once (parallel icon fetches + chunk
+// downloads + redirects), so all access goes through ad_locked_drbg_random, which holds
+// gDrbgLock around mbedtls_ctr_drbg_random. The DRBG only supplies randomness to the TLS
+// handshake, so the downloaded bytes are byte-identical to before.
+static mbedtls_entropy_context  gSharedEntropy;
+static mbedtls_ctr_drbg_context gSharedDrbg;
+static pthread_mutex_t          gDrbgLock = PTHREAD_MUTEX_INITIALIZER;
+static BOOL                     gSharedDrbgReady = NO;
+
+static void ad_init_shared_drbg(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        mbedtls_entropy_init(&gSharedEntropy);
+        mbedtls_ctr_drbg_init(&gSharedDrbg);
+        const char *pers = "IPAInstaller";
+        if (mbedtls_ctr_drbg_seed(&gSharedDrbg, mbedtls_entropy_func, &gSharedEntropy,
+                                  (const unsigned char *)pers, strlen(pers)) == 0) {
+            gSharedDrbgReady = YES;
+        }
+    });
+}
+
+// Thread-safe RNG callback for mbedtls_ssl_conf_rng. The context arg is ignored (the
+// DRBG is global). Locks gDrbgLock because mbedtls_ctr_drbg_random isn't reentrant.
+static int ad_locked_drbg_random(void *p, unsigned char *out, size_t len) {
+    (void)p;
+    pthread_mutex_lock(&gDrbgLock);
+    int rc = mbedtls_ctr_drbg_random(&gSharedDrbg, out, len);
+    pthread_mutex_unlock(&gDrbgLock);
+    return rc;
+}
 
 static NSError *mkErr(NSInteger code, NSString *msg) {
     return [NSError errorWithDomain:@"HTTPSClient" code:code
@@ -369,22 +405,18 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
     // ---- TLS handshake via mbedTLS ----
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
 
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
 
     int ret = 0;
-    const char *pers = "IPAInstaller";
     NSError *err = nil;
 
+    // Seed the shared DRBG once (no per-request entropy reseed — costly on A4).
+    ad_init_shared_drbg();
+
     do {
-        ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                    (const unsigned char *)pers, strlen(pers));
-        if (ret != 0) { err = mkErr(10, @"ctr_drbg_seed failed"); break; }
+        if (!gSharedDrbgReady) { err = mkErr(10, @"ctr_drbg_seed failed"); break; }
 
         ret = mbedtls_ssl_config_defaults(&conf,
                                           MBEDTLS_SSL_IS_CLIENT,
@@ -394,7 +426,7 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
 
         // No cert verification (insecure but acceptable for public IPA downloads)
         mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
-        mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+        mbedtls_ssl_conf_rng(&conf, ad_locked_drbg_random, NULL);
 
         // Force TLS 1.2 (most compatible with archive.org and our build)
         mbedtls_ssl_conf_min_tls_version(&conf, MBEDTLS_SSL_VERSION_TLS1_2);
@@ -461,8 +493,7 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
 
     mbedtls_ssl_free(&ssl);
     mbedtls_ssl_config_free(&conf);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_entropy_free(&entropy);
+    // gSharedDrbg / gSharedEntropy are process-global — never freed here.
     close(fd);
 
     if (err) {
@@ -822,27 +853,22 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
     // ---- TLS setup (if HTTPS) ----
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context drbg;
     BOOL sslReady = NO;
     NSError *err = nil;
 
     if (isHTTPS) {
         mbedtls_ssl_init(&ssl);
         mbedtls_ssl_config_init(&conf);
-        mbedtls_entropy_init(&entropy);
-        mbedtls_ctr_drbg_init(&drbg);
+        // Seed the shared DRBG once (no per-download entropy reseed — costly on A4).
+        ad_init_shared_drbg();
         do {
-            const char *pers = "IPAInstall-dl";
-            if (mbedtls_ctr_drbg_seed(&drbg, mbedtls_entropy_func, &entropy,
-                                       (const unsigned char *)pers, strlen(pers)) != 0)
-                { err = mkErr(10, @"drbg"); break; }
+            if (!gSharedDrbgReady) { err = mkErr(10, @"drbg"); break; }
             if (mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT,
                                             MBEDTLS_SSL_TRANSPORT_STREAM,
                                             MBEDTLS_SSL_PRESET_DEFAULT) != 0)
                 { err = mkErr(11, @"ssl_config"); break; }
             mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_NONE);
-            mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &drbg);
+            mbedtls_ssl_conf_rng(&conf, ad_locked_drbg_random, NULL);
             mbedtls_ssl_conf_min_tls_version(&conf, MBEDTLS_SSL_VERSION_TLS1_2);
             mbedtls_ssl_conf_max_tls_version(&conf, MBEDTLS_SSL_VERSION_TLS1_2);
             if (mbedtls_ssl_setup(&ssl, &conf) != 0) { err = mkErr(12, @"setup"); break; }
@@ -864,7 +890,6 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
         } while (0);
         if (err) {
             mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-            mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&entropy);
             close(fd);
             if (outError) *outError = err;
             return NO;
@@ -966,8 +991,7 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
         if (s != (ssize_t)reqLen) err = mkErr(15, @"send");
     }
     if (err) {
-        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-                        mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&entropy); }
+        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); }
         close(fd);
         if (outError) *outError = err;
         return NO;
@@ -1001,16 +1025,14 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
         }
     }
     if (cancelledMidHeader) {
-        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-                        mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&entropy); }
+        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); }
         close(fd);
         if (outError) *outError = mkErr(99, T(@"common.cancelled"));
         if (outStatus) *outStatus = -1;
         return NO;
     }
     if (headerEnd < 0) {
-        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-                        mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&entropy); }
+        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); }
         close(fd);
         if (outError) *outError = mkErr(20, T(@"install.error.no_headers"));
         return NO;
@@ -1043,8 +1065,7 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
             }
         }
         if (sslReady) { mbedtls_ssl_close_notify(&ssl); mbedtls_ssl_free(&ssl);
-                        mbedtls_ssl_config_free(&conf); mbedtls_ctr_drbg_free(&drbg);
-                        mbedtls_entropy_free(&entropy); sslReady = NO; }
+                        mbedtls_ssl_config_free(&conf); sslReady = NO; }
         close(fd); fd = -1;
         if (!location.length) {
             if (outError) *outError = mkErr(31,
@@ -1086,8 +1107,7 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
     // Delete it and let the caller retry from scratch (next attempt will see no
     // partial file, omit the Range header, and refetch from byte 0).
     if (statusCode == 416 && resumeFrom > 0) {
-        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-                        mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&entropy); }
+        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); }
         close(fd);
         [[NSFileManager defaultManager] removeItemAtPath:filePath error:nil];
         NSLog(@"[HTTPSClient] 416 with resumeFrom=%lld — discarding partial, retrying from scratch", resumeFrom);
@@ -1101,8 +1121,7 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
     }
 
     if (statusCode < 200 || statusCode >= 300) {
-        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-                        mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&entropy); }
+        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); }
         close(fd);
         if (outError) *outError = mkErr(statusCode, [NSString stringWithFormat:@"HTTP %ld", (long)statusCode]);
         return NO;
@@ -1113,8 +1132,7 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
     // chunk file would be filled with unrelated bytes. Bail and let the caller
     // either retry or fall back to single-stream whole-file download.
     if (chunkMode && statusCode == 200) {
-        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-                        mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&entropy); }
+        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); }
         close(fd);
         if (outError) *outError = mkErr(206, @"Server ignored Range header (chunk mode requires 206)");
         return NO;
@@ -1176,9 +1194,13 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
     // Append mode if the server honored our Range, write mode otherwise (which truncates
     // any existing partial file — appropriate when we got 200 instead of 206).
     FILE *outFile = fopen([filePath fileSystemRepresentation], effectiveResume ? "ab" : "wb");
+    if (outFile) {
+        // Larger fully-buffered stdio buffer (256 KB) to cut write() syscall count on slow
+        // NAND (A4). fclose() flushes before close, so the final file is byte-identical.
+        setvbuf(outFile, NULL, _IOFBF, 262144);
+    }
     if (!outFile) {
-        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf);
-                        mbedtls_ctr_drbg_free(&drbg); mbedtls_entropy_free(&entropy); }
+        if (sslReady) { mbedtls_ssl_free(&ssl); mbedtls_ssl_config_free(&conf); }
         close(fd);
         if (outError) *outError = mkErr(40, @"Cannot open output file");
         return NO;
@@ -1202,7 +1224,7 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
     }
 
     NSDate *lastProgress = [NSDate date];
-    unsigned char chunk[16384];
+    unsigned char chunk[32768];
     BOOL cancelledMidBody = NO;
     while (1) {
         if (isCancelled && isCancelled()) { cancelledMidBody = YES; break; }
@@ -1250,8 +1272,6 @@ static int HC_proxyConnect(NSString *proxyHost, int proxyPort, NSString *targetH
         mbedtls_ssl_close_notify(&ssl);
         mbedtls_ssl_free(&ssl);
         mbedtls_ssl_config_free(&conf);
-        mbedtls_ctr_drbg_free(&drbg);
-        mbedtls_entropy_free(&entropy);
     }
     if (fd >= 0) close(fd);
     if (err) {

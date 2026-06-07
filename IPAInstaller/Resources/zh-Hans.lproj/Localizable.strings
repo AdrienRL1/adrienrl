@@ -551,3 +551,10 @@
 "upload.desc_ph_req" = "说明（必填）";
 "upload.desc_ph_opt" = "说明（可选）";
 "upload.analyzing" = "正在分析…";
+
+/* v3.1.3 — respring + same-category guard */
+"settings.respring" = "Respring";
+"settings.respring_msg" = "重启主屏幕 (SpringBoard)？当已安装应用的图标没有出现时使用。屏幕会黑屏几秒。";
+"suggestcat.same_category" = "此应用已在该类别中。请选择其他类别或分区来建议更改。";
+"settings.clear_catalog" = "清除目录缓存（重新下载）";
+"settings.catalog_cleared_msg" = "目录缓存已清除。AppDrop 正在重新下载最新目录（若离线则在下次启动时）。";

@@ -130,4 +130,10 @@ extern NSString * const AppDropThemeChangedNotification;
 // rect: full bubble bounds. isUser: YES = right-aligned blue; NO = left-aligned gray.
 + (void)drawChatBubbleInRect:(CGRect)rect isUser:(BOOL)isUser;
 
+// ---- Memory management ----
+// Drops every cached bar/button/card bitmap. Safe to call anytime: the next
+// access regenerates each image identically (same mechanism used when the
+// theme changes). Called by the app's memory-warning handler.
++ (void)purgeImageCache;
+
 @end

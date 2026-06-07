@@ -18,5 +18,9 @@
 @property (nonatomic, strong, readonly) UIImageView *appIconView;
 @property (nonatomic, strong, readonly) UILabel     *appTitleLabel;
 @property (nonatomic, strong, readonly) UILabel     *appSubtitleLabel;
+// Cancel token for this row's in-flight icon request. The view controller assigns it after calling
+// -[IconLoader loadImageForURL:…]; prepareForReuse cancels it so a fast scroll doesn't pile up stale
+// icon decodes ahead of the now-visible rows.
+@property (nonatomic, strong) id iconReq;
 
 @end

@@ -1141,6 +1141,31 @@ static NSInteger gUICacheToken = 0;
     });
 }
 
++ (BOOL)respring {
+    // sbreload re-execs SpringBoard gracefully; killall SpringBoard is the harder fallback. Either
+    // rebuilds the home screen so a freshly-installed app's icon appears. We spawn and return — the
+    // respring tears down SpringBoard (and usually this app with it), so there's nothing to wait for.
+    static const char *kSbreload[] = {
+        "/usr/bin/sbreload", "/var/jb/usr/bin/sbreload", "/opt/procursus/bin/sbreload", NULL };
+    for (int i = 0; kSbreload[i]; i++) {
+        if (access(kSbreload[i], X_OK) == 0) {
+            const char *slash = strrchr(kSbreload[i], '/');
+            char *const argv[] = { (char *)(slash ? slash + 1 : kSbreload[i]), NULL };
+            pid_t pid = 0;
+            if (posix_spawn(&pid, kSbreload[i], NULL, NULL, argv, environ) == 0) return YES;
+        }
+    }
+    static const char *kKillall[] = { "/usr/bin/killall", "/bin/killall", "/var/jb/usr/bin/killall", NULL };
+    for (int i = 0; kKillall[i]; i++) {
+        if (access(kKillall[i], X_OK) == 0) {
+            char *const argv[] = { (char *)"killall", (char *)"SpringBoard", NULL };
+            pid_t pid = 0;
+            if (posix_spawn(&pid, kKillall[i], NULL, NULL, argv, environ) == 0) return YES;
+        }
+    }
+    return NO;   // no sbreload / killall found on this device
+}
+
 - (void)runUICache {
     static const char *kUICacheCandidates[] = {
         "/usr/bin/uicache",            // legacy / iOS 5-10 jailbreaks (our audience)

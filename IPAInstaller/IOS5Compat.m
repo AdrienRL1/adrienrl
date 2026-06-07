@@ -16,6 +16,23 @@
 
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import "IOS5Compat.h"
+
+#pragma mark - Adaptive concurrency helpers
+
+// Returns the active core count (>= 1). activeProcessorCount is available
+// since iOS 2, so no runtime guard is required. Single-core A4 devices
+// (iPad 1 / iPhone 4) return 1, which callers use to avoid over-subscribing
+// the one slow core.
+NSUInteger ADRecommendedConcurrency(void) {
+    NSUInteger n = [[NSProcessInfo processInfo] activeProcessorCount];
+    return n < 1 ? 1 : n;
+}
+
+NSUInteger ADRecommendedConcurrencyCapped(NSUInteger maxCap) {
+    NSUInteger n = ADRecommendedConcurrency();
+    return (maxCap && n > maxCap) ? maxCap : n;
+}
 
 #pragma mark - C trampolines (delegate via the iOS-5-era selector)
 

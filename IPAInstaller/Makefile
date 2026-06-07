@@ -9,10 +9,17 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = AppDrop
 
-AppDrop_FILES = main.m AppDelegate.m RootViewController.m InstallManager.m CatalogViewController.m CatalogFilter.m FilterViewController.m AppDetailViewController.m IconLoader.m JobCell.m AppTileView.m AppRowCell.m VersionsViewController.m IOS6Theme.m SettingsViewController.m NetworkClient.m HTTPSClient.m LocalCatalog.m Localization.m CatalogAppCell.m SearchViewController.m CategoryViewController.m CategoryTileView.m FeedbackViewController.m MachOInspector.m ParallelDownloader.m UpdateChecker.m UpdateNotesViewController.m DeviceInfo.m IOS5Compat.m CheckpointLog.m RevivalCatalog.m RevivalListViewController.m ThemePickerViewController.m CollectionStore.m CollectionViewController.m HomeLayoutStore.m FolderPicker.m ModdedCatalog.m FilePickerViewController.m UploadViewController.m ADNumberPickerSheet.m CategorySuggestViewController.m IPAPackage.m CrashReporter.m
+AppDrop_FILES = main.m AppDelegate.m RootViewController.m InstallManager.m CatalogViewController.m CatalogFilter.m FilterViewController.m AppDetailViewController.m IconLoader.m JobCell.m AppTileView.m AppRowCell.m VersionsViewController.m IOS6Theme.m SettingsViewController.m HTTPSClient.m LocalCatalog.m Localization.m CatalogAppCell.m SearchViewController.m CategoryViewController.m CategoryTileView.m FeedbackViewController.m MachOInspector.m ParallelDownloader.m UpdateChecker.m UpdateNotesViewController.m DeviceInfo.m IOS5Compat.m CheckpointLog.m RevivalCatalog.m RevivalListViewController.m ThemePickerViewController.m CollectionStore.m CollectionViewController.m HomeLayoutStore.m FolderPicker.m ModdedCatalog.m FilePickerViewController.m UploadViewController.m ADNumberPickerSheet.m CategorySuggestViewController.m IPAPackage.m CrashReporter.m
 AppDrop_FRAMEWORKS = UIKit CoreGraphics Foundation QuartzCore ImageIO CFNetwork
-AppDrop_CFLAGS = -fobjc-arc -Wall -I$(MBEDTLS_DIR)/include
-AppDrop_LDFLAGS = -L$(MBEDTLS_LIB) -lmbedtls -lmbedx509 -lmbedcrypto -lsqlite3 -lz
+# Perf build (test): -fvisibility=hidden shrinks the dynamic symbol table (faster
+# dyld link at launch; Obj-C metadata is unaffected so reflection/+load still work);
+# -Wl,-dead_strip drops unreachable code/data (smaller binary -> fewer NAND pages to
+# fault in on a cold start). AppDrop_STRIP_FLAGS=-x -S strips locals + residual debug
+# symbols while KEEPING global symbols so the on-device crash reporter still resolves
+# backtraces. -Os is already applied by Theos for FINALPACKAGE builds.
+AppDrop_CFLAGS = -fobjc-arc -Wall -fvisibility=hidden -fvisibility-inlines-hidden -I$(MBEDTLS_DIR)/include
+AppDrop_LDFLAGS = -L$(MBEDTLS_LIB) -lmbedtls -lmbedx509 -lmbedcrypto -lsqlite3 -lz -Wl,-dead_strip
+AppDrop_STRIP_FLAGS = -x -S
 AppDrop_CODESIGN_FLAGS = -Sentitlements.plist
 
 include $(THEOS_MAKE_PATH)/application.mk

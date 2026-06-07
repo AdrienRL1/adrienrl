@@ -38,6 +38,10 @@ extern NSString *const InstallManagerJobSavedNotification;
 @interface InstallManager : NSObject
 
 + (instancetype)shared;
+
+// Restart SpringBoard (graceful sbreload, else killall SpringBoard). Refreshes the home screen /
+// icon cache — used by the Settings "Respring" row + when an installed app's icon doesn't appear.
++ (BOOL)respring;
 - (void)setBackendURL:(NSString *)backendURL;
 - (NSString *)backendURL;
 @property (nonatomic, assign) BOOL autonomousMode;  // YES = local download via mbedTLS + ipainstaller

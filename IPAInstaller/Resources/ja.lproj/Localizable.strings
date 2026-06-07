@@ -551,3 +551,10 @@
 "upload.desc_ph_req" = "説明（必須）";
 "upload.desc_ph_opt" = "説明（任意）";
 "upload.analyzing" = "解析中…";
+
+/* v3.1.3 — respring + same-category guard */
+"settings.respring" = "Respring";
+"settings.respring_msg" = "ホーム画面 (SpringBoard) を再起動しますか？インストールしたアプリのアイコンが表示されない場合に使います。画面が数秒間暗くなります。";
+"suggestcat.same_category" = "このアプリはすでにそのカテゴリにあります。変更を提案するには別のカテゴリまたはセクションを選んでください。";
+"settings.clear_catalog" = "カタログのキャッシュを消去 (再ダウンロード)";
+"settings.catalog_cleared_msg" = "カタログのキャッシュを消去しました。最新のカタログを今すぐ再ダウンロードします (オフラインの場合は次回起動時)。";

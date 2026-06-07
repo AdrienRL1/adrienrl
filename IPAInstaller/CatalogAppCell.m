@@ -1,5 +1,6 @@
 #import "CatalogAppCell.h"
 #import "IOS6Theme.h"
+#import "IconLoader.h"
 
 @interface CatalogAppCell ()
 @property (nonatomic, strong, readwrite) UIImageView *appIconView;
@@ -67,8 +68,16 @@
     self.appSubtitleLabel.frame = CGRectMake(textX, 28, textW, 40);
 }
 
+- (void)dealloc {
+    // Cell destroyed (e.g. table emptied / screen popped) → drop any still-pending icon request.
+    if (_iconReq) [[IconLoader shared] cancelRequest:_iconReq];
+}
+
 - (void)prepareForReuse {
     [super prepareForReuse];
+    // Drop this row's in-flight icon request (reused for another app) so a fast scroll doesn't queue
+    // a stale decode ahead of the now-visible rows. The icon shown is identical, just resolved sooner.
+    if (self.iconReq) { [[IconLoader shared] cancelRequest:self.iconReq]; self.iconReq = nil; }
     self.appIconView.image = nil;
     self.appTitleLabel.text = nil;
     self.appSubtitleLabel.text = nil;

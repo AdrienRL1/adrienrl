@@ -274,7 +274,15 @@ static const NSInteger kPageLimit = 50;
     [NSObject cancelPreviousPerformRequestsWithTarget:self
                                              selector:@selector(runQuery)
                                                object:nil];
-    [self performSelector:@selector(runQuery) withObject:nil afterDelay:0.15];
+    // On a single-core A4 (iPad 1 / iPhone 4) a 0.15 s debounce can fire while the
+    // CPU is still busy decoding the previous keystroke's results; give it more room
+    // to coalesce. Multi-core devices keep the snappy 0.15 s. Read the core count once.
+    static NSTimeInterval sDebounce = 0.15;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sDebounce = ([[NSProcessInfo processInfo] activeProcessorCount] <= 1) ? 0.30 : 0.15;
+    });
+    [self performSelector:@selector(runQuery) withObject:nil afterDelay:sDebounce];
 }
 
 - (void)searchBarTextDidBeginEditing:(UISearchBar *)sb {
@@ -413,13 +421,13 @@ static const NSInteger kPageLimit = 50;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    NSInteger n = [AppRowCell tilesPerRowForWidth:tv.bounds.size.width];
     // ===== Grid: multi-tile row (iPad always; iPhone when density > list) =====
-    if ([AppRowCell tilesPerRowForWidth:tv.bounds.size.width] > 1) {
+    if (n > 1) {
         static NSString *rowId = @"searchRow";
         AppRowCell *row = [tv dequeueReusableCellWithIdentifier:rowId];
         if (!row) row = [[AppRowCell alloc] initWithStyle:UITableViewCellStyleDefault
                                           reuseIdentifier:rowId];
-        NSInteger n = [AppRowCell tilesPerRowForWidth:tv.bounds.size.width];
         row.tilesPerRow = n;
         [row setContentRasterized:!self.gridScrolling];   // rasterize at rest, plain while scrolling
         row.selectionMode = self.selectionMode;
@@ -530,7 +538,8 @@ static const NSInteger kPageLimit = 50;
 }
 
 - (void)scrollViewWillBeginDecelerating:(UIScrollView *)sv {
-    if ([self useGrid]) [AppTileView setSuppressTileText:YES];   // fast fling → tiles draw card+icon only
+    // Tile text now renders continuously while scrolling on ALL devices (incl. 256 MB ones).
+    // The old fling text-suppression is removed (it made text appear only once scrolling stopped).
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)sv willDecelerate:(BOOL)decel {

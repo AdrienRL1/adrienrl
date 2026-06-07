@@ -209,6 +209,7 @@ AppDrop runs no analytics, has no account system, sends no telemetry. See [PRIVA
 - **mbedTLS** — Apache-2.0 TLS library that made HTTPS work on iOS 5-6
 - **autopear** — `ipainstaller`, the helper AppDrop delegates to
 - **Yusubera** (Reddit) — Turkish translation
+- **Gerg_** (Reddit) — Polish translation
 
 ## Disclaimer
 

@@ -1,6 +1,7 @@
 #import "ParallelDownloader.h"
 #import "HTTPSClient.h"
 #import "Localization.h"
+#import <CoreFoundation/CoreFoundation.h>
 
 @implementation ParallelDownloader
 
@@ -100,7 +101,7 @@
         [chunkErrArr addObject:[NSNull null]];
         [chunkCodeArr addObject:@0];
     }
-    __block NSDate *lastAggregateFire = [NSDate distantPast];
+    __block CFAbsoluteTime lastAggregateFire = 0;  // 0 = "never fired"; first tick always passes the 0.3s gate
     NSLock *lock = [[NSLock alloc] init];
     __block BOOL anyChunkFailed = NO;
 
@@ -133,8 +134,8 @@
             long long aggregateReceived = 0;
             [lock lock];
             chunkBytesArr[idx] = @(chunkReceived);
-            NSDate *now = [NSDate date];
-            if ([now timeIntervalSinceDate:lastAggregateFire] > 0.3) {
+            CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+            if (now - lastAggregateFire > 0.3) {
                 shouldFire = YES;
                 lastAggregateFire = now;
                 for (NSInteger j = 0; j < streamCount; j++) {

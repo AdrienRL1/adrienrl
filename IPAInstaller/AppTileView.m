@@ -12,6 +12,9 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 // the key to smooth scrolling: text/card are drawn once per app, never re-rendered per icon.
 @property (nonatomic, strong) UIImageView *iconView;
 @property (nonatomic, copy)   NSString *currentIconUrl;
+// Cancel token for this tile's in-flight icon request. Cancelled the moment the tile is reused for
+// another app, so a fast fling drops the stale decode instead of queueing it ahead of visible tiles.
+@property (nonatomic, strong) id currentIconReq;
 // Selection check, an OVERLAY above the icon (so it stays visible even on tiny dense tiles where
 // the icon fills the card). Updated imperatively → reliably reflects the selected state.
 @property (nonatomic, strong) UIImageView *selectionBadge;
@@ -155,6 +158,9 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 
 - (void)setApp:(NSDictionary *)app {
     _app = [app copy];
+    // Reused cell: cancel the previous app's in-flight icon request so a fast fling doesn't pile up
+    // stale decodes ahead of the now-visible tiles (the icon shown is identical, just resolved sooner).
+    if (self.currentIconReq) { [[IconLoader shared] cancelRequest:self.currentIconReq]; self.currentIconReq = nil; }
     if (!app) {
         self.currentIconUrl = nil;
         self.iconView.image = nil;
@@ -171,7 +177,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     self.iconView.image = cached;   // already force-decoded by IconLoader → pure composite
     if (iconUrl.length && !cached) {
         __weak typeof(self) ws = self;
-        [[IconLoader shared] loadImageForURL:iconUrl targetSize:sz via:nil completion:^(UIImage *img) {
+        self.currentIconReq = [[IconLoader shared] loadImageForURL:iconUrl targetSize:sz via:nil completion:^(UIImage *img) {
             if (!img) return;
             __strong typeof(self) s = ws;
             if (!s || ![s.currentIconUrl isEqualToString:iconUrl]) return;
