@@ -1085,6 +1085,17 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 // (`-l` / `-i` queries still go through runIpainstallerArgs:, which just uses the first installer.)
 - (int)runIpainstallerOnFile:(NSString *)path capturedOutput:(NSString **)outOutput {
     NSArray *args = (path.length ? @[path] : @[]);
+    // v3 / iOS 3 support: prefer installing in-process via MobileInstallationInstall
+    // (no external helper binary needed), exactly like runIpainstallerArgs: does for
+    // the non-autonomous path. This is the AUTONOMOUS-download install path; without
+    // this it skips InProcessInstaller and goes straight to the CLI tools below, which
+    // don't exist on iOS 3.1.3 (the «IPA Installer Console» package needs firmware
+    // >= 4.0), so the install failed with "ipainstaller not found" even though the
+    // in-process installer was available. On iOS 5-9 the CLI tools (if present) still
+    // run via the fall-through below when MobileInstallationInstall is unavailable.
+    if (path.length && [path hasPrefix:@"/"] && [InProcessInstaller isAvailable]) {
+        return [InProcessInstaller installIPAAtPath:path capturedOutput:outOutput];
+    }
     static const char *kIpaFamily[] = { "/usr/bin/ipainstaller", "/var/jb/usr/bin/ipainstaller", "/opt/procursus/bin/ipainstaller", NULL };
     static const char *kAppFamily[] = { "/usr/bin/appinst", "/var/jb/usr/bin/appinst", NULL };
     const char *primary = NULL, *alternate = NULL;
