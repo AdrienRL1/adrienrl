@@ -39,6 +39,14 @@
 //                                        KeyedSubscript: etc., absent pre-iOS 6.
 //                                        Ported here from the build-excluded
 //                                        IOS5Compat.m so it covers every site.)
+//   * +[NSPropertyListSerialization propertyListWithData:options:format:error:]
+//                                       (iOS 4.0 class method; absent on iOS
+//                                        3.1.3 — sending it aborts the app the
+//                                        instant a downloaded IPA's Info.plist
+//                                        is parsed, IPAPackage.m. Bridged to the
+//                                        iOS-2 +propertyListFromData:mutability-
+//                                        Option:format:errorDescription:, which
+//                                        reads both binary and XML plists.)
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
@@ -1273,5 +1281,63 @@ static void AppDropSendAsyncRequest(id cls, SEL _cmd, NSURLRequest *request,
     Class meta = object_getClass((id)[NSURLConnection class]);
     class_addMethod(meta, @selector(sendAsynchronousRequest:queue:completionHandler:),
                     (IMP)AppDropSendAsyncRequest, "v@:@@@?");
+}
+@end
+
+#pragma mark - +[NSPropertyListSerialization propertyListWithData:options:format:error:]
+
+// iOS 4.0 added the class method
+//   +propertyListWithData:options:format:error:
+// On iOS 3.1.3 NSPropertyListSerialization exists but this selector does not,
+// so sending it raises:
+//   *** +[NSPropertyListSerialization propertyListWithData:options:format:error:]:
+//       unrecognized selector sent to class …
+// which is uncaught → terminate → SIGABRT. AppDrop hits this in IPAPackage.m the
+// moment it parses a freshly downloaded IPA's Info.plist (install step), so the
+// app crashes right as installation begins. (Pre-v3.1 there was no such call.)
+//
+// The iOS 2.0-era +propertyListFromData:mutabilityOption:format:errorDescription:
+// is present on iOS 3 and parses both binary and XML property lists, so we bridge
+// straight to it. `format` is an out-param of the same NSPropertyListFormat type
+// in both APIs; `error` (NSError**) is mapped from the legacy errorDescription
+// (NSString*). No-op on iOS 4+ where the modern selector already exists.
+static id AppDropPropertyListWithData(id cls, SEL _cmd,
+                                      NSData *data,
+                                      NSUInteger opt,
+                                      NSPropertyListFormat *fmtOut,
+                                      NSError **errOut) {
+    if (errOut) *errOut = nil;
+    if (![data length]) {
+        if (errOut) *errOut = [NSError errorWithDomain:@"AppDropPlist" code:1
+                                              userInfo:[NSDictionary dictionaryWithObject:@"empty data"
+                                                                                   forKey:NSLocalizedDescriptionKey]];
+        return nil;
+    }
+    NSString *errStr = nil;
+    NSPropertyListFormat fmt = 0;
+    id plist = [NSPropertyListSerialization propertyListFromData:data
+                                               mutabilityOption:(NSPropertyListMutabilityOptions)opt
+                                                         format:&fmt
+                                               errorDescription:&errStr];
+    if (fmtOut) *fmtOut = fmt;
+    if (!plist && errOut) {
+        *errOut = [NSError errorWithDomain:@"AppDropPlist" code:2
+                                  userInfo:(errStr
+                                            ? [NSDictionary dictionaryWithObject:errStr
+                                                                          forKey:NSLocalizedDescriptionKey]
+                                            : nil)];
+    }
+    return plist;
+}
+
+@interface NSPropertyListSerialization (AppDropPlistImpl) @end
+@implementation NSPropertyListSerialization (AppDropPlistImpl)
++ (void)load {
+    if ([NSPropertyListSerialization respondsToSelector:@selector(propertyListWithData:options:format:error:)]) return;
+    Class meta = object_getClass((id)[NSPropertyListSerialization class]);
+    // "@@:@L^L^@" = returns id; self + SEL + NSData* + NSUInteger(L) +
+    // NSPropertyListFormat*(^L, pointer to an NSUInteger-backed enum) + NSError**(^@).
+    class_addMethod(meta, @selector(propertyListWithData:options:format:error:),
+                    (IMP)AppDropPropertyListWithData, "@@:@L^L^@");
 }
 @end
