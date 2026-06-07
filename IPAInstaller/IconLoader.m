@@ -217,7 +217,12 @@ static UIImage *IconForceDecode(UIImage *image) {
 - (void)fireWaiters:(NSString *)key withImage:(UIImage *)img {
     NSArray *waiters = nil;
     @synchronized (self.pending) {
-        waiters = self.pending[key];
+        // MRC (-fno-objc-arc): the pending dict holds the ONLY +1 on this array.
+        // -removeObjectForKey: below releases it → refcount 0 → it deallocs while we
+        // still hold a dangling `waiters` pointer, and the for-loop then enumerates
+        // freed memory → EXC_BAD_ACCESS (SIGBUS) in objc_msgSend (the "random" crash
+        // on the icon-download thread). retain+autorelease keeps it alive for the loop.
+        waiters = [[self.pending[key] retain] autorelease];
         [self.pending removeObjectForKey:key];
     }
     for (ADBlockBox *box in waiters) {
