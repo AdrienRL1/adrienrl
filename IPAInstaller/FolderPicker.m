@@ -5,6 +5,7 @@
 @interface FolderPicker () <UIActionSheetDelegate, UIAlertViewDelegate>
 @property (nonatomic, strong) NSArray *folderIds;     // parallel to the action-sheet folder buttons
 @property (nonatomic, assign) NSInteger newFolderIndex;
+@property (nonatomic, copy)   void (^completion)(NSString *);
 @property (nonatomic, strong) FolderPicker *selfRef;  // keep alive across the async sheet/alert
 @end
 

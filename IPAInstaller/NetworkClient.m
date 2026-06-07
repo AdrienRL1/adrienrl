@@ -4,6 +4,7 @@
 @interface NCRequest : NSObject <NSURLConnectionDataDelegate>
 @property (nonatomic, strong) NSMutableData *buffer;
 @property (nonatomic, strong) NSHTTPURLResponse *response;
+@property (nonatomic, copy)   void (^completion)(NSData *, NSHTTPURLResponse *, NSError *);
 @property (nonatomic, strong) NSURLConnection *connection;
 @end
 

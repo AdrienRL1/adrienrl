@@ -11,6 +11,7 @@
 @property (nonatomic, strong) UIControl *dim;
 @property (nonatomic, strong) UIView *panel;
 @property (nonatomic, strong) UIPickerView *picker;
+@property (nonatomic, copy)   void (^onPick)(NSInteger value);
 @end
 
 @implementation ADNumberPickerSheet {
