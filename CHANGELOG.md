@@ -2,6 +2,30 @@
 
 Older release notes are also available on the [GitHub Releases](https://github.com/AdrienRL1/AppDrop/releases) page.
 
+## AppDrop v3.1.3 — Polish, and a big speed pass
+
+### New
+- **Polish — 9th language.** The whole interface is now translated to Polish, and **all 4,740 app descriptions** are available in Polish too. The app auto-detects a Polish device language. Polish translation contributed by **Gerg_** on Reddit — thank you!
+- **Respring** (Settings) — restart SpringBoard right from the app.
+- **Clear catalog cache** (Settings) — re-download the catalogue if it ever looks stale.
+- **Multi-select on iPhone** — the button to pick several apps and download them at once is now visible on iPhone (it used to get squeezed out of the nav bar).
+
+### Performance — a big pass, every device from the iPad 1 up
+- **Faster, and lighter on CPU, GPU and RAM**, tuned per device class (single-core A4 through multi-core), with **no change in behaviour** — it just does the same thing using less.
+- **Smoother fast-scrolling:** app names render *while* you scroll, icons appear much faster during a fast fling (off-screen requests are cancelled so the visible ones win), and the catalogue keeps loading continuously instead of hitting a wall.
+- **Near-instant category / sub-genre / version browsing** thanks to new catalogue database indexes.
+- Responds to low-memory warnings, bounded image caches, fewer disk writes at launch, a smaller binary, and shared TLS state for lighter downloads.
+
+### Fixed
+- App names under the tiles now appear **while** scrolling (even on 256 MB devices), not only once scrolling stops.
+- You can no longer suggest the category an app is **already** in — only a genuine change.
+- On iPad, the grid no longer stays stuck in the portrait column count after coming back from an app in landscape.
+
+### Compatibility
+iOS 5.0 – 10.x (armv7 / 32-bit), jailbroken. Tested on iPad 1 (iOS 5.1.1), iPad 4 (iOS 6) and iPhone 5.
+
+---
+
 ## AppDrop v3.1.2 — More reliable installs
 
 A small follow-up focused on installs, straight from your feedback.

@@ -34,6 +34,19 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
 // Memory footprint: ~3-5 MB (SQLite's page cache), vs ~80 MB for the in-memory NSArray approach.
 // Startup: ~10ms to open the db + first SELECT, vs 3-5s for NSPropertyListSerialization.
 
+// SQL-08: adaptive SQLite page-cache size by device RAM. Negative cache_size = KiB of cache.
+// Keep the historical -8000 (≈8 MB) on the 256 MB-class devices (iPad 1 / iPhone 4); give roomier
+// machines more cache. Purely a perf knob — it changes no query RESULT.
+static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
+    if (!db) return;
+    unsigned long long ram = [[NSProcessInfo processInfo] physicalMemory];
+    const char *pragma;
+    if (ram <= 320ULL * 1024 * 1024)        pragma = "PRAGMA cache_size = -8000";    // ≤256 MB → 8 MB (unchanged)
+    else if (ram <= 640ULL * 1024 * 1024)   pragma = "PRAGMA cache_size = -16000";   // ≤512 MB → 16 MB
+    else                                    pragma = "PRAGMA cache_size = -24000";   // more → 24 MB
+    sqlite3_exec(db, pragma, NULL, NULL, NULL);
+}
+
 @interface LocalCatalog ()
 @property (nonatomic, assign) sqlite3 *db;
 @property (nonatomic, strong) NSDictionary *urls;  // cached at open (only 27k entries, ~2 MB)
@@ -48,6 +61,11 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
 @implementation LocalCatalog {
     dispatch_queue_t _searchQueue;
     NSString *_dbPath;
+    // SQL-01: cache the COUNT(*) for loadMore. The count depends only on (table|whereClause|qLike),
+    // not on offset/limit — so paging through a constant filter reuses it. Touched ONLY on _searchQueue
+    // (every search, hot-swap, and override/extras re-apply run there), so no extra locking is needed.
+    NSString *_countCacheKey;     // table|whereClause|qLike of the cached total, or nil = invalid
+    long long _countCacheTotal;   // the memoized COUNT(*) for _countCacheKey
 }
 
 + (instancetype)shared {
@@ -210,6 +228,21 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
 
 #pragma mark - Background freshness check (v2.0)
 
+// Settings → "Clear catalog cache". Drops the freshness baseline (so the next update check always
+// re-downloads), deletes the cached .db (the open SQLite handle keeps the running app working until
+// the hot-swap / next launch), then triggers an immediate re-download + hot-swap if online. If
+// offline, the deleted cache means the next launch re-downloads from scratch.
++ (void)clearCachedCatalog {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    [d removeObjectForKey:kCatalogGzSizeKey];
+    [d synchronize];
+    NSString *caches = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    NSString *cached = [caches stringByAppendingPathComponent:@"appdrop_catalog.db"];
+    [[NSFileManager defaultManager] removeItemAtPath:cached error:NULL];
+    [[NSFileManager defaultManager] removeItemAtPath:[cached stringByAppendingString:@".gz"] error:NULL];
+    [[self shared] checkForCatalogUpdate];   // re-download now (if online)
+}
+
 // Cheap freshness probe — safe to call on every launch / foreground. HEADs the remote
 // catalog.db.gz; if its size differs from the one we last downloaded, fetches the new
 // catalogue and hot-swaps it in place. No-op until loaded, and never runs two at once.
@@ -284,7 +317,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
         [fm moveItemAtPath:dbTmp toPath:cached error:NULL];
 
         sqlite3_exec(newdb, "PRAGMA mmap_size = 0", NULL, NULL, NULL);   // #171: no mmap → no 0xdead10cc suspend-kill
-        sqlite3_exec(newdb, "PRAGMA cache_size = -8000",    NULL, NULL, NULL);
+        ADApplyAdaptiveCacheSize(newdb);                                 // SQL-08: RAM-adaptive page cache
         sqlite3_exec(newdb, "PRAGMA temp_store = MEMORY",   NULL, NULL, NULL);
 
         NSMutableDictionary *urls = [NSMutableDictionary dictionaryWithCapacity:30000];
@@ -296,7 +329,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
                 if (!u) continue;
                 NSString *urlStr = [NSString stringWithUTF8String:(const char *)u];
                 if (!urlStr.length) continue;
-                urls[[NSString stringWithFormat:@"%d", idx]] = urlStr;
+                urls[@(idx)] = urlStr;   // SQL-07: NSNumber key (matches dictFromRow / urlForBaseIdx)
             }
         }
         sqlite3_finalize(st);
@@ -305,6 +338,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
         self.db = newdb;
         self.urls = urls;
         _dbPath = [cached copy];
+        _countCacheKey = nil;   // SQL-01: new DB → discard the memoized COUNT (still on _searchQueue)
         if (old) sqlite3_close(old);
         [self applyStoredCategoryOverrides];     // #156: re-apply category corrections to the fresh DB
         if (kEnableCatalogExtras) [self applyCatalogExtras];     // v3.2 (deferred): re-merge community apps
@@ -376,7 +410,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
         // connection holds no lock between queries, so dropping mmap removes the only thing iOS sees
         // held across suspension. Indexed queries stay fast via the page cache below.
         sqlite3_exec(db, "PRAGMA mmap_size = 0", NULL, NULL, NULL);          // no mmap → no 0xdead10cc
-        sqlite3_exec(db, "PRAGMA cache_size = -8000", NULL, NULL, NULL);     // 8 MB page cache
+        ADApplyAdaptiveCacheSize(db);                                        // SQL-08: RAM-adaptive page cache
         sqlite3_exec(db, "PRAGMA temp_store = MEMORY", NULL, NULL, NULL);
 
         // Pre-load all urls.
@@ -389,7 +423,7 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
                 if (!u) continue;
                 NSString *urlStr = [NSString stringWithUTF8String:(const char *)u];
                 if (!urlStr.length) continue;  // invalid UTF-8 or empty — skip the row
-                urls[[NSString stringWithFormat:@"%d", idx]] = urlStr;
+                urls[@(idx)] = urlStr;   // SQL-07: NSNumber key (matches dictFromRow / urlForBaseIdx)
             }
         }
         sqlite3_finalize(st);
@@ -505,26 +539,40 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
     NSString *orderBy = [NSString stringWithFormat:@"%@ %@", orderCol, dir];
 
     // Count + data in two queries — both indexed, so each is sub-millisecond.
+    // SQL-01: COUNT(*) depends only on (table, whereClause, qLike) — NOT on offset/limit. When
+    // loadMore pages through a constant filter (same key, growing offset), reuse the memoized total
+    // and skip prepare+step+finalize of the COUNT entirely. All accesses are on _searchQueue.
     long long total = 0;
-    NSString *countSQL = [NSString stringWithFormat:@"SELECT COUNT(*) FROM %@ WHERE 1=1%@",
-                                                       table, whereClause];
-    sqlite3_stmt *st = NULL;
-    if (sqlite3_prepare_v2(self.db, [countSQL UTF8String], -1, &st, NULL) == SQLITE_OK) {
-        if (qLike) sqlite3_bind_text(st, 1, [qLike UTF8String], -1, SQLITE_TRANSIENT);
-        if (sqlite3_step(st) == SQLITE_ROW) total = sqlite3_column_int64(st, 0);
+    NSString *countKey = [NSString stringWithFormat:@"%@|%@|%@", table, whereClause, qLike ?: @""];
+    if (_countCacheKey && [_countCacheKey isEqualToString:countKey]) {
+        total = _countCacheTotal;
+    } else {
+        NSString *countSQL = [NSString stringWithFormat:@"SELECT COUNT(*) FROM %@ WHERE 1=1%@",
+                                                           table, whereClause];
+        sqlite3_stmt *st = NULL;
+        if (sqlite3_prepare_v2(self.db, [countSQL UTF8String], -1, &st, NULL) == SQLITE_OK) {
+            if (qLike) sqlite3_bind_text(st, 1, [qLike UTF8String], -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(st) == SQLITE_ROW) total = sqlite3_column_int64(st, 0);
+        }
+        sqlite3_finalize(st);
+        _countCacheKey = countKey;
+        _countCacheTotal = total;
     }
-    sqlite3_finalize(st);
 
     NSString *cols = @"pk, plat, minos, title, bid, version, base_idx, filename, size_kb, img_pk";
     if (unique) cols = [cols stringByAppendingString:@", min_minos"];   // extra col 10
+    // SQL-02: LIMIT/OFFSET are bound (?2/?3) instead of interpolated. ?1 is the LIKE param (when qLike);
+    // whereClause's category/subgenre stay interpolated as before. Prepare+finalize per page (no shared stmt).
     NSString *dataSQL = [NSString stringWithFormat:
-        @"SELECT %@ FROM %@ WHERE 1=1%@ ORDER BY %@ LIMIT %ld OFFSET %ld",
-        cols, table, whereClause, orderBy, (long)limit, (long)offset];
+        @"SELECT %@ FROM %@ WHERE 1=1%@ ORDER BY %@ LIMIT ?2 OFFSET ?3",
+        cols, table, whereClause, orderBy];
 
     NSMutableArray *results = [NSMutableArray arrayWithCapacity:limit];
-    st = NULL;
+    sqlite3_stmt *st = NULL;
     if (sqlite3_prepare_v2(self.db, [dataSQL UTF8String], -1, &st, NULL) == SQLITE_OK) {
         if (qLike) sqlite3_bind_text(st, 1, [qLike UTF8String], -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(st, 2, (sqlite3_int64)limit);
+        sqlite3_bind_int64(st, 3, (sqlite3_int64)offset);
         while (sqlite3_step(st) == SQLITE_ROW) {
             NSMutableDictionary *d = [[self dictFromRow:st] mutableCopy];
             if (unique) {
@@ -770,7 +818,7 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSString *versionStr = (version ? [NSString stringWithUTF8String:(const char *)version] : nil) ?: @"";
     NSString *filenameStr = (filename ? [NSString stringWithUTF8String:(const char *)filename] : nil) ?: @"";
 
-    NSString *baseURL = self.urls[[NSString stringWithFormat:@"%ld", (long)baseIdx]] ?: @"";
+    NSString *baseURL = self.urls[@(baseIdx)] ?: @"";   // SQL-07: NSNumber key (matches urls build)
     if (baseURL.length && ![baseURL hasSuffix:@"/"]) baseURL = [baseURL stringByAppendingString:@"/"];
     NSString *ipaURL = (baseURL.length && filenameStr.length)
         ? [baseURL stringByAppendingString:filenameStr] : @"";
@@ -885,6 +933,7 @@ static NSString *iconURLForImgPk(long imgPk) {
         [data writeToFile:[self categoryOverridesCachePath] atomically:YES];
         dispatch_async(self->_searchQueue, ^{
             [self applyStoredCategoryOverrides];
+            self->_countCacheKey = nil;   // SQL-01: category/subgenre changed → counts may differ
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[NSNotificationCenter defaultCenter] postNotificationName:LocalCatalogDidUpdateNotification object:nil];
             });
@@ -901,7 +950,7 @@ static NSString *iconURLForImgPk(long imgPk) {
 
 // Resolve an existing catalogue row's .ipa URL from its base_idx + filename (same scheme as dictFromRow).
 - (NSString *)urlForBaseIdx:(NSInteger)baseIdx filename:(NSString *)filename {
-    NSString *baseURL = self.urls[[NSString stringWithFormat:@"%ld", (long)baseIdx]] ?: @"";
+    NSString *baseURL = self.urls[@(baseIdx)] ?: @"";   // SQL-07: NSNumber key (matches urls build)
     if (baseURL.length && ![baseURL hasSuffix:@"/"]) baseURL = [baseURL stringByAppendingString:@"/"];
     return (baseURL.length && filename.length) ? [baseURL stringByAppendingString:filename] : @"";
 }
@@ -1056,6 +1105,7 @@ static NSString *iconURLForImgPk(long imgPk) {
         [data writeToFile:[self catalogExtrasCachePath] atomically:YES];
         dispatch_async(self->_searchQueue, ^{
             [self applyCatalogExtras];
+            self->_countCacheKey = nil;   // SQL-01: extras inserted/removed rows → counts may differ
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[NSNotificationCenter defaultCenter] postNotificationName:LocalCatalogDidUpdateNotification object:nil];
             });
@@ -1111,6 +1161,7 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSDictionary *colMap = @{
         @"en": @"desc_en", @"fr": @"desc_fr", @"es": @"desc_es", @"de": @"desc_de",
         @"pt-BR": @"desc_ptBR", @"ja": @"desc_ja", @"zh-Hans": @"desc_zhHans", @"tr": @"desc_tr",
+        @"pl": @"desc_pl",
     };
     NSString *col = colMap[lang];
     if (!col) {

@@ -225,6 +225,17 @@ AD_BLOCK_ACCESSORS(onPick, setOnPick, _onPickBlock, void(^)(NSString *category, 
         [self.navigationController popViewControllerAnimated:YES];
         return;
     }
+    // Don't send a no-op suggestion: most "wrong category" reports were actually for the category the
+    // app is ALREADY in (the screen preselects the current category, so tapping Submit without
+    // changing anything sent a same-category suggestion). Require a real change.
+    if ([self.selectedCategory isEqualToString:(self.currentCategory ?: @"")]
+        && [(self.selectedSubgenre ?: @"") isEqualToString:(self.currentSubgenre ?: @"")]) {
+        [[[UIAlertView alloc] initWithTitle:T(@"suggestcat.title")
+                                    message:T(@"suggestcat.same_category")
+                                   delegate:nil cancelButtonTitle:T(@"common.ok")
+                          otherButtonTitles:nil] show];
+        return;
+    }
     self.sending = YES;
     self.navigationItem.rightBarButtonItem.enabled = NO;
     NSDictionary *payload = @{

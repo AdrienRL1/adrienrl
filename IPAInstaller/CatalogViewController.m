@@ -57,6 +57,10 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
 // iPad grid: rotation-reload guard (last tiles-per-row) + active-scroll flag (rasterize off while scrolling).
 @property (nonatomic, assign) NSInteger lastTPR;
 @property (nonatomic, assign) BOOL gridScrolling;
+// Pagination batch size, computed ONCE from the device class so a fast fling has enough runway to
+// stay continuous. Single-core A4 (iPad 1 / iPhone 4) keeps the original 30 (no extra query/RAM
+// cost); capable devices fetch bigger pages so they don't outrun the loader.
+@property (nonatomic, assign) NSInteger pageSize;
 @end
 
 @implementation CatalogViewController
@@ -188,8 +192,14 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
         UIBarButtonItem *refreshBtn = [[UIBarButtonItem alloc]
             initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
                                  target:self action:@selector(performSearch)];
-        // Order is rightmost first: [filters, select, refresh].
-        self.navigationItem.rightBarButtonItems = @[filtersBtn, selectBtn, refreshBtn];
+        // Order is rightmost first: [filters, select, refresh]. On iPhone the nav bar is too
+        // narrow for three buttons (+ a back button + the category title): the middle "Select"
+        // got squeezed out — user feedback "no multi-select button on iPhone". So on iPhone drop
+        // Refresh (the catalog auto-updates anyway) and keep Filters + Select; iPad keeps all three.
+        BOOL pad = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
+        self.navigationItem.rightBarButtonItems = pad
+            ? @[filtersBtn, selectBtn, refreshBtn]
+            : @[filtersBtn, selectBtn];
     }
 }
 
@@ -223,6 +233,21 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
     [self loadMore];
 }
 
+// Device-adaptive pagination batch size, computed once and cached. Single-core A4 (iPad 1 / iPhone 4)
+// keeps the original 30 — no extra query/RAM cost on the oldest devices. Capable devices fetch bigger
+// pages so a fast fling has enough runway to stay continuous. (Lazy so it's never 0.)
+- (NSInteger)pageSize {
+    if (_pageSize <= 0) {
+        NSUInteger cores = [[NSProcessInfo processInfo] activeProcessorCount];
+        NSUInteger ram   = (NSUInteger)[[NSProcessInfo processInfo] physicalMemory];
+        // Mono-core A4 (iPad 1 / iPhone 4): a modest 50 — bigger runway, still negligible cost
+        // (off-main query, only visible cells are built). Dual-core 512 MB → 100, 1 GB+ → 200 so a
+        // hard fling on iPad 4 / iPhone 5 essentially never outruns the loader.
+        _pageSize = (cores <= 1) ? 50 : (ram <= 640UL * 1024 * 1024 ? 100 : 200);
+    }
+    return _pageSize;
+}
+
 - (void)loadMore {
     if (self.loading || self.eof) return;
     self.loading = YES;
@@ -237,7 +262,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
     NSString *backend = [[InstallManager shared] backendURL];
     NSString *qs = [self.filter queryStringWithSearch:self.currentQuery
                                                  offset:self.pageOffset
-                                                  limit:30];
+                                                  limit:self.pageSize];
     NSString *url = [NSString stringWithFormat:@"%@/catalog?%@", backend, qs];
     NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:url]
                                          cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
@@ -286,7 +311,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
                                          category:nil
                                          subgenre:nil
                                               offset:self.pageOffset
-                                               limit:30
+                                               limit:self.pageSize
                                           completion:^(NSDictionary *res) {
             self.loading = NO;
             [self.spinner stopAnimating];
@@ -579,7 +604,10 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
             : @[];
         [row setApps:slice];
 
-        if (end >= (NSInteger)self.results.count - n * 2) [self loadMore];
+        // Prefetch earlier (never later than the old 2-row trigger) so a fast fling stays continuous:
+        // start the next page once half a page of runway remains.
+        NSInteger aheadGrid = MAX(n * 2, self.pageSize / 2);
+        if (end >= (NSInteger)self.results.count - aheadGrid) [self loadMore];
         return row;
     }
 
@@ -625,21 +653,28 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
     } else {
         cell.appIconView.image = nil;
         NSString *expectedTitle = app[@"title"];
-        [[IconLoader shared] loadImageForURL:iconUrl
+        // Capture self WEAKLY: the returned token is now stored on the cell (cell.iconReq), which the
+        // table retains, so a strong capture here would form a permanent VC↔block retain cycle and
+        // leak the whole controller after leaving the screen. (AppTileView already captures weakly.)
+        __weak typeof(self) ws = self;
+        cell.iconReq = [[IconLoader shared] loadImageForURL:iconUrl
                                    targetSize:sz
                                           via:nil
                                    completion:^(UIImage *img) {
             if (!img) return;
-            CatalogAppCell *visible = (CatalogAppCell *)[self.tableView cellForRowAtIndexPath:ip];
+            __strong typeof(self) s = ws;
+            if (!s) return;
+            CatalogAppCell *visible = (CatalogAppCell *)[s.tableView cellForRowAtIndexPath:ip];
             if (![visible isKindOfClass:[CatalogAppCell class]]) return;
-            if (ip.row >= (NSInteger)self.results.count) return;
-            NSDictionary *appNow = self.results[ip.row];
+            if (ip.row >= (NSInteger)s.results.count) return;
+            NSDictionary *appNow = s.results[ip.row];
             if (![appNow[@"title"] isEqual:expectedTitle]) return;
             visible.appIconView.image = img;
         }];
     }
 
-    if (ip.row >= (NSInteger)self.results.count - 5) {
+    // Prefetch earlier (never later than the old 5-row trigger) so a fast list fling stays continuous.
+    if (ip.row >= (NSInteger)self.results.count - MAX((NSInteger)5, self.pageSize / 2)) {
         [self loadMore];
     }
     return cell;
@@ -656,7 +691,9 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
 }
 
 - (void)scrollViewWillBeginDecelerating:(UIScrollView *)sv {
-    if ([self useGrid]) [AppTileView setSuppressTileText:YES];   // fast fling → tiles draw card+icon only
+    // Tile text now renders continuously while scrolling on ALL devices (incl. 256 MB ones — user
+    // asked for it). The old fling text-suppression is removed (it made text appear only once you
+    // STOPPED scrolling). Slightly less smooth on the oldest A4 devices, but the text is always there.
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)sv willDecelerate:(BOOL)decel {
@@ -703,6 +740,16 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
     }
     AppDetailViewController *vc = [[AppDetailViewController alloc] initWithApp:app];
     [self.navigationController pushViewController:vc animated:YES];
+}
+
+// #190: returning to the section in LANDSCAPE after viewing an app's detail sometimes left the
+// grid laid out for PORTRAIT (fewer columns). Cause: a transient width during the pop could set
+// the rotation guard (lastTPR) to the portrait count, and the guard then suppressed the correct
+// reload at the settled landscape width. Invalidate the guard on appear so the next layout pass
+// always recomputes columns + row height for the real, settled width.
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    self.lastTPR = -1;
 }
 
 // Rotation / bounds-change fix: when the column count actually changes (at the FINAL width),

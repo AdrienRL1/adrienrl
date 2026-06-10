@@ -28,6 +28,10 @@ extern NSString *const LocalCatalogDidUpdateNotification;
 // when the published catalogue actually changed.
 - (void)checkForCatalogUpdate;
 
+// Settings → "Clear catalog cache": drops the freshness baseline + deletes the cached catalog .db,
+// then re-downloads it now (or on next launch if offline). Used to force a fresh catalogue.
++ (void)clearCachedCatalog;
+
 // Filtered search. Returns NSArray of NSDictionary entries matching the same shape as backend.
 // SYNCHRONOUS — call only from background queue, or use searchAsyncWithQuery:... below.
 // `deviceClass`: nil/@"all" = no filter, @"iphone" = apps with iPhone support (plat & 2),

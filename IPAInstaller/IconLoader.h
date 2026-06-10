@@ -12,10 +12,16 @@
 // Returns cached image immediately if available. Otherwise nil and triggers async load.
 // When loaded, the completion block fires on the main queue with the image.
 - (UIImage *)cachedImageForURL:(NSString *)url targetSize:(CGSize)size;
-- (void)loadImageForURL:(NSString *)url
+// Returns an opaque cancel token (nil if served instantly from the RAM cache). Pass it to
+// -cancelRequest: when the requesting cell is reused, so a fast scroll doesn't pile up stale
+// decodes ahead of the now-visible tiles.
+- (id)loadImageForURL:(NSString *)url
               targetSize:(CGSize)size
                 via:(NSString *)proxyURL
               completion:(void (^)(UIImage *image))completion;
+
+// Cancel a request started by -loadImageForURL: (safe with nil / an already-finished token).
+- (void)cancelRequest:(id)token;
 
 // Suspend/resume to pause loads during fast scrolling
 - (void)suspend;

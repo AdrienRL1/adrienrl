@@ -2,7 +2,20 @@
 #import "Localization.h"
 
 // A rounded colour swatch shown at the leading edge of each row.
+// Memoised: ad_themeList() colours are immutable, and this is a pure function of its
+// colour, so we cache the drawn image keyed by the colour's RGBA components.
 static UIImage *ADThemeSwatch(UIColor *color) {
+    static NSMutableDictionary *cache = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ cache = [[NSMutableDictionary alloc] init]; });
+
+    CGFloat r = 0, g = 0, b = 0, a = 1;
+    NSString *key = [color getRed:&r green:&g blue:&b alpha:&a]
+        ? [NSString stringWithFormat:@"%.4f,%.4f,%.4f,%.4f", r, g, b, a]
+        : [color description];   // non-RGBA colour (e.g. pattern): fall back to description.
+    UIImage *cached = [cache objectForKey:key];
+    if (cached) return cached;
+
     CGFloat s = 29.0;
     UIGraphicsBeginImageContextWithOptions(CGSizeMake(s, s), NO, 0.0);
     UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0.5, 0.5, s-1, s-1) cornerRadius:6.0];
@@ -13,6 +26,8 @@ static UIImage *ADThemeSwatch(UIColor *color) {
     [p stroke];
     UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
+
+    if (img && key) [cache setObject:img forKey:key];
     return img;
 }
 

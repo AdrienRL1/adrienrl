@@ -1,8 +1,8 @@
 #import "SettingsViewController.h"
 #import "InstallManager.h"
+#import "LocalCatalog.h"
 #import "IconLoader.h"
 #import "IOS6Theme.h"
-#import "NetworkClient.h"
 #import "HTTPSClient.h"
 #import "Localization.h"
 #import "UpdateChecker.h"
@@ -182,7 +182,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     if (s == SectionDownload) return 6;  // simultaneous downloads + parallel streams + folder + keep-ipa + allow-encrypted + auto-switch-mirror
     if (s == SectionArchive) return 3;   // email + access key + secret key
     if (s == SectionDiag) return 2;
-    if (s == SectionCache) return 1;
+    if (s == SectionCache) return 3;   // clear icons + clear catalog + respring
     if (s == SectionAbout) return 8;  // + exact model, chip, RAM
     if (s == SectionFeedback) return 1;
     if (s == SectionSupport) return kSupportURL.length ? 1 : 0;  // hidden if no link
@@ -442,7 +442,9 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
         if (ip.row == 0) cell.textLabel.text = T(@"settings.test_https");
         else cell.textLabel.text = T(@"settings.test_ipainstaller");
     } else if (ip.section == SectionCache) {
-        cell.textLabel.text = T(@"settings.clear_icons");
+        if (ip.row == 0)      cell.textLabel.text = T(@"settings.clear_icons");
+        else if (ip.row == 1) cell.textLabel.text = T(@"settings.clear_catalog");
+        else                  cell.textLabel.text = T(@"settings.respring");
     } else if (ip.section == SectionFeedback) {
         cell.textLabel.text = T(@"feedback.row");
         cell.textLabel.textColor = [IOS6Theme primaryBlue];
@@ -527,13 +529,31 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
         if (ip.row == 0) [self testDirectHTTPS];
         else [self testIpainstaller];
     } else if (ip.section == SectionCache) {
-        [[IconLoader shared] clearCache];
-        UIAlertView *a = [[UIAlertView alloc] initWithTitle:T(@"settings.cache_cleared")
-                                                    message:T(@"settings.cache_cleared_msg")
-                                                   delegate:nil
-                                          cancelButtonTitle:T(@"common.ok")
-                                          otherButtonTitles:nil];
-        [a show];
+        if (ip.row == 0) {
+            [[IconLoader shared] clearCache];
+            UIAlertView *a = [[UIAlertView alloc] initWithTitle:T(@"settings.cache_cleared")
+                                                        message:T(@"settings.cache_cleared_msg")
+                                                       delegate:nil
+                                              cancelButtonTitle:T(@"common.ok")
+                                              otherButtonTitles:nil];
+            [a show];
+        } else if (ip.row == 1) {   // Clear catalog cache → re-download a fresh catalogue
+            [LocalCatalog clearCachedCatalog];
+            UIAlertView *a = [[UIAlertView alloc] initWithTitle:T(@"settings.clear_catalog")
+                                                        message:T(@"settings.catalog_cleared_msg")
+                                                       delegate:nil
+                                              cancelButtonTitle:T(@"common.ok")
+                                              otherButtonTitles:nil];
+            [a show];
+        } else {   // Respring (restart SpringBoard) — confirm first (the screen goes black briefly).
+            UIAlertView *a = [[UIAlertView alloc] initWithTitle:T(@"settings.respring")
+                                                        message:T(@"settings.respring_msg")
+                                                       delegate:self
+                                              cancelButtonTitle:T(@"common.cancel")
+                                              otherButtonTitles:T(@"settings.respring"), nil];
+            a.tag = 110;
+            [a show];
+        }
     } else if (ip.section == SectionFeedback) {
         [self.navigationController pushViewController:[[FeedbackViewController alloc] init] animated:YES];
     } else if (ip.section == SectionSupport) {
@@ -594,6 +614,10 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
 }
 
 - (void)alertView:(UIAlertView *)alert clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if (alert.tag == 110) {   // Respring confirmation
+        if (buttonIndex != alert.cancelButtonIndex) [InstallManager respring];
+        return;
+    }
     // alert.tag == 101 was the pre-v1.2-build-14 install-update confirmation
     // alert. Since v1.2 build 14 the modal UpdateNotesViewController replaced
     // it, and since v1.4-5 the install path hands off to Cydia entirely, so

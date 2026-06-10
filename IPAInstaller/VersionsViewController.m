@@ -15,6 +15,7 @@
 @property (nonatomic, strong) NSArray *versions;
 @property (nonatomic, strong) NSArray *explicitVersions;       // #171: pre-supplied list (Works Today / Modded)
 @property (nonatomic, strong) NSMutableDictionary *encByURL;   // url -> @(MachOInspectionResult)
+@property (nonatomic, strong) NSDictionary *encDiskSnapshot;   // one-time snapshot of the persisted MachO enc cache (avoids a dictionaryForKey: per cell)
 @property (nonatomic, strong) NSMutableSet *encInflight;       // urls currently being probed
 @property (nonatomic, assign) BOOL pendingReload;             // a probe resolved mid-scroll → reload when it settles (#151)
 @end
@@ -63,6 +64,9 @@
     self.view.backgroundColor = [IOS6Theme linenColor];
     self.encByURL = [NSMutableDictionary dictionary];
     self.encInflight = [NSMutableSet set];
+    // One-time snapshot of the persisted MachO enc cache (key "MOEncCacheV1"), so encStateForURL:
+    // and probeVisibleRows consult an in-memory dict instead of doing a dictionaryForKey: per cell.
+    self.encDiskSnapshot = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"MOEncCacheV1"];
 
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds
                                                    style:UITableViewStyleGrouped];
@@ -168,8 +172,12 @@
     if (url.length == 0) return -1;
     NSNumber *n = [self.encByURL objectForKey:url];
     if (n) return [n integerValue];
-    NSInteger cached = [MachOInspector cachedResultForURL:url];
-    if (cached >= 0) { [self.encByURL setObject:[NSNumber numberWithInteger:cached] forKey:url]; return cached; }
+    // Consult the one-time on-launch snapshot instead of a fresh dictionaryForKey: per cell.
+    NSNumber *disk = [self.encDiskSnapshot objectForKey:url];
+    if (disk) {
+        NSInteger cached = [disk integerValue];
+        if (cached >= 0) { [self.encByURL setObject:[NSNumber numberWithInteger:cached] forKey:url]; return cached; }
+    }
     // Unknown — do NOT probe here. cellForRow runs during fast scroll; probing per cell queued
     // dozens of blocking HTTP probes and froze the list (#151). Probing is driven by
     // -probeVisibleRows (bounded, visible rows only, when the scroll settles).
@@ -179,7 +187,18 @@
 // Max FairPlay probes in flight at once. Each probe is a blocking HTTP-Range read, so a fast
 // scroll must NOT spawn dozens (that froze the list — #151). Visible rows are probed a few at a
 // time; as each lands, the next visible one is picked up.
-static const NSUInteger kMaxConcurrentEncProbes = 3;
+// Computed once: mono-core A4 (iPad 1 / iPhone 4) → 1 (one blocking read at a time); multi-core → 3 (unchanged).
+static NSUInteger ADMaxConcurrentEncProbes(void) {
+    static NSUInteger cap = 0;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSUInteger cores = (NSUInteger)[[NSProcessInfo processInfo] activeProcessorCount];
+        // Mono-core A4 (iPad 1 / iPhone 4) -> 1; every multi-core device keeps the
+        // original constant 3 (zero behaviour change on multi-core, incl. dual-core).
+        cap = (cores <= 1) ? 1 : 3;
+    });
+    return cap;
+}
 
 - (void)scheduleEncProbeForURL:(NSString *)url {
     if (url.length == 0 || [self.encInflight containsObject:url]) return;
@@ -204,12 +223,13 @@ static const NSUInteger kMaxConcurrentEncProbes = 3;
 // scroll settles — never from cellForRow (that per-cell probing is what froze the list, #151).
 - (void)probeVisibleRows {
     for (NSIndexPath *ip in [self.tableView indexPathsForVisibleRows]) {
-        if (self.encInflight.count >= kMaxConcurrentEncProbes) break;
+        if (self.encInflight.count >= ADMaxConcurrentEncProbes()) break;
         if (ip.row < 0 || ip.row >= (NSInteger)self.versions.count) continue;
         NSString *url = [[self.versions objectAtIndex:ip.row] objectForKey:@"url"] ?: @"";
         if (url.length == 0) continue;
         if ([self.encByURL objectForKey:url]) continue;              // already known
-        if ([MachOInspector cachedResultForURL:url] >= 0) continue;  // known in the MachO cache
+        NSNumber *disk = [self.encDiskSnapshot objectForKey:url];    // known in the on-launch enc snapshot
+        if (disk && [disk integerValue] >= 0) continue;
         if ([self.encInflight containsObject:url]) continue;         // in flight
         [self scheduleEncProbeForURL:url];
     }
@@ -262,7 +282,7 @@ static const NSUInteger kMaxConcurrentEncProbes = 3;
     // FairPlay status — from the per-URL cache; probed lazily on first display (see encStateForURL:).
     BOOL encrypted = ([self encStateForURL:url] == MachOInspectionResultEncrypted);
 
-    cell.backgroundColor = [IOS6Theme cellColor];
+    // (backgroundColor is set in willDisplayCell: — a set here is dropped on grouped iOS 5/6.)
     cell.textLabel.text = [NSString stringWithFormat:@"%@v%@ — %@",
                             encrypted ? @"🔒 " : @"", v[@"version"] ?: @"?", sizeStr];
     cell.textLabel.font = [UIFont boldSystemFontOfSize:14];

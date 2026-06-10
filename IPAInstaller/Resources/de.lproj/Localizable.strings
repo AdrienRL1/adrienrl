@@ -551,3 +551,10 @@
 "upload.desc_ph_req" = "Beschreibung (erforderlich)";
 "upload.desc_ph_opt" = "Beschreibung (optional)";
 "upload.analyzing" = "Analysiere…";
+
+/* v3.1.3 — respring + same-category guard */
+"settings.respring" = "Respring";
+"settings.respring_msg" = "Den Home-Bildschirm (SpringBoard) neu starten? Nützlich, wenn das Symbol einer installierten App nicht erschienen ist. Der Bildschirm wird einige Sekunden schwarz.";
+"suggestcat.same_category" = "Diese App ist bereits in dieser Kategorie. Wähle eine andere Kategorie oder Sektion, um eine Änderung vorzuschlagen.";
+"settings.clear_catalog" = "Katalog-Cache leeren (neu laden)";
+"settings.catalog_cleared_msg" = "Katalog-Cache geleert. AppDrop lädt jetzt den neuesten Katalog neu (oder beim nächsten Start, wenn du offline bist).";

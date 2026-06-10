@@ -77,8 +77,14 @@
 - (void)configureWithJob:(InstallJob *)job {
     self.backgroundColor = [IOS6Theme cellColor];   // white on default, raised dark on dark themes
     self.nameLabel.textColor = [IOS6Theme titleColor];
-    self.nameLabel.shadowColor = [IOS6Theme embossShadowColor];
-    self.messageLabel.shadowColor = [IOS6Theme embossShadowColor];
+    // Emboss shadow is set once in -init; re-apply here ONLY on a real theme switch (this method is
+    // the cell's re-theme hook — RootViewController applyTheme → reloadData → configureWithJob:).
+    // Skip the write while a download ticks (the value hasn't changed), avoiding per-tick churn.
+    UIColor *emboss = [IOS6Theme embossShadowColor];
+    if (![self.nameLabel.shadowColor isEqual:emboss]) {
+        self.nameLabel.shadowColor = emboss;
+        self.messageLabel.shadowColor = emboss;
+    }
     self.nameLabel.text = job.name;
     BOOL dk = [IOS6Theme isDark];
 

@@ -509,19 +509,34 @@ static UIImage *ad_roundedCard(UIColor *fill, UIColor *border) {
     searchBar.barStyle = UIBarStyleBlack;
     searchBar.tintColor = ad_darken([self accent], 0.3);
     if ([searchBar respondsToSelector:@selector(setBackgroundImage:)]) {
-        UIColor *bar = ad_mix(ad_darkBase(0.16), [self accent], 0.10);
-        UIGraphicsBeginImageContext(CGSizeMake(1, 1));
-        CGContextRef ctx = UIGraphicsGetCurrentContext();
-        CGContextSetFillColorWithColor(ctx, bar.CGColor);
-        CGContextFillRect(ctx, CGRectMake(0, 0, 1, 1));
-        UIImage *bg = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
+        // The 1x1 bar fill depends only on the current theme's accent + dark base,
+        // both fixed until the theme changes (gCache is emptied in setThemeID).
+        // Memoize it so a re-tint with several bars on the stack doesn't recreate
+        // a CG context per bar.
+        UIImage *bg = gCache[@"searchBarBg"];
+        if (!bg) {
+            UIColor *bar = ad_mix(ad_darkBase(0.16), [self accent], 0.10);
+            UIGraphicsBeginImageContext(CGSizeMake(1, 1));
+            CGContextRef ctx = UIGraphicsGetCurrentContext();
+            CGContextSetFillColorWithColor(ctx, bar.CGColor);
+            CGContextFillRect(ctx, CGRectMake(0, 0, 1, 1));
+            bg = UIGraphicsGetImageFromCurrentImageContext();
+            UIGraphicsEndImageContext();
+            if (bg) gCache[@"searchBarBg"] = bg;
+        }
         searchBar.backgroundImage = bg;
     }
     if ([searchBar respondsToSelector:@selector(setSearchFieldBackgroundImage:forState:)])
         [searchBar setSearchFieldBackgroundImage:ad_roundedCard([self cellColor], [self separatorColor])
                                         forState:UIControlStateNormal];
     ad_styleFields(searchBar, [self labelDark], UIKeyboardAppearanceAlert);
+}
+
+// Drop every cached bar/button/card bitmap. Each one is regenerated lazily and
+// identically on next access (same mechanism as a theme switch, which already
+// empties gCache via setThemeID). Called from the app's memory-warning handler.
++ (void)purgeImageCache {
+    [gCache removeAllObjects];
 }
 
 // Text field: keep the stock iOS-6 rounded field on the default theme; on dark themes give it a

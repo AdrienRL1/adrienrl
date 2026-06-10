@@ -551,3 +551,10 @@
 "upload.desc_ph_req" = "Descrição (obrigatória)";
 "upload.desc_ph_opt" = "Descrição (opcional)";
 "upload.analyzing" = "Analisando…";
+
+/* v3.1.3 — respring + same-category guard */
+"settings.respring" = "Respring";
+"settings.respring_msg" = "Reiniciar a tela inicial (SpringBoard)? Útil se o ícone de um app instalado não apareceu. A tela fica preta por alguns segundos.";
+"suggestcat.same_category" = "Este app já está nessa categoria. Escolha outra categoria ou seção para sugerir uma mudança.";
+"settings.clear_catalog" = "Limpar o cache do catálogo (baixar de novo)";
+"settings.catalog_cleared_msg" = "Cache do catálogo limpo. O AppDrop está baixando o catálogo mais recente agora (ou na próxima abertura se você estiver offline).";

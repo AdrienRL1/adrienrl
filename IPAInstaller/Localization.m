@@ -234,6 +234,7 @@ static NSBundle *_enBundle = nil;
             @"zh":      @"中文",
             @"zh-Hant": @"繁體中文",
             @"tr":      @"Türkçe",
+            @"pl":      @"Polski",
             @"it":      @"Italiano",
             @"ko":      @"한국어",
             @"ru":      @"Русский",

@@ -12,46 +12,59 @@
 #import "UpdateChecker.h"
 #import "CheckpointLog.h"
 #import "CrashReporter.h"
+#import "IconLoader.h"
 
 // v1.7: a "house" glyph for the Accueil (home) tab. Returns an alpha mask that iOS
 // tints exactly like the other tab icons — no PNG to bundle, crisp at any scale.
 static UIImage *AppDropHomeTabIcon(void) {
-    CGSize s = CGSizeMake(30, 30);
-    UIGraphicsBeginImageContextWithOptions(s, NO, [UIScreen mainScreen].scale);
-    CGContextRef c = UIGraphicsGetCurrentContext();
-    [[UIColor blackColor] setFill];
-    UIBezierPath *roof = [UIBezierPath bezierPath];   // wide-eave roof
-    [roof moveToPoint:CGPointMake(15, 4)];
-    [roof addLineToPoint:CGPointMake(27, 15.5)];
-    [roof addLineToPoint:CGPointMake(3, 15.5)];
-    [roof closePath];
-    [roof fill];
-    [[UIBezierPath bezierPathWithRect:CGRectMake(6.5, 14, 17, 12)] fill];   // body
-    CGContextClearRect(c, CGRectMake(12, 19, 6, 7));                         // door cutout
-    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    return img;
+    // Memoized: the glyph is geometry-only (fixed coords + constant screen scale), so it's
+    // pixel-identical every call. Draw it once per process to avoid re-rasterizing on every launch.
+    static UIImage *cached = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        CGSize s = CGSizeMake(30, 30);
+        UIGraphicsBeginImageContextWithOptions(s, NO, [UIScreen mainScreen].scale);
+        CGContextRef c = UIGraphicsGetCurrentContext();
+        [[UIColor blackColor] setFill];
+        UIBezierPath *roof = [UIBezierPath bezierPath];   // wide-eave roof
+        [roof moveToPoint:CGPointMake(15, 4)];
+        [roof addLineToPoint:CGPointMake(27, 15.5)];
+        [roof addLineToPoint:CGPointMake(3, 15.5)];
+        [roof closePath];
+        [roof fill];
+        [[UIBezierPath bezierPathWithRect:CGRectMake(6.5, 14, 17, 12)] fill];   // body
+        CGContextClearRect(c, CGRectMake(12, 19, 6, 7));                         // door cutout
+        cached = UIGraphicsGetImageFromCurrentImageContext();
+        UIGraphicsEndImageContext();
+    });
+    return cached;
 }
 
 // v3.0: a filled 5-point STAR glyph for the Favoris tab (which replaces the removed AI tab). Same
 // alpha-mask technique as the home glyph, so the tab bar tints it correctly in light AND dark themes.
 static UIImage *AppDropFavoritesTabIcon(void) {
-    CGSize s = CGSizeMake(30, 30);
-    UIGraphicsBeginImageContextWithOptions(s, NO, [UIScreen mainScreen].scale);
-    [[UIColor blackColor] setFill];
-    UIBezierPath *star = [UIBezierPath bezierPath];
-    CGFloat cx = 15, cy = 15.5, R = 13.0, r = 5.4;
-    for (int i = 0; i < 10; i++) {
-        CGFloat ang = -M_PI_2 + i * (M_PI / 5.0);
-        CGFloat rad = (i % 2 == 0) ? R : r;
-        CGPoint p = CGPointMake(cx + rad * cosf(ang), cy + rad * sinf(ang));
-        if (i == 0) [star moveToPoint:p]; else [star addLineToPoint:p];
-    }
-    [star closePath];
-    [star fill];
-    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    return img;
+    // Memoized: geometry-only glyph (fixed coords + constant screen scale) → pixel-identical
+    // every call. Draw it once per process instead of re-rasterizing on every launch.
+    static UIImage *cached = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        CGSize s = CGSizeMake(30, 30);
+        UIGraphicsBeginImageContextWithOptions(s, NO, [UIScreen mainScreen].scale);
+        [[UIColor blackColor] setFill];
+        UIBezierPath *star = [UIBezierPath bezierPath];
+        CGFloat cx = 15, cy = 15.5, R = 13.0, r = 5.4;
+        for (int i = 0; i < 10; i++) {
+            CGFloat ang = -M_PI_2 + i * (M_PI / 5.0);
+            CGFloat rad = (i % 2 == 0) ? R : r;
+            CGPoint p = CGPointMake(cx + rad * cosf(ang), cy + rad * sinf(ang));
+            if (i == 0) [star moveToPoint:p]; else [star addLineToPoint:p];
+        }
+        [star closePath];
+        [star fill];
+        cached = UIGraphicsGetImageFromCurrentImageContext();
+        UIGraphicsEndImageContext();
+    });
+    return cached;
 }
 
 // iOS 5 does NOT forward rotation from a UINavigationController to its visible view
@@ -258,6 +271,15 @@ static UIImage *AppDropFavoritesTabIcon(void) {
                    dispatch_get_main_queue(), ^{ [CrashReporter checkAndOfferReport]; });
 
     return YES;
+}
+
+// App-wide memory-warning hook. On the low-RAM A4 devices (iPad 1 / iPhone 4, 256 MB) the OS
+// fires this under pressure; drop the two largest discardable caches so we're less likely to be
+// jetsammed. Both caches regenerate identically on next access, so this is purely a reclaim —
+// no reloadData (the visible UI keeps its current images and refetches lazily as needed).
+- (void)applicationDidReceiveMemoryWarning:(UIApplication *)application {
+    [[IconLoader shared] clearCache];
+    [IOS6Theme purgeImageCache];
 }
 
 // URL scheme handler. The ipainstall:// scheme is registered in Info.plist for future
