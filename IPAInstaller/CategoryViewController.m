@@ -15,6 +15,13 @@
 #import "CollectionViewController.h"
 #import "HomeLayoutStore.h"
 
+// Retrait des catégories « Fonctionne aujourd'hui » (Revival) et « Apps modifiées » (Modded), et
+// par voie de conséquence de la fonction « Partager une app » (l'upload n'est joignable QUE depuis
+// ces deux listes). Mis à NO à la demande de l'utilisateur (apps tierces / éviter tout problème de
+// redistribution). Le code reste en place, juste éteint — remettre à YES pour les réafficher.
+// Voir aussi kEnableAppUpload dans RevivalListViewController.m.
+static const BOOL kEnableWorksTodayModded = NO;
+
 // Localized category/subgenre name. Keys are "cat.<English>" / "sub.<English>".
 static NSString *locName(NSString *prefix, NSString *value) {
     if (!value.length) return @"";
@@ -472,24 +479,29 @@ static UIImage *AppDropModdedGlyph(void) {
             @"seed": @"all_apps", @"defSpan": bigSpan, @"defaultPinned": @YES,
             @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([cat uniqueAppCount])],
             @"iconPool": allSample }];
-        // ---- Works today / Revival (wide by default), mosaic of the curated apps' icons ----
-        NSMutableArray *revIcons = [NSMutableArray array];
-        for (NSDictionary *r in [[RevivalCatalog shared] appDicts]) {
-            NSString *ic = r[@"icon"];
-            if ([ic isKindOfClass:[NSString class]] && ic.length) [revIcons addObject:ic];
+        // ---- Works today / Revival + Apps modifiées / Modded ----
+        // Retirées de l'accueil (kEnableWorksTodayModded = NO). Le code des tuiles + listes + upload
+        // reste en place mais inatteignable tant que le flag est NO.
+        if (kEnableWorksTodayModded) {
+            // ---- Works today / Revival (wide by default), mosaic of the curated apps' icons ----
+            NSMutableArray *revIcons = [NSMutableArray array];
+            for (NSDictionary *r in [[RevivalCatalog shared] appDicts]) {
+                NSString *ic = r[@"icon"];
+                if ([ic isKindOfClass:[NSString class]] && ic.length) [revIcons addObject:ic];
+            }
+            [items addObject:@{ @"id": @"item.revival", @"kind": @"revival", @"label": T(@"categories.revival"),
+                @"seed": @"revival", @"defSpan": bigSpan, @"defaultPinned": @YES,
+                @"subtitle": T(@"categories.revival_sub"), @"iconPool": revIcons }];
+            // ---- Apps modifiées / Modded (mosaic of the modded apps' icons) ----
+            NSMutableArray *modIcons = [NSMutableArray array];
+            for (NSDictionary *m in [[ModdedCatalog shared] appDicts]) {
+                NSString *ic = m[@"icon"];
+                if ([ic isKindOfClass:[NSString class]] && ic.length) [modIcons addObject:ic];
+            }
+            [items addObject:@{ @"id": @"item.modded", @"kind": @"modded", @"label": T(@"categories.modded"),
+                @"seed": @"modded", @"defSpan": @"1x1", @"defaultPinned": @YES,
+                @"subtitle": T(@"categories.modded_sub"), @"iconPool": modIcons }];
         }
-        [items addObject:@{ @"id": @"item.revival", @"kind": @"revival", @"label": T(@"categories.revival"),
-            @"seed": @"revival", @"defSpan": bigSpan, @"defaultPinned": @YES,
-            @"subtitle": T(@"categories.revival_sub"), @"iconPool": revIcons }];
-        // ---- Apps modifiées / Modded (mosaic of the modded apps' icons) ----
-        NSMutableArray *modIcons = [NSMutableArray array];
-        for (NSDictionary *m in [[ModdedCatalog shared] appDicts]) {
-            NSString *ic = m[@"icon"];
-            if ([ic isKindOfClass:[NSString class]] && ic.length) [modIcons addObject:ic];
-        }
-        [items addObject:@{ @"id": @"item.modded", @"kind": @"modded", @"label": T(@"categories.modded"),
-            @"seed": @"modded", @"defSpan": @"1x1", @"defaultPinned": @YES,
-            @"subtitle": T(@"categories.modded_sub"), @"iconPool": modIcons }];
         // ---- Then the categories ----
         [items addObjectsFromArray:catItems];
 

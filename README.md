@@ -32,18 +32,15 @@
 - **43,000+ apps** — browsable **by category** right from the home screen, with every archived version of each app available
 - **Native on iPhone, iPod touch & iPad** — a clean list or grid on the phone / iPod, and a true multi-column iPad interface (large tiles, landscape) on iPad — never a stretched-up phone app
 - **Auto-updating catalog** — downloaded on first launch and refreshed automatically when new apps are added, so you never reinstall the app just for new content
-- **"Works Today"** — a section for apps confirmed still running on old iOS (patched, revived, or community-made), with one-tap install and update detection
-- **Modded apps** — a brand-new section for patched / unlocked / modded builds for legacy iOS, starting fresh and growing over time (it updates on its own, no app release needed)
 - **17 themes + full dark mode** — recolour the whole app instantly: 8 light colours and 9 dark variants, applied live with no restart
 - **Your own layout** — switch any grid between **list and icons** and pick how many apps/tiles per row with a native iOS-6 wheel
 - **Widget-style home** — press and hold any tile until it jiggles, then drag to reorder and drag a tile's bottom-right corner to resize it (1×1 / 2×1 / 2×2); pin your favourites on top, tap Done when you're happy, or hit Reset to start over
 - **Favorites & folders** — ⭐ star any app, and organise apps into your own named collections right on the home screen
 - **Download later** — queue apps to a "later" list and grab them when you're ready
-- **Share an app** — contribute an app you have the right to share (your own, homebrew, open-source, freeware, public domain) through a moderated upload — into either the Modded section or the "Works Today" list
 - **Device-aware** — each app shows whether it'll run on *your* device, the catalog hides apps your iOS can't run, and AppDrop auto-picks the newest version you can actually install
 - **FairPlay-aware** — detects DRM-encrypted builds before installing and steers you to a clean, installable version
-- **8 languages** — EN / FR / ES / DE / PT‑BR / JA / ZH‑Hans / TR, auto-detected from your device
-- **Localized app descriptions** — rich descriptions for thousands of apps, in all 8 languages
+- **9 languages** — EN / FR / ES / DE / PT‑BR / JA / ZH‑Hans / TR / PL, auto-detected from your device
+- **Localized app descriptions** — rich descriptions for thousands of apps, in all 9 languages
 - **Multi-select install** — queue up dozens of apps in one batch, with a configurable max of simultaneous downloads (1–8)
 - **Pause, resume & cancel** — pause a running download and pick it back up later, with live progress and a "N downloading · M waiting" counter
 - **DNS-over-HTTPS + HTTP proxy** — installs keep working even where your ISP blocks archive.org at the DNS level, and downloads honour your manual Wi-Fi HTTP proxy if you set one
@@ -103,7 +100,7 @@ AppDrop's in-app updater checks GitHub Releases hourly and, when a new version i
 
 <img src="screenshots/v3-home.png" width="500" alt="Categories home on iPad">
 
-The home screen sorts 43,000+ apps into categories (Games, Utilities, Entertainment…), with quick tiles for **All apps**, **Works Today**, **Favorites**, **Download later** and **Modded apps**. Tap a category to browse it, and rearrange or resize the tiles to make the home yours.
+The home screen sorts 43,000+ apps into categories (Games, Utilities, Entertainment…), with quick tiles for **All apps**, **Favorites** and **Download later**. Tap a category to browse it, and rearrange or resize the tiles to make the home yours.
 
 ### The catalog
 
@@ -125,12 +122,6 @@ Each app shows a localized description, version, size and a green/orange banner 
 </p>
 
 Some archived IPAs are still **FairPlay-encrypted** (tied to the original buyer's Apple ID) and just won't launch on a jailbreak. *Before* you download, AppDrop probes the build over a tiny HTTP range request — no full download — and, if it's encrypted, shows a banner and **points you to a clean, decrypted version** when one exists. The *Versions* list flags each encrypted mirror too, so you never waste a 485 MB download on something that can't install.
-
-### Works Today
-
-<img src="screenshots/v3-works-today.png" width="500" alt="Works Today — apps that still run on old iOS">
-
-A curated shelf of apps that **still work on today's internet** on old iOS — patched, revived or community-made (YouTube, Twitter → Bluesky, Discord Classic, …). One tap installs them, and AppDrop tells you when a newer build is out.
 
 ### Filters
 

@@ -2,6 +2,24 @@
 
 Older release notes are also available on the [GitHub Releases](https://github.com/AdrienRL1/AppDrop/releases) page.
 
+## AppDrop v3.1.4 — Crash & reliability fixes, plus some trimming
+
+### Fixed
+- **The #1 crash is fixed.** AppDrop could be killed by the system whenever it was sent to the background (it was holding the catalog database open while suspended). It now closes the database on background and reopens it instantly when you return — by far the most common crash, especially on iPhone 4 / iPod touch 4 / 4S.
+- **"No apps / 0 apps".** If the downloaded catalogue was ever incomplete, the app could be stuck showing an empty library forever. It now detects an empty catalogue and re-downloads it automatically.
+- **False "Install failed".** Some jailbreaks made AppDrop report a failure even though the app installed fine. It now also checks the device's filesystem directly, so a real install is no longer shown as failed.
+- **Cancel during "Installing…"** now stops before the app is installed (previously the install could go ahead anyway).
+- **Stuck downloads.** A download that stalled at 0% with no data could hang forever; it now times out and retries on a fresh mirror instead.
+- **Respring** (Settings) now actually works — it previously did nothing on every device (it tried the root-only `sbreload` first and bailed out before the method that works for the app).
+
+### Removed
+- **"Works Today"**, **"Modded apps"**, **"Share an app"** and **"Suggest a category"** have been removed. The hosted lists for the first two are emptied as well, so they disappear on existing installs too.
+
+### Compatibility
+iOS 5.0 – 10.x (armv7 / 32-bit), jailbroken. Tested on iOS 6 (iPad 4).
+
+---
+
 ## AppDrop v3.1.3 — Polish, and a big speed pass
 
 ### New

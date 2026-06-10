@@ -573,6 +573,12 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     __block BOOL spaceAbort = NO;
     __block BOOL spaceChecked = NO;
     __block long long spaceNeedBytes = 0;
+    // #278: absolute stall guard. Independent of the slow-mirror window AND of the AutoSwitchMirror
+    // setting — a download that receives ZERO new bytes for this long is dead (the user saw it stuck
+    // at "0%" forever). We trip slowAbort so it retries on a fresh mirror (and, out of retry budget,
+    // fails cleanly) instead of hanging indefinitely.
+    __block long long stallBytes = 0;
+    __block NSDate *stallSince = [NSDate date];
 
     // Stream count from Settings (default 4). 1 disables parallelism and
     // ParallelDownloader transparently falls back to the legacy single-stream
@@ -599,6 +605,10 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         // ticks below keep overwriting the "paused" UI, so the user sees the download "restart".
         if (!j || j.cancelRequested || j.pauseRequested) return YES;
         if (spaceAbort) return YES;   // #169: not enough free disk to download + install
+        // #278: no NEW bytes for 90 s → the connection is dead. Trip slowAbort to retry/fail cleanly
+        // rather than sit at "0%" forever (the slow-mirror window above is skipped when the user
+        // turned AutoSwitchMirror OFF, so this absolute guard must be unconditional).
+        if (-[stallSince timeIntervalSinceNow] > 90.0) { slowAbort = YES; return YES; }
         // Only consider slow-mirror abort if the user left auto-switch ON (#171 level 2) AND we
         // still have retry budget — otherwise there's no point dropping the connection.
         if (autoSwitchMirror && attempt < kMaxMirrorAttempts - 1) {
@@ -643,6 +653,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         lastReceived = received;
         lastTotal = total;
         lastTick = now;
+        if (received > stallBytes) { stallBytes = received; stallSince = now; }   // #278: reset stall clock on real progress
         dispatch_async(dispatch_get_main_queue(), ^{
             InstallJob *j = weakJob;
             if (!j) return;
@@ -860,6 +871,20 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
             [self postChanged];
         });
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            // #214: user tapped Annuler as the job entered the "Installing…" phase — bail BEFORE we
+            // spawn ipainstaller (the last safe moment: once the installer process is running we can't
+            // abort it without risking a half-installed app). This closes the window where a cancel
+            // during "Installing…" was ignored and the app installed anyway.
+            if (job.cancelRequested) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    job.state = @"cancelled";
+                    job.message = T(@"install.state.cancelled_user");
+                    [self postChanged];
+                    [[NSFileManager defaultManager] removeItemAtPath:localPath error:nil];
+                    [self deleteChunkSidecarsFor:localPath];
+                });
+                return;
+            }
             NSString *out = nil;
             int exitCode = [self runIpainstallerOnFile:localPath capturedOutput:&out];
             BOOL claimed = (exitCode == 0) || (out && [out.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
@@ -1105,9 +1130,10 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     if ([out rangeOfString:bid].location != NSNotFound) return YES;   // listed → installed
     // #163: `ipainstaller -l`'s output format varies by build (some print display names, not
     // bundle ids), so its silence isn't proof of absence — it false-failed good installs.
-    // Cross-check with `-i <bid>`, which returns the app's info iff it's actually registered.
-    // Only when BOTH `-l` and `-i` say "absent" do we treat the install as failed.
-    return ([self installedVersionForBundleId:bid] != nil);
+    // Cross-check with `-i <bid>`, then the filesystem, which is the ground truth. Only when ALL
+    // of -l, -i and the on-disk scan say "absent" do we treat the install as failed.
+    if ([self installedVersionForBundleId:bid] != nil) return YES;
+    return [self appBundleExistsForBundleId:bid];
 }
 
 // #163 — STRICT installed-check for the rescue path. Unlike verifyInstalledBundleId: (which
@@ -1115,12 +1141,46 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 // ONLY on a POSITIVE confirmation (`-l` lists the bid, or `-i <bid>` returns its info). A
 // "couldn't check" returns NO — we must not turn a genuine install failure into a false success.
 // Synchronous (spawns + waits) — call OFF the main thread.
+// Ground-truth filesystem check: is an app with this bundle id actually on disk? Independent of
+// ipainstaller's -l/-i CLI output, whose format varies by jailbreak and false-failed real installs
+// (feedback #311/#182/#163 — "installed successfully but shows an error"). The app has the
+// no-sandbox entitlement, so it can scan the standard user-app install roots + /Applications and
+// read each .app's Info.plist (NSDictionary handles binary plists).
+- (BOOL)appBundleExistsForBundleId:(NSString *)bid {
+    if (!bid.length) return NO;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray *roots = @[ @"/var/mobile/Applications",                     // iOS 5-7 user apps
+                        @"/var/mobile/Containers/Bundle/Application",     // iOS 8+ user apps
+                        @"/var/containers/Bundle/Application",            // iOS 9+ variant
+                        @"/Applications" ];                               // system / jailbreak apps
+    for (NSString *root in roots) {
+        NSArray *subs = [fm contentsOfDirectoryAtPath:root error:NULL];
+        for (NSString *sub in subs) {
+            NSString *dir = [root stringByAppendingPathComponent:sub];
+            NSMutableArray *apps = [NSMutableArray array];
+            if ([sub hasSuffix:@".app"]) {
+                [apps addObject:dir];                                     // /Applications/Foo.app
+            } else {
+                for (NSString *inner in [fm contentsOfDirectoryAtPath:dir error:NULL])   // <UUID>/Foo.app
+                    if ([inner hasSuffix:@".app"]) [apps addObject:[dir stringByAppendingPathComponent:inner]];
+            }
+            for (NSString *appPath in apps) {
+                NSString *plist = [appPath stringByAppendingPathComponent:@"Info.plist"];
+                NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:plist];
+                if ([[info objectForKey:@"CFBundleIdentifier"] isEqualToString:bid]) return YES;
+            }
+        }
+    }
+    return NO;
+}
+
 - (BOOL)isBundleIdDefinitelyInstalled:(NSString *)bid {
     if (!bid.length) return NO;
     NSString *out = nil;
     int rc = [self runIpainstallerArgs:@[@"-l"] capturedOutput:&out];
     if (rc == 0 && out.length && [out rangeOfString:bid].location != NSNotFound) return YES;
-    return ([self installedVersionForBundleId:bid] != nil);
+    if ([self installedVersionForBundleId:bid] != nil) return YES;
+    return [self appBundleExistsForBundleId:bid];   // ground truth on disk (ipainstaller CLI unreliable)
 }
 
 // After a successful install the new icon often won't appear on SpringBoard until the icon
@@ -1142,9 +1202,24 @@ static NSInteger gUICacheToken = 0;
 }
 
 + (BOOL)respring {
-    // sbreload re-execs SpringBoard gracefully; killall SpringBoard is the harder fallback. Either
-    // rebuilds the home screen so a freshly-installed app's icon appears. We spawn and return — the
-    // respring tears down SpringBoard (and usually this app with it), so there's nothing to wait for.
+    // The app runs as 'mobile' (it has com.apple.private.security.no-sandbox, so signalling is NOT
+    // sandbox-blocked) — the SAME uid as SpringBoard — so it can kill SpringBoard directly. Killing
+    // it makes launchd relaunch it = a respring. We spawn and return; the respring tears down
+    // SpringBoard (and usually this app with it), so there's nothing to wait for.
+    //
+    // BUG FIX: the old code tried `sbreload` FIRST. sbreload does a GRACEFUL respring but needs ROOT
+    // (launchctl on the SpringBoard job); as 'mobile' it just fails. posix_spawn still reported the
+    // fork as successful, so respring returned YES and NEVER reached `killall` — so the button did
+    // nothing on every device. `killall SpringBoard` (same uid) is the path that actually works for
+    // a mobile app, so we try it FIRST now; sbreload stays only as a last-resort fallback.
+    static const char *kKillall[] = { "/usr/bin/killall", "/var/jb/usr/bin/killall", "/bin/killall", NULL };
+    for (int i = 0; kKillall[i]; i++) {
+        if (access(kKillall[i], X_OK) == 0) {
+            char *const argv[] = { (char *)"killall", (char *)"SpringBoard", NULL };
+            pid_t pid = 0;
+            if (posix_spawn(&pid, kKillall[i], NULL, NULL, argv, environ) == 0) return YES;
+        }
+    }
     static const char *kSbreload[] = {
         "/usr/bin/sbreload", "/var/jb/usr/bin/sbreload", "/opt/procursus/bin/sbreload", NULL };
     for (int i = 0; kSbreload[i]; i++) {
@@ -1155,15 +1230,7 @@ static NSInteger gUICacheToken = 0;
             if (posix_spawn(&pid, kSbreload[i], NULL, NULL, argv, environ) == 0) return YES;
         }
     }
-    static const char *kKillall[] = { "/usr/bin/killall", "/bin/killall", "/var/jb/usr/bin/killall", NULL };
-    for (int i = 0; kKillall[i]; i++) {
-        if (access(kKillall[i], X_OK) == 0) {
-            char *const argv[] = { (char *)"killall", (char *)"SpringBoard", NULL };
-            pid_t pid = 0;
-            if (posix_spawn(&pid, kKillall[i], NULL, NULL, argv, environ) == 0) return YES;
-        }
-    }
-    return NO;   // no sbreload / killall found on this device
+    return NO;   // no killall / sbreload found on this device
 }
 
 - (void)runUICache {

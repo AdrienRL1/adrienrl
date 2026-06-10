@@ -28,6 +28,14 @@ extern NSString *const LocalCatalogDidUpdateNotification;
 // when the published catalogue actually changed.
 - (void)checkForCatalogUpdate;
 
+// 0xdead10cc fix: close the SQLite handle when the app is backgrounded so iOS never suspends the
+// app while the catalog file is held open (the #1 auto-crash on iOS 5/6/7). Reads guard on
+// (loaded && db), so they safely return empty in the brief gap; call loadWithProgress: on
+// foreground to reopen the cached file (no re-download). Safe to call repeatedly. `completion` runs
+// (on a background queue) once the handle is actually closed — the caller can hold a UIBackgroundTask
+// until then so the close finishes before iOS suspends the app.
+- (void)closeForBackgroundCompletion:(void (^)(void))completion;
+
 // Settings → "Clear catalog cache": drops the freshness baseline + deletes the cached catalog .db,
 // then re-downloads it now (or on next launch if offline). Used to force a fresh catalogue.
 + (void)clearCachedCatalog;
