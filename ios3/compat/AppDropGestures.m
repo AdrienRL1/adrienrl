@@ -413,6 +413,80 @@ static NSMutableArray *ADViewRecognizers(UIView *view, BOOL create) {
     return arr;
 }
 
+static BOOL ADViewHasControlAncestor(UIView *view) {
+    while (view) {
+        if ([view isKindOfClass:[UIControl class]]) return YES;
+        view = view.superview;
+    }
+    return NO;
+}
+
+static UIScrollView *ADNearestScrollView(UIView *view) {
+    while (view) {
+        if ([view isKindOfClass:[UIScrollView class]]) return (UIScrollView *)view;
+        view = view.superview;
+    }
+    return nil;
+}
+
+static UITouch *gADScrollTouch = nil;
+static UIScrollView *gADScrollView = nil;
+static CGPoint gADScrollStartPoint = { 0, 0 };
+static CGPoint gADScrollStartOffset = { 0, 0 };
+static BOOL gADScrollEngaged = NO;
+
+static void ADScrollReset(void) {
+    gADScrollTouch = nil;
+    gADScrollView = nil;
+    gADScrollStartPoint = CGPointZero;
+    gADScrollStartOffset = CGPointZero;
+    gADScrollEngaged = NO;
+}
+
+static void ADScrollBeginIfNeeded(UITouch *touch, UIView *hitView) {
+    if (gADScrollTouch || !touch || !hitView) return;
+    if (ADViewHasControlAncestor(hitView)) return;
+    UIScrollView *sv = ADNearestScrollView(hitView);
+    if (!sv || !sv.scrollEnabled) return;
+    gADScrollTouch = touch;
+    gADScrollView = sv;
+    // Window coordinates: deltas must NOT be measured in the scroll view's own
+    // coordinate space, because our setContentOffset: changes that space and
+    // would feed back into the delta (scroll would run at half speed).
+    gADScrollStartPoint = [touch locationInView:sv.window];
+    gADScrollStartOffset = sv.contentOffset;
+    gADScrollEngaged = NO;
+}
+
+static void ADScrollUpdateIfNeeded(UITouch *touch) {
+    if (!gADScrollTouch || touch != gADScrollTouch || !gADScrollView) return;
+    if ([gADScrollView respondsToSelector:@selector(isDragging)] && [gADScrollView isDragging]) return;
+    CGPoint p = [touch locationInView:gADScrollView.window];
+    CGFloat dx = p.x - gADScrollStartPoint.x;
+    CGFloat dy = p.y - gADScrollStartPoint.y;
+    if (!gADScrollEngaged) {
+        if (fabsf(dx) < 4.0f && fabsf(dy) < 4.0f) return;
+        if (fabsf(dy) < fabsf(dx)) return;
+        gADScrollEngaged = YES;
+    }
+    // Vertical-only manual scroll, clamped to the legal offset range so the
+    // content can't be dragged off into space (there is no UIKit bounce-back
+    // on this path).
+    UIEdgeInsets inset = gADScrollView.contentInset;
+    CGFloat minY = -inset.top;
+    CGFloat maxY = gADScrollView.contentSize.height + inset.bottom
+                 - gADScrollView.bounds.size.height;
+    if (maxY < minY) maxY = minY;
+    CGFloat ny = gADScrollStartOffset.y - dy;
+    if (ny < minY) ny = minY;
+    if (ny > maxY) ny = maxY;
+    [gADScrollView setContentOffset:CGPointMake(gADScrollStartOffset.x, ny) animated:NO];
+}
+
+static void ADScrollFinishIfNeeded(UITouch *touch) {
+    if (gADScrollTouch && touch == gADScrollTouch) ADScrollReset();
+}
+
 // Our addGestureRecognizer: — stores the AD recognizer on the view (retained by
 // the associated array, matching UIKit's "view owns its recognizers"), sets the
 // recognizer's non-retained back-pointer, and ensures touch handling is on.
@@ -461,11 +535,13 @@ static IMP gOrigSendEvent = NULL;
 static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
     NSSet *touches = nil;
     UIView *deliverFrom = nil;
+    UITouch *primaryTouch = nil;
     NSMutableSet *began = nil, *moved = nil, *ended = nil, *cancelled = nil;
 
     @try {
         touches = [event allTouches];
         UITouch *any = [touches anyObject];
+        primaryTouch = any;
         if (any) {
             UIView *hit = [any view];   // the view the touch landed in
             // Group touches by phase (AppDrop only ever uses single-finger
@@ -481,6 +557,9 @@ static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
                 [*bucket addObject:t];
             }
             deliverFrom = hit ?: self;
+            if (began) {
+                ADScrollBeginIfNeeded(any, deliverFrom);
+            }
         }
     } @catch (id e) {
         // Never let gesture bookkeeping take down event delivery.
@@ -499,6 +578,12 @@ static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
             if (moved)     ADDeliver(deliverFrom, moved,     event, 1);
             if (ended)     ADDeliver(deliverFrom, ended,     event, 2);
             if (cancelled) ADDeliver(deliverFrom, cancelled, event, 3);
+        }
+        if (moved && primaryTouch) {
+            ADScrollUpdateIfNeeded(primaryTouch);
+        }
+        if ((ended || cancelled) && primaryTouch) {
+            ADScrollFinishIfNeeded(primaryTouch);
         }
     } @catch (id e) {
         // Never let gesture dispatch take down event delivery.
