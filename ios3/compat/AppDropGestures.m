@@ -459,14 +459,17 @@ static void ADDeliver(UIView *startView, NSSet *touches, UIEvent *event, NSInteg
 static IMP gOrigSendEvent = NULL;
 
 static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
+    NSSet *touches = nil;
+    UIView *deliverFrom = nil;
+    NSMutableSet *began = nil, *moved = nil, *ended = nil, *cancelled = nil;
+
     @try {
-        NSSet *touches = [event allTouches];
+        touches = [event allTouches];
         UITouch *any = [touches anyObject];
         if (any) {
             UIView *hit = [any view];   // the view the touch landed in
             // Group touches by phase (AppDrop only ever uses single-finger
             // gestures, but handle the set generally and cheaply).
-            NSMutableSet *began = nil, *moved = nil, *ended = nil, *cancelled = nil;
             for (UITouch *t in touches) {
                 UITouchPhase ph = [t phase];
                 NSMutableSet **bucket =
@@ -477,7 +480,21 @@ static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
                 if (!*bucket) *bucket = [NSMutableSet set];
                 [*bucket addObject:t];
             }
-            UIView *deliverFrom = hit ?: self;
+            deliverFrom = hit ?: self;
+        }
+    } @catch (id e) {
+        // Never let gesture bookkeeping take down event delivery.
+    }
+
+    // First let UIKit process the touch normally so scroll views, tables and
+    // controls get the earliest possible chance to begin tracking a drag.
+    ((void (*)(id, SEL, UIEvent *))gOrigSendEvent)(self, _cmd, event);
+
+    // Then feed the same touch stream to AppDrop's backported recognizers.
+    // Keeping this after UIKit is what makes the custom gesture layer coexist
+    // with scrolling instead of fighting it.
+    @try {
+        if (deliverFrom) {
             if (began)     ADDeliver(deliverFrom, began,     event, 0);
             if (moved)     ADDeliver(deliverFrom, moved,     event, 1);
             if (ended)     ADDeliver(deliverFrom, ended,     event, 2);
@@ -486,8 +503,6 @@ static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
     } @catch (id e) {
         // Never let gesture dispatch take down event delivery.
     }
-    // Always forward to UIKit so normal control/scroll touch handling continues.
-    ((void (*)(id, SEL, UIEvent *))gOrigSendEvent)(self, _cmd, event);
 }
 
 #pragma mark - Install
