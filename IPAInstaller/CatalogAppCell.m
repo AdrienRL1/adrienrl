@@ -71,6 +71,7 @@
 - (void)dealloc {
     // Cell destroyed (e.g. table emptied / screen popped) → drop any still-pending icon request.
     if (_iconReq) [[IconLoader shared] cancelRequest:_iconReq];
+    [super dealloc];
 }
 
 - (void)prepareForReuse {

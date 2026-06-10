@@ -161,6 +161,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (void)updateCheckerChanged:(NSNotification *)note {

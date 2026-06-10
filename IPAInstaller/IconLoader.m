@@ -138,7 +138,8 @@ static UIImage *IconForceDecode(UIImage *image) {
         // suspend/resume (scroll gating) only pauses NETWORK fetches — already-cached icons
         // keep decoding off disk during a scroll. Tiny concurrency to avoid disk thrash.
         _diskDecodeQueue = [[NSOperationQueue alloc] init];
-        _diskDecodeQueue.name = @"icon-disk";
+        if ([_diskDecodeQueue respondsToSelector:@selector(setName:)])
+            _diskDecodeQueue.name = @"icon-disk";
         // Disk read + decode runs on a LOW-priority background queue (never starves the UI thread).
         // Mono-core A4 → 2: while one op blocks on a slow cold NAND read, the other decodes an
         // already-read icon (real overlap on slow storage, negligible context-switch vs NAND latency).
@@ -170,6 +171,7 @@ static UIImage *IconForceDecode(UIImage *image) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (NSString *)keyForURL:(NSString *)url size:(CGSize)size {

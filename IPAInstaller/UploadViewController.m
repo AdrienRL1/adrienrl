@@ -117,7 +117,7 @@ static NSString *uvLocSub(NSString *s) { return uvLocName(@"sub.", s); }
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(kbHide:)
         name:UIKeyboardWillHideNotification object:nil];
 }
-- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self];  [super dealloc]; }
 
 - (void)rebuildSections {
     NSMutableArray *k = [@[ @(K_FILE), @(K_TYPE) ] mutableCopy];

@@ -610,6 +610,22 @@ static NSInteger AppDropUserInterfaceIdiom(id self, SEL _cmd) {
 }
 @end
 
+#pragma mark - Adaptive concurrency helpers (IOS5Compat.m is excluded from this build)
+
+// The theos (iOS 5-10) build compiles IPAInstaller/IOS5Compat.m, which defines
+// these. The iOS 3 build EXCLUDES that file (AppDropRuntime.m supersedes its
+// subscript shims), so the definitions must live here too — same semantics.
+// -[NSProcessInfo activeProcessorCount] exists since iOS 2.0; no guard needed.
+NSUInteger ADRecommendedConcurrency(void) {
+    NSUInteger n = [[NSProcessInfo processInfo] activeProcessorCount];
+    return n < 1 ? 1 : n;
+}
+
+NSUInteger ADRecommendedConcurrencyCapped(NSUInteger maxCap) {
+    NSUInteger n = ADRecommendedConcurrency();
+    return (maxCap && n > maxCap) ? maxCap : n;
+}
+
 #pragma mark - NSException callStackSymbols (iOS 4.0+) on iOS 3.x
 
 // -[NSException callStackSymbols] was introduced in iOS 4.0. On iOS 3.x it is

@@ -39,7 +39,11 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
 // machines more cache. Purely a perf knob — it changes no query RESULT.
 static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
     if (!db) return;
-    unsigned long long ram = [[NSProcessInfo processInfo] physicalMemory];
+    // -[NSProcessInfo physicalMemory] is iOS 4.0+; on iOS 3.1.3 assume the smallest
+    // tier (every 3.x device has <= 256 MB anyway).
+    unsigned long long ram = 256ULL * 1024 * 1024;
+    if ([[NSProcessInfo processInfo] respondsToSelector:@selector(physicalMemory)])
+        ram = [[NSProcessInfo processInfo] physicalMemory];
     const char *pragma;
     if (ram <= 320ULL * 1024 * 1024)        pragma = "PRAGMA cache_size = -8000";    // ≤256 MB → 8 MB (unchanged)
     else if (ram <= 640ULL * 1024 * 1024)   pragma = "PRAGMA cache_size = -16000";   // ≤512 MB → 16 MB
@@ -87,6 +91,7 @@ static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
         sqlite3_close(_db);
         _db = NULL;
     }
+    [super dealloc];
 }
 
 - (BOOL)isReady { return self.loaded; }
