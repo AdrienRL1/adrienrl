@@ -699,6 +699,12 @@ static CGFloat AppDropEstimateBarItemWidth(UIBarButtonItem *item) {
     return 44.0f;
 }
 
+static UIBarButtonItem *AppDropFlexibleSpaceItem(void) {
+    return [[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
+                                                          target:nil
+                                                          action:nil] autorelease];
+}
+
 @interface ADTransparentToolbar : UIToolbar {
 }
 - (void)drawRect:(CGRect)rect;
@@ -725,11 +731,33 @@ static UIBarButtonItem *AppDropWrapBarItems(NSArray *items, BOOL reverseOrder) {
         ordered = rev;
     }
 
+    // Right side (reverseOrder): lead with a flexible space so the buttons are
+    // pushed against the toolbar's RIGHT edge — the nav bar right-aligns the
+    // custom view, so this is what makes the buttons hug the screen edge
+    // instead of floating slightly left of it.
+    NSMutableArray *toolbarItems = [NSMutableArray arrayWithCapacity:count + 2];
+    if (reverseOrder) {
+        [toolbarItems addObject:AppDropFlexibleSpaceItem()];
+    }
+    [toolbarItems addObjectsFromArray:ordered];
+    if (reverseOrder) {
+        // UIToolbar pads ~6pt inside its right edge; a small NEGATIVE fixed
+        // space after the last button cancels that pad so the rightmost button
+        // visually lines up with the screen edge like a native nav-bar button.
+        // (Negative fixed-space widths are honoured on iOS 3–10; if a future
+        // OS clamps them to 0 the only effect is the old 6pt gap returns.)
+        UIBarButtonItem *pull = [[[UIBarButtonItem alloc]
+            initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace
+                                 target:nil action:nil] autorelease];
+        pull.width = -6.0f;
+        [toolbarItems addObject:pull];
+    }
+
     // Compact content width: sum of per-item widths + inter-item gaps + end caps.
     CGFloat width = 0.0f;
     for (UIBarButtonItem *it in ordered) width += AppDropEstimateBarItemWidth(it);
     width += (CGFloat)(count - 1) * 8.0f;   // gaps between buttons
-    width += 12.0f;                          // small leading/trailing breathing room
+    width += reverseOrder ? 20.0f : 12.0f;  // a little extra room lets right-side buttons hug the edge
     if (width < 44.0f) width = (CGFloat)count * 44.0f;   // floor: keep buttons tappable
 
     ADTransparentToolbar *bar = [[[ADTransparentToolbar alloc] initWithFrame:CGRectMake(0, 0, width, 44)] autorelease];
@@ -747,7 +775,7 @@ static UIBarButtonItem *AppDropWrapBarItems(NSArray *items, BOOL reverseOrder) {
              forToolbarPosition:0 /* UIToolbarPositionAny */
                      barMetrics:0 /* UIBarMetricsDefault */];
     }
-    [bar setItems:ordered animated:NO];
+    [bar setItems:toolbarItems animated:NO];
     // Explicit compact frame — deliberately NO sizeToFit (see note above).
     bar.frame = CGRectMake(0, 0, width, 44);
     return [[[UIBarButtonItem alloc] initWithCustomView:bar] autorelease];

@@ -433,35 +433,136 @@ static UITouch *gADScrollTouch = nil;
 static UIScrollView *gADScrollView = nil;
 static CGPoint gADScrollStartPoint = { 0, 0 };
 static CGPoint gADScrollStartOffset = { 0, 0 };
+static CGPoint gADScrollLastPoint = { 0, 0 };
+static CFTimeInterval gADScrollLastTime = 0;
+static CGFloat gADScrollVelocityY = 0;
 static BOOL gADScrollEngaged = NO;
+static BOOL gADScrollDidWriteOffset = NO;
+static BOOL gADScrollMomentumActive = NO;
+static NSTimer *gADScrollMomentumTimer = nil;
+static id gADScrollMomentumDriver = nil;
 
-static void ADScrollReset(void) {
-    gADScrollTouch = nil;
-    gADScrollView = nil;
-    gADScrollStartPoint = CGPointZero;
-    gADScrollStartOffset = CGPointZero;
-    gADScrollEngaged = NO;
+static BOOL ADScrollTouchIsActive(UITouch *touch) {
+    if (!touch) return NO;
+    switch ([touch phase]) {
+        case UITouchPhaseBegan:
+        case UITouchPhaseMoved:
+        case UITouchPhaseStationary:
+            return YES;
+        default:
+            return NO;
+    }
 }
 
+static CGFloat ADScrollClampedY(UIScrollView *sv, CGFloat proposedY) {
+    UIEdgeInsets inset = sv.contentInset;
+    CGFloat minY = -inset.top;
+    CGFloat maxY = sv.contentSize.height + inset.bottom - sv.bounds.size.height;
+    if (maxY < minY) maxY = minY;
+    if (proposedY < minY) return minY;
+    if (proposedY > maxY) return maxY;
+    return proposedY;
+}
+
+static void ADScrollStopMomentum(void) {
+    [gADScrollMomentumTimer invalidate];
+    gADScrollMomentumTimer = nil;
+}
+
+static void ADScrollReset(void) {
+    ADScrollStopMomentum();
+    if (gADScrollView) {
+        [gADScrollView release];
+        gADScrollView = nil;
+    }
+    gADScrollTouch = nil;
+    gADScrollStartPoint = CGPointZero;
+    gADScrollStartOffset = CGPointZero;
+    gADScrollLastPoint = CGPointZero;
+    gADScrollLastTime = 0;
+    gADScrollVelocityY = 0;
+    gADScrollEngaged = NO;
+    gADScrollDidWriteOffset = NO;
+    gADScrollMomentumActive = NO;
+}
+
+@interface ADScrollMomentumDriver : NSObject
+- (void)adScrollMomentumTick:(NSTimer *)timer;
+@end
+
+@implementation ADScrollMomentumDriver
+- (void)adScrollMomentumTick:(NSTimer *)timer {
+    (void)timer;
+    UIScrollView *sv = gADScrollView;
+    if (!sv || !gADScrollMomentumActive || !gADScrollDidWriteOffset) {
+        ADScrollReset();
+        return;
+    }
+    if (!sv.window) {
+        ADScrollReset();
+        return;
+    }
+    CGFloat speed = fabsf(gADScrollVelocityY);
+    if (speed < 18.0f) {
+        ADScrollReset();
+        return;
+    }
+    CGFloat currentY = sv.contentOffset.y;
+    CGFloat nextY = ADScrollClampedY(sv, currentY - (gADScrollVelocityY / 60.0f));
+    if (fabsf(nextY - currentY) < 0.05f) {
+        gADScrollVelocityY *= 0.5f;
+    } else {
+        [sv setContentOffset:CGPointMake(sv.contentOffset.x, nextY) animated:NO];
+        gADScrollVelocityY *= 0.94f;
+    }
+    if (fabsf(gADScrollVelocityY) < 18.0f) {
+        ADScrollReset();
+    }
+}
+@end
+
 static void ADScrollBeginIfNeeded(UITouch *touch, UIView *hitView) {
-    if (gADScrollTouch || !touch || !hitView) return;
+    if (!touch || !hitView) return;
     if (ADViewHasControlAncestor(hitView)) return;
+    if (gADScrollTouch && !ADScrollTouchIsActive(gADScrollTouch)) {
+        ADScrollReset();
+    }
+    if (gADScrollTouch && touch != gADScrollTouch) return;
     UIScrollView *sv = ADNearestScrollView(hitView);
     if (!sv || !sv.scrollEnabled) return;
-    gADScrollTouch = touch;
-    gADScrollView = sv;
-    // Window coordinates: deltas must NOT be measured in the scroll view's own
-    // coordinate space, because our setContentOffset: changes that space and
-    // would feed back into the delta (scroll would run at half speed).
-    gADScrollStartPoint = [touch locationInView:sv.window];
-    gADScrollStartOffset = sv.contentOffset;
-    gADScrollEngaged = NO;
+    if (!gADScrollTouch) {
+        // A fresh touch always stops any in-flight momentum scroll (and releases
+        // the previously retained scroll view) — classic touch-to-stop.
+        ADScrollReset();
+        gADScrollTouch = touch;
+        gADScrollView = [sv retain];
+        // Window coordinates: deltas must NOT be measured in the scroll view's own
+        // coordinate space, because our setContentOffset: changes that space and
+        // would feed back into the delta (scroll would run at half speed).
+        gADScrollStartPoint = [touch locationInView:sv.window];
+        gADScrollStartOffset = sv.contentOffset;
+        gADScrollLastPoint = gADScrollStartPoint;
+        gADScrollLastTime = CACurrentMediaTime();
+        gADScrollVelocityY = 0;
+        gADScrollEngaged = NO;
+        gADScrollDidWriteOffset = NO;
+    }
 }
 
 static void ADScrollUpdateIfNeeded(UITouch *touch) {
     if (!gADScrollTouch || touch != gADScrollTouch || !gADScrollView) return;
-    if ([gADScrollView respondsToSelector:@selector(isDragging)] && [gADScrollView isDragging]) return;
+    if (!ADScrollTouchIsActive(touch)) return;
     CGPoint p = [touch locationInView:gADScrollView.window];
+    CFTimeInterval now = CACurrentMediaTime();
+    CFTimeInterval dt = now - gADScrollLastTime;
+    CGFloat stepY = p.y - gADScrollLastPoint.y;
+    if (dt > 0) {
+        CGFloat frameVelocityY = stepY / dt;
+        gADScrollVelocityY = (gADScrollVelocityY * 0.35f) + (frameVelocityY * 0.65f);
+    }
+    gADScrollLastPoint = p;
+    gADScrollLastTime = now;
+
     CGFloat dx = p.x - gADScrollStartPoint.x;
     CGFloat dy = p.y - gADScrollStartPoint.y;
     if (!gADScrollEngaged) {
@@ -469,22 +570,47 @@ static void ADScrollUpdateIfNeeded(UITouch *touch) {
         if (fabsf(dy) < fabsf(dx)) return;
         gADScrollEngaged = YES;
     }
-    // Vertical-only manual scroll, clamped to the legal offset range so the
-    // content can't be dragged off into space (there is no UIKit bounce-back
-    // on this path).
-    UIEdgeInsets inset = gADScrollView.contentInset;
-    CGFloat minY = -inset.top;
-    CGFloat maxY = gADScrollView.contentSize.height + inset.bottom
-                 - gADScrollView.bounds.size.height;
-    if (maxY < minY) maxY = minY;
-    CGFloat ny = gADScrollStartOffset.y - dy;
-    if (ny < minY) ny = minY;
-    if (ny > maxY) ny = maxY;
-    [gADScrollView setContentOffset:CGPointMake(gADScrollStartOffset.x, ny) animated:NO];
+    if ([gADScrollView respondsToSelector:@selector(isDragging)] && [gADScrollView isDragging]) return;
+    // INCREMENTAL scrolling: move relative to the CURRENT contentOffset by this
+    // frame's finger delta, instead of "startOffset - totalDelta". The absolute
+    // formula snaps the content back whenever the offset changed under us mid-
+    // drag — UIKit's own tracking taking a few frames, a table reloadData from
+    // infinite-scroll loadMore, contentSize growth, etc. — which is exactly the
+    // visible "scroll suddenly jumps" bug. Per-frame deltas are immune: each
+    // frame only ever moves by what the finger moved since the previous frame.
+    CGFloat ny = ADScrollClampedY(gADScrollView, gADScrollView.contentOffset.y - stepY);
+    if (fabsf(ny - gADScrollView.contentOffset.y) > 0.05f) {
+        [gADScrollView setContentOffset:CGPointMake(gADScrollView.contentOffset.x, ny) animated:NO];
+        gADScrollDidWriteOffset = YES;
+    }
 }
 
 static void ADScrollFinishIfNeeded(UITouch *touch) {
-    if (gADScrollTouch && touch == gADScrollTouch) ADScrollReset();
+    if (!gADScrollTouch || touch != gADScrollTouch) return;
+    gADScrollTouch = nil;
+    gADScrollMomentumActive = YES;
+    gADScrollEngaged = NO;
+    gADScrollStartPoint = CGPointZero;
+    gADScrollLastPoint = CGPointZero;
+    gADScrollLastTime = 0;
+    if (!gADScrollView) return;
+    if (![gADScrollView respondsToSelector:@selector(isDragging)] || [gADScrollView isDragging]) {
+        ADScrollReset();
+        return;
+    }
+    if (!gADScrollDidWriteOffset || fabsf(gADScrollVelocityY) < 18.0f) {
+        ADScrollReset();
+        return;
+    }
+    if (!gADScrollMomentumDriver) {
+        gADScrollMomentumDriver = [[ADScrollMomentumDriver alloc] init];
+    }
+    ADScrollStopMomentum();
+    gADScrollMomentumTimer = [NSTimer scheduledTimerWithTimeInterval:(1.0 / 60.0)
+                                                              target:gADScrollMomentumDriver
+                                                            selector:@selector(adScrollMomentumTick:)
+                                                            userInfo:nil
+                                                             repeats:YES];
 }
 
 // Our addGestureRecognizer: — stores the AD recognizer on the view (retained by
@@ -535,13 +661,11 @@ static IMP gOrigSendEvent = NULL;
 static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
     NSSet *touches = nil;
     UIView *deliverFrom = nil;
-    UITouch *primaryTouch = nil;
     NSMutableSet *began = nil, *moved = nil, *ended = nil, *cancelled = nil;
 
     @try {
         touches = [event allTouches];
         UITouch *any = [touches anyObject];
-        primaryTouch = any;
         if (any) {
             UIView *hit = [any view];   // the view the touch landed in
             // Group touches by phase (AppDrop only ever uses single-finger
@@ -557,9 +681,6 @@ static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
                 [*bucket addObject:t];
             }
             deliverFrom = hit ?: self;
-            if (began) {
-                ADScrollBeginIfNeeded(any, deliverFrom);
-            }
         }
     } @catch (id e) {
         // Never let gesture bookkeeping take down event delivery.
@@ -574,16 +695,22 @@ static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
     // with scrolling instead of fighting it.
     @try {
         if (deliverFrom) {
-            if (began)     ADDeliver(deliverFrom, began,     event, 0);
-            if (moved)     ADDeliver(deliverFrom, moved,     event, 1);
-            if (ended)     ADDeliver(deliverFrom, ended,     event, 2);
-            if (cancelled) ADDeliver(deliverFrom, cancelled, event, 3);
-        }
-        if (moved && primaryTouch) {
-            ADScrollUpdateIfNeeded(primaryTouch);
-        }
-        if ((ended || cancelled) && primaryTouch) {
-            ADScrollFinishIfNeeded(primaryTouch);
+            if (began) {
+                for (UITouch *t in began) ADScrollBeginIfNeeded(t, deliverFrom);
+                ADDeliver(deliverFrom, began, event, 0);
+            }
+            if (moved) {
+                for (UITouch *t in moved) ADScrollUpdateIfNeeded(t);
+                ADDeliver(deliverFrom, moved, event, 1);
+            }
+            if (ended) {
+                for (UITouch *t in ended) ADScrollFinishIfNeeded(t);
+                ADDeliver(deliverFrom, ended, event, 2);
+            }
+            if (cancelled) {
+                for (UITouch *t in cancelled) ADScrollFinishIfNeeded(t);
+                ADDeliver(deliverFrom, cancelled, event, 3);
+            }
         }
     } @catch (id e) {
         // Never let gesture dispatch take down event delivery.
