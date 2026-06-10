@@ -610,6 +610,81 @@ static NSInteger AppDropUserInterfaceIdiom(id self, SEL _cmd) {
 }
 @end
 
+#pragma mark - +[NSOperationQueue mainQueue]  (iOS 4.0) on iOS 3.x
+
+// +[NSOperationQueue mainQueue] is ALSO iOS 4.0 (NSOperationQueue itself is
+// iOS 2.0, but the main-queue singleton accessor is not). The catalog feed,
+// install metadata and version-list fetches all pass
+// [NSOperationQueue mainQueue] to sendAsynchronousRequest:queue:completionHandler:,
+// so the FIRST catalog load on a real 3.1.3 device throws:
+//
+//     *** +[NSOperationQueue mainQueue]: unrecognized selector
+//
+// Backport: return a process-lifetime singleton queue. It only serves as an
+// identity token — the ADAsyncURLCollector delivery path compares the queue
+// pointer against +mainQueue and routes main-queue work through GCD's
+// dispatch_get_main_queue() (gcd_shim), so operations are never actually
+// executed ON this sentinel queue for the main-thread case. No-op on iOS 4+.
+
+static NSOperationQueue *gAppDropMainQueueSentinel = nil;
+
+static id AppDropMainQueue(id cls, SEL _cmd) {
+    if (!gAppDropMainQueueSentinel) {
+        gAppDropMainQueueSentinel = [[NSOperationQueue alloc] init];   // intentionally leaked: process-lifetime singleton
+        [gAppDropMainQueueSentinel setMaxConcurrentOperationCount:1];
+    }
+    return gAppDropMainQueueSentinel;
+}
+
+@interface NSOperationQueue (AppDropMainQueue) @end
+@implementation NSOperationQueue (AppDropMainQueue)
++ (void)load {
+    if ([NSOperationQueue respondsToSelector:@selector(mainQueue)]) return;
+    Class meta = object_getClass([NSOperationQueue class]);
+    class_addMethod(meta, @selector(mainQueue), (IMP)AppDropMainQueue, "@@:");
+}
+@end
+
+#pragma mark - -[NSOperationQueue addOperationWithBlock:]  (iOS 4.0) on iOS 3.x
+
+// The INSTANCE method -[NSOperationQueue addOperationWithBlock:] is iOS 4.0+
+// (distinct from the NSBlockOperation class, which AppDropBlockOp.m already
+// backports). v3.1.3's IconLoader calls it on diskDecodeQueue for the disk-
+// cache decode step, which runs the moment the catalog grid shows its first
+// uncached icon -> on a real 3.1.3 device:
+//
+//     *** -[NSOperationQueue addOperationWithBlock:]: unrecognized selector
+//     *** Terminating app due to uncaught exception 'NSInvalidArgumentException'
+//
+// Backport: wrap the block in an ADBlockOperation (which heap-copies it via the
+// C blocks runtime - blocks are NOT ObjC objects on iOS 3, see AppDropBlocks.h)
+// and feed that to -addOperation:, which iOS 3.x has had since 2.0. No-op on
+// iOS 4+ where the real selector exists.
+
+static void AppDropAddOperationWithBlock(id self, SEL _cmd, void (^block)(void)) {
+    if (!block) return;
+    // Main-queue semantics: if this is the backported +mainQueue sentinel, the
+    // caller expects the block on the MAIN THREAD. The sentinel is a plain
+    // background queue (it exists only as an identity token), so route the work
+    // through GCD's main queue instead of actually executing on the sentinel.
+    if (self == gAppDropMainQueueSentinel && gAppDropMainQueueSentinel) {
+        void (^heap)(void) = (void (^)(void))_Block_copy((const void *)block);
+        dispatch_async(dispatch_get_main_queue(), ^{ heap(); _Block_release((const void *)heap); });
+        return;
+    }
+    [self addOperation:[ADBlockOperation blockOperationWithBlock:block]];
+}
+
+@interface NSOperationQueue (AppDropAddBlock) @end
+@implementation NSOperationQueue (AppDropAddBlock)
++ (void)load {
+    if ([NSOperationQueue instancesRespondToSelector:@selector(addOperationWithBlock:)]) return;
+    // "v@:@?" -> void, self, _cmd, block
+    class_addMethod([NSOperationQueue class], @selector(addOperationWithBlock:),
+                    (IMP)AppDropAddOperationWithBlock, "v@:@?");
+}
+@end
+
 #pragma mark - Adaptive concurrency helpers (IOS5Compat.m is excluded from this build)
 
 // The theos (iOS 5-10) build compiles IPAInstaller/IOS5Compat.m, which defines
@@ -1257,8 +1332,11 @@ static id AppDropComponentsSeparatedByCharactersInSet(id self, SEL _cmd, NSChara
     // GCD's main queue (the bundled gcd_shim provides this on iOS 3). If a real
     // addOperationWithBlock: exists (iOS 4+) and a non-main queue was given,
     // honor it.
-    if (_queue && _queue != [NSOperationQueue mainQueue] &&
-        [_queue respondsToSelector:@selector(addOperationWithBlock:)]) {
+    // +[NSOperationQueue mainQueue] is ALSO iOS 4.0 — guard it, or this very
+    // shim would throw on 3.1.3 the moment the catalog feed answers.
+    NSOperationQueue *mainQ = [NSOperationQueue respondsToSelector:@selector(mainQueue)]
+                              ? [NSOperationQueue mainQueue] : nil;
+    if (_queue && mainQ && _queue != mainQ) {
         [_queue addOperationWithBlock:^{ completion(resp, data, error); }];
     } else {
         dispatch_async(dispatch_get_main_queue(), ^{ completion(resp, data, error); });
