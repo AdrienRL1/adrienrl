@@ -1,0 +1,568 @@
+/* AppDrop — Русский */
+
+/* ===== Tab bar ===== */
+"tab.catalog" = "Каталог";
+"tab.search" = "Поиск";
+"search.placeholder" = "Поиск 43,000+ приложений...";
+"search.hint_empty" = "Введите текст для поиска в каталоге";
+"search.searching" = "Идёт поиск...";
+"search.no_results" = "Приложения не найдены";
+"search.results_count" = "%lu из %ld найдены";
+"tab.ai" = "ИИ";
+"tab.install" = "Установить";
+"tab.settings" = "Настройки";
+
+/* ===== Catalog screen ===== */
+"catalog.title" = "Каталог";
+"catalog.filters" = "Фильтры";
+"catalog.search_placeholder" = "Поиск (название или bundle ID)";
+"catalog.loading" = "Загрузка каталога...";
+"catalog.retry" = "Каталог недоступен — нажмите для повтора.";
+"suggestcat.title" = "Предложить категорию";
+"suggestcat.action" = "Неверная категория? Предложите свою";
+"suggestcat.current" = "Текущий: %@";
+"suggestcat.pick_category" = "Выберите категорию";
+"suggestcat.pick_subgenre" = "Выберите секцию";
+"suggestcat.subgenre_required" = "Пожалуйста выберите секцию.";
+"suggestcat.none" = "Основные";
+"suggestcat.submit" = "Отправить";
+"suggestcat.thanks" = "Спасибо! Ваше предложение отправлено на рассмотрение.";
+"versions.load_failed" = "Не удалось: %@";
+"versions.available_header" = "%lu версий доступно";
+"versions.count" = "%lu версии";
+"versions.unknown_size" = "неизвестный размер";
+"catalog.decompress_failed" = "ошибка распаковки";
+"catalog.unavailable" = "каталог недоступен";
+"catalog.loading_more" = "Загрузка...";
+"catalog.network_error" = "Ошибка сети: %@";
+"catalog.tap_retry" = "Нажмите для повтора";
+"catalog.server_invalid" = "Неверный ответ сервера";
+"catalog.apps_count" = "%lu из %ld приложений%@";
+"catalog.end" = " — конец списка";
+"catalog.select" = "Выбрать";
+"catalog.install_n" = "Установить (%lu)";
+"select.count" = "%lu выбрано";
+"catalog.install_started_n" = "%lu загрузок запущено";
+
+/* ===== AI Chat screen ===== */
+"chat.title" = "ИИ Чат";
+"chat.placeholder" = "Задайте свой вопрос...";
+"chat.tap_to_install" = "Нажми для установки";
+"chat.send" = "Отправить";
+
+/* ===== App detail screen ===== */
+"app.install" = "Установить";
+"app.starting" = "Начинается...";
+"app.btn.downloading" = "Скачивание %ld %%";
+"app.btn.installing" = "Устанавливается…";
+"app.btn.queued" = "В очереди";
+"app.btn.installed" = "Установлено";
+"app.btn.retry" = "Повторить попытку";
+"app.versions" = "Версии";
+"app.no_url" = "Нет URL";
+"app.no_url_msg" = "У этого приложения нет действительного URL-адреса.";
+
+/* ===== Install (root) screen ===== */
+"install.title" = "Установить IPA";
+"install.clear" = "Очистить";
+"install.url_label" = "IPA URL (https:// или itms-services://)";
+"install.url_placeholder" = "https://archive.org/.../app.ipa";
+"install.button" = "Установить";
+"install.installations" = "Установки (%lu)";
+"install.count_active" = "%ld скачивается";
+"install.count_waiting" = "%ld в ожидании";
+
+/* ===== Settings screen ===== */
+"settings.title" = "Настройки";
+"settings.section_diagnostics" = "Диагностики";
+"settings.section_diagnostics_footer" = "Проверяет доступ по HTTPS к archive.org и наличие ipainstaller.";
+"settings.section_cache" = "Кеш";
+"settings.section_about" = "О программе";
+"settings.test_https" = "Проверить HTTPS до archive.org";
+"settings.test_ipainstaller" = "Проверить вызов ipainstaller";
+"settings.clear_icons" = "Очистить кеш иконок";
+"settings.cache_cleared" = "Кеш очищен";
+"settings.cache_cleared_msg" = "Все иконки каталога удалены из памяти.";
+"settings.about_app" = "Приложение";
+"settings.about_version" = "Версия";
+"settings.about_bundle" = "Bundle ID";
+"settings.about_min_ios" = "Мин. iOS для прил.";
+"settings.about_device_ios" = "iOS устройства";
+"settings.about_device_model" = "Модель устройства";
+"settings.section_display" = "Модель устройства";
+"settings.hide_ai_tab" = "Скрыть вкладку ИИ";
+"settings.theme" = "Тема";
+"theme.default" = "По умолчанию (синий)";
+"theme.dark_gray" = "Чёрный";
+"theme.dark_blue" = "Тёмно-синий";
+"theme.section_light" = "Светлый режим";
+"theme.section_dark" = "Тёмный режим";
+"theme.graphite" = "Графит";
+"theme.noir" = "Чёрный";
+"theme.slate" = "Сланец";
+"theme.indigo" = "Индиго";
+"theme.purple" = "Фиолетовый";
+"theme.pink" = "Розовый";
+"theme.red" = "Красный";
+"theme.orange" = "Оранжевый";
+"theme.green" = "Зелёный";
+"theme.teal" = "Бирюзовый";
+"theme.header" = "Цвет темы";
+"theme.footer" = "Применяется мгновенно ко всему приложению. Вариант «По умолчанию» сохраняет классический синий дизайн iOS 6.";
+"settings.theme_default" = "По умолчанию (синий)";
+"settings.theme_graphite" = "Графит";
+"settings.theme_apply_msg" = "Тема оформления будет применена при следующем открытии AppDrop.";
+"settings.grid_density" = "Приложений в ряду";
+"settings.home_grid_density" = "Иконок на Главной в ряду";
+"settings.cols_list" = "Список";
+"settings.show_favorites_home" = "Показать избранное на Главной Странице";
+"settings.section_display_footer" = "Настройка количества плиток в одном ряду для каждой сетки.";
+"settings.about_chip" = "Процессор";
+"settings.about_ram" = "Память (ОЗУ)";
+"settings.language" = "Язык";
+"settings.language_auto" = "Автоматич. (системная)";
+
+/* ===== Common buttons ===== */
+"common.ok" = "ОК";
+"common.cancel" = "Отменить";
+"common.ios_unknown" = "неизвестно";
+
+"common.done" = "Готово";
+/* ===== Catalog filter ===== */
+"filter.title" = "Фильтры";
+"filter.all_versions" = "Все версии iOS";
+"filter.unique" = "Уникальные";
+"filter.sort_label" = "сортировка: %@";
+
+"chat.found_apps" = "Найдно %lu приложений по твоему запросу";
+"chat.not_found" = "Не удалось найти это приложение в каталоге.";
+"chat.found_named" = "Вот что удалось найти: %@.";
+"chat.device_answer" = "Ваше устройство: %@.";
+"chat.search_results_neutral" = "Вот некоторые результаты из каталога, которые могут подойти:";
+
+"chat.llm_error" = "ИИ сервис недоступен. Проверьте свою сеть и попробуйте снова.";
+
+/* ===== Install screen actions (v1.8.7) ===== */
+"install.cancel_all" = "Отменить всё";
+"install.pause_all" = "Приостановить всё";
+"install.resume_all" = "Продолжить всё";
+"install.empty" = "Установок пока нет";
+"install.cancelled_title" = "Отменено";
+"install.cancelled_msg" = "%ld загрузка(-ок) отменено.";
+"install.swipe_cancel" = "Отменить";
+"install.swipe_delete" = "Удалить";
+
+/* ===== Install errors / common URL validation (v1.8.7) ===== */
+"common.empty_url" = "Пустой URL";
+"common.empty_url_msg" = "Вставьте или введите IPA URL.";
+"common.invalid_url" = "Неверный URL";
+"common.invalid_url_msg" = "URL должен быть https://...ipa или itms-services://...";
+"common.error" = "Ошибка";
+"common.cancelled" = "Отменено";
+"common.too_many_redirects" = "Слишком много перенаправлений";
+
+/* ===== Install job states (v1.8.7) ===== */
+"install.state.queued" = "Ожидание...";
+"install.state.preparing" = "Автономный режим — подготовка";
+"install.state.connecting" = "Подключение к HTTPS...";
+"install.state.downloading_full" = "Скачивание: %.1f МБ / %.1f МБ (%ld%%)";
+"install.state.downloading_partial" = "Скачивание: %.1f МБ";
+"install.state.installing" = "Локальная установка...";
+"install.state.installed_prefix" = "Установлено: %@";
+"install.state.cancelling" = "Отмена...";
+"install.state.paused" = "Пауза";
+"install.state.cancelled_user" = "Отменено пользователем";
+"install.state.interrupted" = "Прервано (приложение закрыли) — скачайте заново для повтора.";
+
+/* ===== Install errors (v1.8.7) ===== */
+"install.error.failed_prefix" = "Ошибка: %@";
+"install.error.404" = "Файл не найден на сервере (404). IPA был удален или перемещен.";
+"install.error.403" = "Доступ заблокирован сервером (403).";
+"install.error.5xx_archive" = "Сервер временно недоступен (HTTP %ld). CDN archive.org может ограничивать ваш IP — подождите 1-2 минуты и повторите попытку.";
+"install.error.5xx_generic" = "Ошибка сервера HTTP %ld";
+"install.error.http_generic" = "HTTP %ld";
+"install.error.network" = "Сбой сети";
+"unit.b" = "Б";
+"unit.kb" = "КБ";
+"unit.mb" = "МБ";
+"unit.gb" = "ГБ";
+"install.modern_ios_msg" = "Эта версия iOS не поддерживает ipainstaller. Файл .ipa сохранен по пути:\n%@\nОткройте его в Filza или iFile для ручной установки.";
+"install.kept_after_fail" = "Ошибка установки. Файл .ipa сохранен по пути:\n%@\nВы можете установить его вручную через Filza или iFile.";
+"install.state.saved_for_manual" = "Сохранено (открыть в Filza)";
+"chat.llm_unavailable" = "ИИ сервис недоступен. Pollinations.ai может быть временно отключен — попробуйте еще раз через несколько минут.";
+"install.error.no_ipainstaller" = "ipainstaller не найден. Установите пакет « IPA Installer Console » из Cydia (поиск по: appinst или ipainstaller).";
+"install.error.spawn_failed" = "Сбой posix_spawn(%s): %s";
+"install.error.install_failed" = "Ошибка установки. Такое бывает с тяжелыми приложениями, либо при нехватке памяти — повторите попытку, освободите место или выберите другую версию.";
+"install.error.no_space" = "Недостаточно свободного места для установки (требуется около %@). Освободите место и повторите попытку.";
+
+/* ===== App detail extras (v1.8.7) ===== */
+"app.fallback_title" = "Приложение";
+"app.subtitle_with_size" = "v%@ — %@";
+"app.size_unknown" = "неизвестный размер";
+"app.info_bundle_id" = "Bundle ID";
+"app.info_version" = "Версия";
+"app.info_min_ios" = "Мин iOS";
+"app.info_project" = "Страница проекта";
+"app.info_platform" = "Платформа";
+"app.info_size" = "Размер";
+"app.info_file" = "Файл";
+"app.info_mirror" = "Зеркало";
+"app.info_url" = "Полный URL";
+
+/* ===== Filter screen extras (v1.8.7) ===== */
+"filter.section.version" = "Версия iOS приложения";
+"filter.section.device" = "Совместимость с устройством";
+"filter.section.options" = "Параметры";
+"filter.section.sort" = "Сортировка";
+"filter.footer.version" = "Фильтрация приложений по требуемой версии iOS. Установите «Макс iOS» на версию вашего устройства, чтобы видеть только совместимый софт.";
+"filter.footer.device" = "iPhone: только приложения для iPhone (включая универсальные). iPad: только приложения для iPad. Все: без фильтрации.";
+"filter.footer.options" = "Уникальные: скрывает дубликаты Bundle ID, оставляя в списке только самую свежую версию приложения.";
+"filter.device.all" = "Все приложения";
+"filter.device.iphone" = "iPhone / iPod touch";
+"filter.device.ipad" = "iPad";
+"filter.sort.recent_long" = "По новизне";
+"filter.sort.name_long" = "Название A-Z";
+"filter.sort.size_long" = "Размер";
+"filter.sort.minos_long" = "Мин iOS";
+"filter.none" = "нет";
+"filter.choose_none" = "Нет";
+"filter.reset" = "Сбросить настройки";
+"filter.unique_switch" = "Уникальные (без дубликатов)";
+"filter.min_ios_row" = "Мин iOS";
+"filter.max_ios_row" = "Макс iOS";
+
+/* ===== Versions screen (v1.8.7) ===== */
+"versions.invalid_response" = "Неверный ответ сервера";
+"versions.footer" = "Каждая строка — это отдельное зеркало. Выбирайте источник, опираясь на нужную версию iOS приложения.";
+
+/* ===== CatalogFilter short labels (v1.8.7) ===== */
+"catalog.short.recent" = "новые";
+"catalog.short.name" = "имя";
+"catalog.short.size" = "размер";
+"catalog.short.minos" = "iOS";
+
+/* ===== Onboarding + sort direction (v2.0.8) ===== */
+"onboarding.ipainstaller_title" = "Важное требование";
+"onboarding.ipainstaller_msg" = "Для установки IPA необходим пакет « IPA Installer Console » из Cydia (поиск по: appinst или ipainstaller). Без него локальная установка приложений невозможна. Вы уже установили его?";
+"onboarding.ipainstaller_continue" = "Да, продолжить";
+"onboarding.ipainstaller_cancel" = "Ещё нет";
+"onboarding.catalog_quality_title" = "Перед установкой приложения";
+"onboarding.catalog_quality_msg" = "Список приложений взят из открытого источника, поэтому у некоторых программ имя или иконка могут слегка не совпадать. Перед установкой проверяйте имя файла под названием приложения, чтобы убедиться, что это то, что нужно.";
+"onboarding.dont_show_again" = "Больше не показывать";
+"common.understood" = "Понятно";
+"filter.footer.sort" = "Нажмите на выбранный параметр еще раз, чтобы изменить направление сортировки (по возрастанию/убыванию).";
+
+/* ===== v1.2 — Mirror retry on slow download ===== */
+"install.state.retrying_mirror" = "Медленное зеркало — повтор (%d/%d)…";
+
+/* ===== v1.2 build 8 — Pre-install FairPlay encryption check ===== */
+"install.error.fairplay" = "Этот .ipa зашифрован FairPlay — привязан к Apple ID, который купил его в App Store, поэтому не запустится на вашем устройстве. Попробуйте другое зеркало в списке Версий (в каталоге часто есть несколько источников для одного приложения).";
+"install.error.arch64" = "Это 64-битное приложение (arm64) — оно не запустится на вашем 32-битном устройстве. Собрано для новых iPhone/iPad (iOS 11+). Здесь нечего устанавливать.";
+
+/* ===== v1.2 build 9 — Parallel chunked downloads ===== */
+"settings.section_download" = "Загрузка";
+"settings.parallel_streams" = "Параллельных потоков";
+"settings.max_downloads" = "Одновременных загрузок";
+"settings.parallel_streams_footer" = "archive.org ограничивает скорость на каждое TCP-соединение. Разбивка на несколько параллельных потоков даёт ускорение в 3–4 раза. 4 — оптимально: больше почти не помогает, а могут зарезать все потоки разом. Поставьте 1, чтобы отключить.";
+"settings.streams_off" = "1 (один поток)";
+"settings.streams_n" = "%ld потока(-ов)";
+
+/* ===== v1.2 build 9 — Download error messages (previously hardcoded) ===== */
+"install.error.open_final" = "Не удалось создать финальный .ipa файл (диск заполнен или ограничения sandbox?)";
+"install.error.open_chunk" = "Не удалось прочитать часть файла %@";
+"install.error.concat_write" = "Ошибка записи при сборке файла (диск заполнен?)";
+"install.error.no_headers" = "Сервер не вернул HTTP-заголовки";
+"install.error.redirect_no_location" = "Редирект HTTP %ld без заголовка Location";
+
+/* ===== v1.2 build 13 — In-app updater (Settings → Updates section) ===== */
+"settings.section_updates" = "Обновления";
+"settings.installed_version" = "Установлена";
+"settings.latest_release" = "Последний релиз";
+"settings.checking" = "Проверка…";
+"settings.tap_to_check" = "Нажмите для проверки";
+"settings.check_failed" = "Не удалось проверить — нажмите ещё раз";
+"settings.install_update_to" = "Обновить до v%@ через Cydia";
+"settings.install_update_title" = "Установить обновление?";
+"settings.install_update_msg" = "Скачать и установить AppDrop v%@ (релиз %@)? Загрузка пройдёт во вкладке «Установить». Приложение закроется во время обновления — после этого запустите его заново с рабочего стола.";
+"settings.install_action" = "Установить";
+"settings.update_started_title" = "Обновление запущено";
+"settings.update_started_msg" = "Откройте вкладку «Установить», чтобы следить за загрузкой. AppDrop закроется, когда ipainstaller возьмёт управление.";
+"settings.updates_footer_initial" = "Нажмите «Последний релиз», чтобы проверить репозиторий GitHub на наличие новой версии.";
+"settings.updates_footer_checked" = "Последняя проверка: %@. Нажмите «Последний релиз» для обновления.";
+"settings.last_checked_just_now" = "только что";
+"settings.last_checked_minutes" = "%ld мин. назад";
+"settings.last_checked_hours" = "%ld ч. назад";
+
+/* ===== v1.2 build 14 — Update release-notes modal ===== */
+"update_notes.title" = "Что нового";
+"update_notes.install" = "Установить";
+"update_notes.open_in_cydia" = "Открыть Cydia";
+"update_notes.cydia_banner_title" = "Установить через Cydia";
+"update_notes.cydia_banner_body" = "Это обновление доступно из источника AdrienRL в Cydia. Нажмите «Открыть Cydia» в правом верхнем углу для установки.";
+"update_notes.header_with_date" = "v%@ — вышло %@";
+"update_notes.header_no_date" = "v%@";
+"update_notes.empty" = "Описание изменений для этой версии отсутствует.";
+
+/* ===== v1.2 — archive.org S3 login (optional, helps with throttling) ===== */
+"settings.section_archive" = "Аккаунт Archive.org";
+"settings.section_archive_footer" = "Необязательно. Снижает ограничение скорости по IP. Ключи: archive.org/account/s3.php";
+"settings.archive_email" = "Email";
+"settings.archive_access_key" = "Access Key";
+"settings.archive_secret_key" = "Secret Key";
+"settings.archive_not_set" = "Не задан";
+"settings.archive_help" = "Ключи доступны на archive.org/account/s3.php. Оставьте пустым, чтобы удалить.";
+"settings.archive_save" = "Сохранить";
+
+/* ===== v1.3.1 — Configurable download folder + keep-IPA toggle + Filza launch ===== */
+"settings.section_download_footer" = "Параллельные потоки: 4 — оптимум для archive.org. Папка сохранения: куда попадают .ipa после загрузки. Хранить IPA: сохранять копию после установки (iOS 5–9; iOS 10+ сохраняет автоматически).";
+"settings.download_folder" = "Папка сохранения";
+"settings.download_folder_default" = "По умолчанию (sandbox)";
+"settings.download_folder_custom" = "Свой путь…";
+"settings.download_folder_custom_msg" = "Укажите абсолютный путь, например /var/mobile/Documents/AppDrop. Оставьте пустым, чтобы вернуться к стандартному. Папка создаётся при первом сохранении.";
+"settings.keep_ipa" = "Хранить IPA после установки";
+"settings.allow_encrypted" = "Разрешить зашифрованные IPA (продвинутое)";
+"settings.auto_switch_mirror" = "Авто-замена медленных зеркал";
+"install.saved_at_suffix" = "saved at %@";
+"install.saved_alert_title" = "IPA сохранён";
+"install.saved_alert_msg" = "Сохранено в:\n%@\n\nОткройте в Filza для установки. Если Filza выдаёт ошибку подписи (0xe800B001), установите пакет «appinst» из Cydia и попробуйте снова.";
+"install.open_in_filza" = "Открыть в Filza";
+"install.no_filza_title" = "Filza не найдена";
+"install.no_filza_msg" = "Путь к файлу скопирован в буфер обмена — вставьте его в любой файловый менеджер.";
+
+/* v1.6 — AI description device verdict */
+"app.verdict.perfect" = "Совместимо с вашим %@";
+"app.verdict.maybe" = "Может работать нестабильно на вашем %@";
+"app.verdict.ram" = "Может требовать больше памяти, чем есть у вашего %@ — возможна нестабильная работа";
+"app.verdict.ios" = "Требует iOS %@ — на вашем устройстве iOS %@";
+"app.verdict.ipad_only" = "Только для iPad — не запустится на вашем %@";
+"app.verdict.issues_label" = "Внимание:";
+
+/* v1.7 category menu */
+"categories.title" = "Категории";
+"categories.all" = "Все приложения";
+"categories.all_in_cat" = "Все";
+"catalog.browse_categories" = "Категории";
+"cat.Games" = "Игры";
+"cat.Entertainment" = "Развлечения";
+"cat.Social Networking" = "Социальные сети";
+"cat.Photo & Video" = "Фото и видео";
+"cat.Music" = "Музыка";
+"cat.Productivity" = "Продуктивность";
+"cat.Utilities" = "Утилиты";
+"cat.Travel" = "Путешествия";
+"cat.Navigation" = "Навигация";
+"cat.News" = "Новости";
+"cat.Sports" = "Спорт";
+"cat.Education" = "Образование";
+"cat.Finance" = "Финансы";
+"cat.Health & Fitness" = "Здоровье и фитнес";
+"cat.Lifestyle" = "Образ жизни";
+"cat.Business" = "Бизнес";
+"cat.Reference" = "Справочники";
+"cat.Books" = "Книги";
+"cat.Weather" = "Погода";
+"cat.Food & Drink" = "Еда и напитки";
+"cat.Medical" = "Медицина";
+"cat.Shopping" = "Покупки";
+"sub.Action" = "Экшен";
+"sub.Adventure" = "Приключения";
+"sub.Arcade" = "Аркады";
+"sub.Board" = "Настольные";
+"sub.Card" = "Карточные";
+"sub.Casino" = "Казино";
+"sub.Dice" = "Кости";
+"sub.Educational" = "Обучающие";
+"sub.Family" = "Семейные";
+"sub.Kids" = "Детские";
+"sub.Music" = "Музыкальные";
+"sub.Puzzle" = "Головоломки";
+"sub.Racing" = "Гонки";
+"sub.Role Playing" = "Ролевые";
+"sub.Simulation" = "Симуляторы";
+"sub.Sports" = "Спорт";
+"sub.Strategy" = "Стратегии";
+"sub.Trivia" = "Викторины";
+"sub.Word" = "Слова";
+"sub.Casual" = "Казуальные";
+
+/* v1.7 category home */
+"categories.welcome" = "Привет в AppDrop!";
+"categories.welcome_sub" = "%@ iOS приложений и игр";
+"categories.napps" = "%@ приложений";
+
+/* v1.7 support/donate */
+"settings.support_row" = "Поддержать AppDrop";
+"support.action" = "Поддержать AppDrop";
+"settings.support_footer" = "AppDrop бесплатен. Если приложение вам полезно, небольшой донат через PayPal будет приятен — но не обязателен.";
+"settings.support_copied" = "Ссылка скопирована. Откройте её на более новом устройстве или компьютере, чтобы задонатить через PayPal.";
+
+/* v1.7 version compatibility */
+"app.picked_compatible" = "Показана последняя версия, совместимая с вашей iOS — более новые версии требуют свежей iOS.";
+"versions.incompatible" = "✗ нужна свежее iOS";
+
+/* v1.7 catalog download */
+"catalog.downloading" = "Загрузка каталога…";
+"catalog.downloading_pct" = "Загрузка каталога… %d%%";
+"catalog.decompressing" = "Распаковка…";
+
+/* v1.7 feedback */
+"feedback.title" = "Обратная связь";
+"feedback.section" = "Обратная связь";
+"feedback.section_footer" = "Сообщите об ошибке или предложите улучшение. Отправляется прямо разработчику.";
+"feedback.row" = "💬 Сообщить об ошибке / предложить";
+"feedback.intro" = "Нашли баг или есть идея? Опишите ниже. Можно прикрепить скриншоты.";
+"feedback.placeholder" = "Опишите баг или улучшение…";
+"feedback.add_photo" = "📷 Добавить фото";
+"feedback.remove_photo" = "Удалить";
+"feedback.send" = "Отправить";
+"feedback.sent_title" = "Спасибо!";
+"feedback.sent" = "Отзыв отправлен. Спасибо, что помогаете улучшать AppDrop!";
+"feedback.error" = "Не отправлено — проверьте соединение";
+"feedback.empty" = "Сначала напишите что-нибудь.";
+"feedback.not_configured" = "Обратная связь ещё не настроена — попробуйте после следующего обновления.";
+
+/* v3.1 crash reporter */
+"crash.prompt_title" = "AppDrop упал";
+"crash.prompt_msg" = "AppDrop завис в прошлый раз. Отправить анонимный отчёт, чтобы помочь исправить проблему? Личные данные не включены.";
+"crash.send" = "Отправить отчёт";
+"crash.decline" = "Не сейчас";
+"crash.thanks_title" = "Спасибо!";
+"crash.thanks_msg" = "Отчёт отправлен. Это реально помогает исправить проблему.";
+
+"tab.home" = "Главная";
+
+/* ===== Revival / Works today (issue #4) ===== */
+"categories.revival" = "Работает сегодня";
+"categories.revival_sub" = "Приложения, которые до сих пор работают на старой iOS";
+"categories.modded" = "Моды";
+"categories.modded_sub" = "Изменённые приложения и игры";
+"modded.intro" = "Изменённые приложения и игры для старой iOS.";
+"revival.title" = "Работает сегодня";
+"revival.intro" = "Приложения, которые реально работают на старой iOS сегодня — пропатченные, оживлённые или сделанные сообществом.";
+"revival.empty" = "Для вашего устройства пока ничего нет.";
+"revival.install" = "Установить";
+"revival.open" = "Открыть";
+"revival.install_started" = "Установка запущена — смотрите вкладку «Установить».";
+"revival.needs_server" = "нужен сервер";
+"revival.active" = "Активно";
+"revival.beta" = "Бета";
+"revival.discontinued" = "Заброшено";
+"revival.update" = "Обновить до v%@";
+"revival.open_page" = "Открыть страницу проекта";
+
+/* ── Collections / Favorites (Phase 1) ── */
+"collections.favorites" = "Избранное";
+"collections.section" = "Избранное и папки";
+"categories.section" = "Категории";
+"collections.empty" = "Избранного пока нет. Нажмите ☆ на странице приложения, чтобы добавить.";
+"collections.select" = "Выбрать";
+"collections.select_all" = "Выбрать всё";
+"collections.select_none" = "Снять выделение";
+"collections.remove" = "Убрать";
+"collections.download_n" = "Скачать (%ld)";
+"collections.image" = "Изображение";
+"collections.image_title" = "Превью";
+"collections.image_pick" = "Выбрать приложение как изображение…";
+"collections.image_auto" = "Автоматически (сменяется)";
+"collections.image_hint" = "Нажмите на приложение, чтобы закрепить его как изображение";
+"collections.image_pinned_title" = "Изображение закреплено";
+"collections.image_pinned_msg" = "Это приложение всегда будет отображаться как изображение коллекции.";
+"collections.dl_started_title" = "Загрузки запущены";
+"collections.dl_started_msg" = "%ld загрузка(-ок) запущена.";
+
+/* ── Home: reset layout (5c) ── */
+"home.reset" = "Сбросить";
+"home.reset_title" = "Сбросить раскладку?";
+"home.reset_msg" = "Вернуть Главную к автоматической раскладке (порядок, закрепления и размеры по умолчанию).";
+
+/* ── Download later (Phase 2) ── */
+"collections.later" = "Скачать позже";
+"collections.download_all" = "Скачать все";
+"later.added" = "Добавлено в «Скачать позже».";
+"later.removed" = "Убрано из «Скачать позже».";
+
+/* ── Multi-select actions (Phase 3) ── */
+"later.short" = "Позже";
+"select.added_fav" = "%lu добавлено в Избранное";
+"select.added_later" = "%lu добавлено в «Скачать позже»";
+
+/* ── Folders (Phase 4) ── */
+"folder.short" = "Папка";
+"folder.add_title" = "Добавить в папку";
+"folder.new" = "Новая папка";
+"folder.untitled" = "Без названия";
+"folder.create" = "Создать";
+"folder.edit" = "Редактировать";
+"folder.rename" = "Перемеиновать";
+"folder.delete" = "Удалить папку";
+"folder.delete_title" = "Удалить папку?";
+"folder.delete_title_named" = "Удалить \"%@\"?";
+"folder.delete_msg" = "Папка будет удалена. Уже установленные приложения останутся.";
+"select.added_folder" = "%lu добавлено в папку";
+
+
+/* v3.0 — Encrypted-version (FairPlay) warning + decrypted-version recommendation */
+"app.encrypted_warning" = "Эта версия зашифрована (FairPlay) — не установится: привязана к исходному Apple ID.";
+"app.encrypted_use_version" = "Расшифрованная версия: %@ — нажмите, чтобы открыть";
+
+/* v3.0 — badge version chiffrée (liste des versions) */
+"versions.encrypted" = "Зашифрована — не установится";
+
+/* v3.0 — chiffré : aucune alternative + ouverture auto de la version non chiffrée */
+"app.encrypted_none" = "Эта версия зашифрована, и незашифрованной альтернативы нет.";
+
+/* v3.0 — Share an app (moderated upload) */
+"upload.title" = "Поделиться приложением";
+"upload.send" = "Отправить";
+"upload.share_button" = "＋ Share an app";
+"upload.pick_title" = "Выберите .ipa";
+"upload.pick_shortcuts" = "Места";
+"upload.pick_folders" = "Папки";
+"upload.pick_files" = ".ipa files";
+"upload.pick_empty" = "Здесь нет .ipa файлов.";
+"upload.pick_button" = ".ipa file";
+"upload.pick_none" = "Файл не выбран";
+"upload.section_file" = "Файл";
+"upload.section_category" = "Категория";
+"upload.section_details" = "Подробности";
+"upload.section_rights" = "Права";
+"upload.intro" = "Поделитесь приложением, которое вы имеете право распространять: своё, homebrew, open-source, бесплатное, общественное достояние.";
+"upload.legal" = "Отправляя, вы подтверждаете, что имеете право делиться этим приложением. Каждая заявка проходит модерацию перед публикацией и может быть удалена.";
+"upload.attest" = "Я подтверждаю, что имею право делиться этим приложением";
+"upload.name_ph" = "Название приложения";
+"upload.desc_ph" = "Описание (что это, что изменено…)";
+"upload.minios_ph" = "Минимальная iOS (например 5.0)";
+"upload.version_ph" = "Версия (например 1.2)";
+"upload.mod_ph" = "Что изменено (если есть)";
+"upload.bid_ph" = "Bundle ID (необязательно)";
+"upload.credit_ph" = "Ваше имя / ник (в титрах, необязательно)";
+"upload.sent_title" = "Спасибо!";
+"upload.sent" = "Приложение отправлено на модерацию. Спасибо за вклад!";
+"upload.err_nofile" = "Сначала выберите .ipa файл.";
+"upload.err_noname" = "Дайте приложению название.";
+"upload.err_attest" = "Нужно подтвердить, что вы имеете право делиться этим приложением.";
+"upload.err_toobig" = "Файл слишком большой (макс. %d МБ).";
+"upload.err_read" = "Не удалось прочитать файл.";
+"upload.err_send" = "Ошибка отправки";
+// --- v3.1 uploads overhaul ---
+"upload.section_type" = "Тип";
+"upload.type_catalog" = "Приложение/Игра";
+"upload.type_revival" = "Работает";
+"upload.type_mods" = "Мод";
+"upload.cat_choose" = "Выберите категорию";
+"upload.cat_required" = "Выберите категорию для этого приложения.";
+"upload.cat_pick_title" = "Категория";
+"upload.cat_inherited" = "Приложение уже есть в AppDrop: категория берётся из каталога.";
+"upload.cat_footer" = "Обязательно для приложений, которых ещё нет в AppDrop.";
+"upload.err_encrypted" = "Это приложение зашифровано (FairPlay DRM) и не может быть опубликовано. Выберите расшифрованную версию.";
+"upload.err_nodesc" = "Добавить описание.";
+"upload.desc_ph_req" = "Описание (обязательно)";
+"upload.desc_ph_opt" = "Описание (необязательно)";
+"upload.analyzing" = "Анализирование…";
+
+/* v3.1.3 — respring + same-category guard */
+"settings.respring" = "Респринг";
+"settings.respring_msg" = "Перезапустить рабочий стол (SpringBoard)? Используйте, если иконка установленного приложения не появилась. Экран на несколько секунд погаснет.";
+"suggestcat.same_category" = "Это приложение уже в этой категории. Выберите другую категорию или секцию, чтобы предложить изменение.";
+"settings.clear_catalog" = "Очистить кеш каталога (перезагрузить)";
+"settings.catalog_cleared_msg" = "Кеш каталога очищен. AppDrop загружает свежую версию прямо сейчас (или при следующем запуске, если вы офлайн).";
