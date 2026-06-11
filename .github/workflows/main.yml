@@ -118,6 +118,7 @@ jobs:
           # Extract app structure from armv6 DEB (base bundle)
           tmp_armv6="$(mktemp -d)"
           dpkg-deb -x "$armv6_deb" "$tmp_armv6"
+          mkdir -p Payload
           cp -r "$tmp_armv6/Applications/AppDrop.app" Payload/
 
           # Extract armv7 binary from armv7 DEB and add it
