@@ -119,6 +119,7 @@ static UIImage *ADDownloadLaterNavGlyph(void) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (void)buildHeader {

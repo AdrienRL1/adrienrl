@@ -379,6 +379,6 @@ static const CGFloat kToolbarH = 44.0;
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)o { return YES; }
 - (NSUInteger)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
 
-- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; [super dealloc]; }
 
 @end

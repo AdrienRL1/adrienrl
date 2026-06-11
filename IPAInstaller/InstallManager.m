@@ -593,7 +593,9 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     // at "0%" forever). We trip slowAbort so it retries on a fresh mirror (and, out of retry budget,
     // fails cleanly) instead of hanging indefinitely.
     __block long long stallBytes = 0;
-    __block NSDate *stallSince = [NSDate date];
+    // iOS3/MRC: primitive NSTimeInterval, same reasoning as lastTick/windowStart above —
+    // an autoreleased NSDate captured by these long-lived blocks dangles under MRC.
+    __block NSTimeInterval stallSince = CFAbsoluteTimeGetCurrent();
 
     // Stream count from Settings (default 4). 1 disables parallelism and
     // ParallelDownloader transparently falls back to the legacy single-stream
@@ -623,7 +625,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         // #278: no NEW bytes for 90 s → the connection is dead. Trip slowAbort to retry/fail cleanly
         // rather than sit at "0%" forever (the slow-mirror window above is skipped when the user
         // turned AutoSwitchMirror OFF, so this absolute guard must be unconditional).
-        if (-[stallSince timeIntervalSinceNow] > 90.0) { slowAbort = YES; return YES; }
+        if (CFAbsoluteTimeGetCurrent() - stallSince > 90.0) { slowAbort = YES; return YES; }
         // Only consider slow-mirror abort if the user left auto-switch ON (#171 level 2) AND we
         // still have retry budget — otherwise there's no point dropping the connection.
         if (autoSwitchMirror && attempt < kMaxMirrorAttempts - 1) {

@@ -88,6 +88,7 @@ static NSString *RevHumanSize(long long bytes) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 // #142: the hosted Works-Today / Modded list was refreshed mid-session → reload our data + view.

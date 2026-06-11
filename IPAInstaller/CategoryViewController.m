@@ -1041,6 +1041,7 @@ static void parseSpan(NSString *s, int *w, int *h) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 @end

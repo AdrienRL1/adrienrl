@@ -123,7 +123,7 @@ static UIImage * __attribute__((unused)) AppDropFeedbackBarIcon(void) {
         name:UIKeyboardWillHideNotification object:nil];
 }
 
-- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; [super dealloc]; }
 
 - (void)viewWillLayoutSubviews { [super viewWillLayoutSubviews]; [self applyLayout]; }
 
