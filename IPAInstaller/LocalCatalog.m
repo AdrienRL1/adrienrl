@@ -55,12 +55,21 @@ static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
 // data-protection class so iOS can't kill the app for holding the file open while the device is
 // locked and the app is suspended. No-op on devices without a passcode (no data protection anyway),
 // and safe on jailbroken systems. Covers the main file + any SQLite sidecars.
+// iOS3: NSFileProtectionKey/NSFileProtectionNone are iOS 4.0+. They're weak-imported here, so on
+// 3.x dyld binds them to NULL — touching them was a guaranteed SIGBUS at 0x0 (crash in
+// loadWithProgress's _searchQueue block, thread 4). Guard on the symbol ADDRESS before use;
+// data protection doesn't exist on 3.x anyway, so bailing out is the correct behaviour.
+extern NSString * const NSFileProtectionKey  __attribute__((weak_import));
+extern NSString * const NSFileProtectionNone __attribute__((weak_import));
 static void ADSetNoFileProtection(NSString *path) {
     if (!path.length) return;
+    if (&NSFileProtectionKey == NULL || &NSFileProtectionNone == NULL) return;  // iOS < 4.0
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSDictionary *attr = @{ NSFileProtectionKey: NSFileProtectionNone };
+    NSDictionary *attr = [NSDictionary dictionaryWithObject:NSFileProtectionNone
+                                                     forKey:NSFileProtectionKey];
     [fm setAttributes:attr ofItemAtPath:path error:NULL];
-    for (NSString *sfx in @[@"-wal", @"-shm", @"-journal"]) {
+    NSArray *sidecars = [NSArray arrayWithObjects:@"-wal", @"-shm", @"-journal", nil];
+    for (NSString *sfx in sidecars) {
         NSString *p = [path stringByAppendingString:sfx];
         if ([fm fileExistsAtPath:p]) [fm setAttributes:attr ofItemAtPath:p error:NULL];
     }
