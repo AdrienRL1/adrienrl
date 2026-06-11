@@ -163,42 +163,41 @@ printf '\n==> Linking...\n'
     -fuse-ld=ld64 -mlinker-version=762 \
     -Wl,-headerpad_max_install_names \
     -framework UIKit -framework Foundation -framework CoreGraphics \
-    -framework QuartzCore -framework ImageIO -framework CFNetwork -framework SystemConfiguration \
+    -framework QuartzCore -framework CFNetwork -framework SystemConfiguration \
     -lsqlite3 -lz \
     "$obj"/*.o "$mbedlib" \
     -o "$out/$APP_NAME" 2> "$work/link.err" || { cat "$work/link.err" >&2; exit 1; }
 file "$out/$APP_NAME"
 
 # ---------------------------------------------------------------------------
-# 5b. Fix ImageIO dylib path for iOS 3.1.3
+# 5b. Verify ImageIO is NOT linked (it is dlopen()ed at runtime instead)
 # ---------------------------------------------------------------------------
-# The iOS 5.1 SDK linker records ImageIO at its iOS-5 public location
-# (/System/Library/Frameworks/ImageIO.framework/ImageIO). On iOS 3.1.3 ImageIO
-# is a PRIVATE framework (/System/Library/PrivateFrameworks/...). dyld can't
-# find it at the public path, so it fails to load dependent dylib #5 and aborts
-# with "can't resolve symbol _CGImageSourceCreateWithData ... dependent dylib #5
-# could not be loaded" (EXC_BREAKPOINT in dyld). Rewrite the load command to the
-# iOS 3 private path.
-printf '\n==> Fixing ImageIO path for iOS 3 (Frameworks -> PrivateFrameworks)...\n'
-INT="$(command -v install_name_tool || echo "$tcbin/install_name_tool")"
-"$INT" -change \
-    /System/Library/Frameworks/ImageIO.framework/ImageIO \
-    /System/Library/PrivateFrameworks/ImageIO.framework/ImageIO \
-    "$out/$APP_NAME"
-
-# Verify the rewrite stuck. The dylib path lives as a literal C string in the
-# load command, so a plain string match on the binary is a reliable, toolchain-
-# independent guard. The public /Frameworks/ path must be gone and the
-# /PrivateFrameworks/ path present, else dyld aborts at launch on iOS 3.1.3.
-if grep -aq '/System/Library/Frameworks/ImageIO.framework/ImageIO' "$out/$APP_NAME"; then
-    echo "ERROR: ImageIO still linked at public /Frameworks/ path (would crash on iOS 3.1.3)." >&2
+# ImageIO lives at /System/Library/Frameworks/ on iOS 4+ but at
+# /System/Library/PrivateFrameworks/ on iOS 3.1.3. A hard LC_LOAD_DYLIB on
+# either path makes dyld abort at launch on the OTHER OS. So the binary must
+# carry NO ImageIO load command at all: IconLoader.m dlopen()s the public path
+# first (iOS 4+), then the private path (iOS 3), and dlsym()s every symbol.
+# NOTE: a plain `grep` on the binary can NOT be used here anymore — the two
+# dlopen() path strings in IconLoader.m legitimately live in __cstring. Inspect
+# the actual LC_LOAD_DYLIB load commands and the undefined-symbol table instead.
+printf '\n==> Verifying ImageIO is not hard-linked (runtime dlopen instead)...\n'
+OTOOL="$(command -v llvm-otool || command -v otool || true)"
+if [ -n "$OTOOL" ]; then
+    if "$OTOOL" -L "$out/$APP_NAME" 2>/dev/null | grep -q 'ImageIO'; then
+        echo "ERROR: ImageIO LC_LOAD_DYLIB found in binary. It must be dlopen()ed at runtime," >&2
+        echo "       not linked — a hard path crashes on iOS 3 (public) or iOS 4 (private)." >&2
+        exit 1
+    fi
+else
+    echo "WARN: otool not found — skipping LC_LOAD_DYLIB check for ImageIO." >&2
+fi
+imgio_syms="$(llvm-nm -u "$out/$APP_NAME" 2>/dev/null | grep -E '_(CGImageSource|kCGImageSource)' || true)"
+if [ -n "$imgio_syms" ]; then
+    echo "ERROR: undefined ImageIO symbols remain (must be resolved via dlsym, not the linker):" >&2
+    echo "$imgio_syms" >&2
     exit 1
 fi
-if ! grep -aq '/System/Library/PrivateFrameworks/ImageIO.framework/ImageIO' "$out/$APP_NAME"; then
-    echo "ERROR: ImageIO PrivateFrameworks path not found after install_name_tool -change." >&2
-    exit 1
-fi
-echo "OK: ImageIO points to PrivateFrameworks (iOS 3.1.3 correct location)."
+echo "OK: no ImageIO load command, no undefined ImageIO symbols — one binary loads on both iOS 3 and 4."
 
 # Fail loudly if any ARC/blocks/GCD symbol leaked in as an unresolved import
 # (would crash on a real iOS 3 device). ARC C-functions must NOT appear at all

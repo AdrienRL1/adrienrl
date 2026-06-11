@@ -1,7 +1,48 @@
 #import "IconLoader.h"
 #import "HTTPSClient.h"
 #import "IOS5Compat.h"
-#import <ImageIO/ImageIO.h>
+#import <ImageIO/ImageIO.h>   // header only (types/CGImageSourceRef) — NOT linked; see dlopen below
+#import <dlfcn.h>
+
+// ---------------------------------------------------------------------------
+// Runtime-loaded ImageIO (dlopen/dlsym) — one binary for both iOS 3 and iOS 4.
+//
+// ImageIO lives at DIFFERENT paths depending on the OS:
+//   iOS 4.0+ : /System/Library/Frameworks/ImageIO.framework         (public)
+//   iOS 3.x  : /System/Library/PrivateFrameworks/ImageIO.framework  (private)
+// A hard LC_LOAD_DYLIB on either path makes dyld abort at launch on the OTHER
+// OS. So the binary is NOT linked against ImageIO at all: we dlopen() the
+// public path first (iOS 4+), fall back to the private path (iOS 3), and
+// resolve every function/key via dlsym(). If both fail (or any symbol is
+// missing) decodeAndResize: falls back to the iOS 2.0 UIImage path below.
+// ---------------------------------------------------------------------------
+typedef CGImageSourceRef (*ADCGImageSourceCreateWithDataFn)(CFDataRef, CFDictionaryRef);
+typedef CGImageRef (*ADCGImageSourceCreateThumbnailAtIndexFn)(CGImageSourceRef, size_t, CFDictionaryRef);
+
+static void *ADImageIOHandle(void) {
+    static void *handle = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        handle = dlopen("/System/Library/Frameworks/ImageIO.framework/ImageIO",
+                        RTLD_LAZY | RTLD_LOCAL);                       // iOS 4+
+        if (!handle)
+            handle = dlopen("/System/Library/PrivateFrameworks/ImageIO.framework/ImageIO",
+                            RTLD_LAZY | RTLD_LOCAL);                   // iOS 3.x
+    });
+    return handle;
+}
+
+static void *ADImageIOSym(const char *name) {
+    void *h = ADImageIOHandle();
+    return h ? dlsym(h, name) : NULL;
+}
+
+// kCGImageSource* keys are CFStringRef GLOBALS, so dlsym returns a POINTER to
+// the CFStringRef — dereference it (guarded) to get the actual key.
+static CFStringRef ADImageIOKey(const char *name) {
+    CFStringRef *p = (CFStringRef *)ADImageIOSym(name);
+    return p ? *p : NULL;
+}
 
 // One pending icon request. Returned to the caller (AppTileView) as an opaque cancel token so a
 // reused cell can drop the icon it no longer needs. Several requests can share one URL key (dedup):
@@ -355,23 +396,26 @@ static UIImage *IconForceDecode(UIImage *image) {
     BOOL ownThumb = NO;        // YES only if WE created `thumb` (must release it)
 
     // Preferred path: ImageIO thumbnailing — decodes + downsamples in one pass.
-    // CGImageSourceCreateWithData / CGImageSourceCreateThumbnailAtIndex and the
-    // kCGImageSource* thumbnail keys are all WEAK-imported (iOS 4+ in the 5.1 SDK).
-    // On iOS 3.1.3 the keys resolve to NULL, so the options dict ends up empty and
-    // the thumbnail call returns NULL — which is exactly why every icon vanished on
-    // the 3.1.3 device. Guard each weak symbol, and if anything yields no image we
-    // fall through to the UIImage path below.
-    if (&CGImageSourceCreateWithData != NULL && &CGImageSourceCreateThumbnailAtIndex != NULL) {
-        CGImageSourceRef src = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
+    // Every function and key is resolved via dlsym() from the runtime-dlopen()ed
+    // ImageIO (public path on iOS 4+, private path on iOS 3 — see ADImageIOHandle).
+    // The binary itself carries NO ImageIO load command and NO ImageIO imports, so
+    // dyld is happy on both OSes. If the library or any symbol is missing, every
+    // pointer below is NULL and we fall through to the UIImage path.
+    ADCGImageSourceCreateWithDataFn srcCreate =
+        (ADCGImageSourceCreateWithDataFn)ADImageIOSym("CGImageSourceCreateWithData");
+    ADCGImageSourceCreateThumbnailAtIndexFn thumbCreate =
+        (ADCGImageSourceCreateThumbnailAtIndexFn)ADImageIOSym("CGImageSourceCreateThumbnailAtIndex");
+    if (srcCreate && thumbCreate) {
+        CGImageSourceRef src = srcCreate((__bridge CFDataRef)data, NULL);
         if (src) {
+            CFStringRef kAlways    = ADImageIOKey("kCGImageSourceCreateThumbnailFromImageAlways");
+            CFStringRef kTransform = ADImageIOKey("kCGImageSourceCreateThumbnailWithTransform");
+            CFStringRef kMaxPx     = ADImageIOKey("kCGImageSourceThumbnailMaxPixelSize");
             NSMutableDictionary *opts = [NSMutableDictionary dictionary];
-            if (&kCGImageSourceCreateThumbnailFromImageAlways != NULL)
-                opts[(__bridge id)kCGImageSourceCreateThumbnailFromImageAlways] = (__bridge id)kCFBooleanTrue;
-            if (&kCGImageSourceCreateThumbnailWithTransform != NULL)
-                opts[(__bridge id)kCGImageSourceCreateThumbnailWithTransform]   = (__bridge id)kCFBooleanTrue;
-            if (&kCGImageSourceThumbnailMaxPixelSize != NULL)
-                opts[(__bridge id)kCGImageSourceThumbnailMaxPixelSize] = @((int)MAX(px.width, px.height));
-            thumb = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)opts);
+            if (kAlways)    opts[(__bridge id)kAlways]    = (__bridge id)kCFBooleanTrue;
+            if (kTransform) opts[(__bridge id)kTransform] = (__bridge id)kCFBooleanTrue;
+            if (kMaxPx)     opts[(__bridge id)kMaxPx]     = @((int)MAX(px.width, px.height));
+            thumb = thumbCreate(src, 0, (__bridge CFDictionaryRef)opts);
             if (thumb) ownThumb = YES;
             CFRelease(src);
         }
