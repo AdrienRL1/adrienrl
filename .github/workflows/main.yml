@@ -107,7 +107,7 @@ jobs:
           mkdir -p merge
           cd merge
 
-          # Extract both binaries from their DEB files
+          # Find DEBs
           armv7_deb="$(find ../artifacts/armv7 -name '*.deb' | head -n1)"
           armv6_deb="$(find ../artifacts/armv6-deb -name '*.deb' | head -n1)"
           if [ -z "$armv7_deb" ] || [ -z "$armv6_deb" ]; then
@@ -115,20 +115,50 @@ jobs:
             exit 1
           fi
 
-          # Extract full structure from armv6 DEB (base bundle)
-          tmp_armv6="$(mktemp -d)"
-          dpkg-deb -x "$armv6_deb" "$tmp_armv6"
+          # Use ar to extract DEB internals (more reliable than dpkg-deb)
+          mkdir -p armv6_work armv7_work final_deb/Applications
+          cd armv6_work
+          ar x "$armv6_deb"
+          cd ..
+          cd armv7_work
+          ar x "$armv7_deb"
+          cd ..
+
+          # Extract armv6 data.tar.gz
+          mkdir -p armv6_data
+          tar -xzf armv6_work/data.tar.gz -C armv6_data
+
+          # Extract armv7 binary from armv7 data
+          mkdir -p armv7_data
+          tar -xzf armv7_work/data.tar.gz -C armv7_data
+
+          # Copy armv6 app bundle to final
+          cp -r armv6_data/Applications/AppDrop.app final_deb/Applications/
+
+          # Add armv7 binary
+          cp armv7_data/Applications/AppDrop.app/AppDrop.armv7 final_deb/Applications/AppDrop.app/AppDrop.armv7
+          chmod 0755 final_deb/Applications/AppDrop.app/AppDrop.armv7
+
+          # Copy DEBIAN from armv6
+          mkdir -p final_deb/DEBIAN
+          tar -xzf armv6_work/control.tar.gz -C final_deb/DEBIAN
+
+          # Rebuild data.tar.gz and control.tar.gz
+          cd final_deb
+          tar -czf ../data.tar.gz Applications/
+          tar -czf ../control.tar.gz DEBIAN/
+          cd ..
+
+          # Create debian-binary
+          echo "2.0" > debian-binary
+
+          # Assemble new DEB with ar
+          ar r AppDrop-universal.deb debian-binary control.tar.gz data.tar.gz
           
-          # Extract armv7 binary from armv7 DEB and add it
-          tmp_armv7="$(mktemp -d)"
-          dpkg-deb -x "$armv7_deb" "$tmp_armv7"
-          cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" "$tmp_armv6/Applications/AppDrop.app/AppDrop.armv7"
-          chmod 0755 "$tmp_armv6/Applications/AppDrop.app/AppDrop.armv7"
-          
-          # Build the universal DEB
-          dpkg-deb --build "$tmp_armv6" AppDrop-universal.deb
           echo "Assembled universal DEB:"
-          dpkg-deb -c AppDrop-universal.deb | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
+          ar t AppDrop-universal.deb
+          echo "Files in app bundle:"
+          tar -tzf data.tar.gz | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
 
       - name: Upload universal DEB
         uses: actions/upload-artifact@v4
