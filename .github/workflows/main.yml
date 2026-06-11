@@ -124,14 +124,9 @@ jobs:
           dpkg-deb -x "$armv7_deb" "$tmp_armv7"
           cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" "$tmp_armv6/Applications/AppDrop.app/AppDrop.armv7"
           chmod 0755 "$tmp_armv6/Applications/AppDrop.app/AppDrop.armv7"
-
-          # Recalculate md5sums for the package
-          cd "$tmp_armv6"
-          find . -type f ! -path './DEBIAN/*' -exec md5sum {} \; > DEBIAN/md5sums
           
           # Build the universal DEB
-          cd ..
-          dpkg-deb --build "$tmp_armv6" "$(pwd)/AppDrop-universal.deb"
+          dpkg-deb --build "$tmp_armv6" "$(pwd)/merge/AppDrop-universal.deb"
           echo "Assembled universal DEB:"
           dpkg-deb -c "AppDrop-universal.deb" | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
 
