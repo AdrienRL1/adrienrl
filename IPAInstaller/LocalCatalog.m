@@ -116,6 +116,7 @@ static void ADSetNoFileProtection(NSString *path) {
         sqlite3_close(_db);
         _db = NULL;
     }
+	[_dbPath release];
     [super dealloc];
 }
 
@@ -555,6 +556,12 @@ static void ADSetNoFileProtection(NSString *path) {
     if (!self.loaded || !self.db) {
         return @{@"error": @"catalog not loaded", @"results": @[], @"total": @0};
     }
+    if (!q) q = @"";
+    if (!minIOSStr) minIOSStr = @"";
+    if (!maxIOSStr) maxIOSStr = @"";
+    if (!deviceClass) deviceClass = @"all";
+    if (!category) category = @"";
+    if (!subgenre) subgenre = @"";
 
     NSString *table = unique ? @"entries_unique" : @"entries";
     NSString *qLower = [[q stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]] lowercaseString];

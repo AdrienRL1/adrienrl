@@ -659,6 +659,7 @@ static void ADDeliver(UIView *startView, NSSet *touches, UIEvent *event, NSInteg
 static IMP gOrigSendEvent = NULL;
 
 static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
+	if (!event || !gOrigSendEvent) return;
     NSSet *touches = nil;
     UIView *deliverFrom = nil;
     NSMutableSet *began = nil, *moved = nil, *ended = nil, *cancelled = nil;
