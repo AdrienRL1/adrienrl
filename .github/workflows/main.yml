@@ -42,7 +42,7 @@ jobs:
 
       - name: Build armv7 package
         run: |
-          chmod x build.sh
+          chmod +x build.sh
           ./build.sh package FINALPACKAGE=1
 
       - name: Upload armv7 artifact
