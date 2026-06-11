@@ -107,6 +107,12 @@ jobs:
           mkdir -p merge
           cd merge
 
+          # Debug: show what's in artifacts
+          echo "=== Contents of artifacts/armv7 ==="
+          find ../artifacts/armv7 -type f || echo "armv7 not found"
+          echo "=== Contents of artifacts/armv6-deb ==="
+          find ../artifacts/armv6-deb -type f || echo "armv6-deb not found"
+
           # Find DEBs
           armv7_deb="$(find ../artifacts/armv7 -name '*.deb' | head -n1)"
           armv6_deb="$(find ../artifacts/armv6-deb -name '*.deb' | head -n1)"
