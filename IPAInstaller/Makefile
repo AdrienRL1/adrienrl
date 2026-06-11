@@ -18,7 +18,9 @@ AppDrop_FRAMEWORKS = UIKit CoreGraphics Foundation QuartzCore ImageIO CFNetwork
 # symbols while KEEPING global symbols so the on-device crash reporter still resolves
 # backtraces. -Os is already applied by Theos for FINALPACKAGE builds.
 AppDrop_CFLAGS = -Wall -fvisibility=hidden -fvisibility-inlines-hidden -I../ios3/compat -I$(MBEDTLS_DIR)/include
-AppDrop_OBJCFLAGS = -fno-objc-arc -include ../ios3/compat/AppDropCompat.h $(AppDrop_CFLAGS)
+# armv7 builds against the modern SDK, so we only need the shared block helpers and the
+# AD_WEAK alias; the full ios3 compat prefix header redefines UIKit/Foundation symbols.
+AppDrop_OBJCFLAGS = -fno-objc-arc -DAD_WEAK=__unsafe_unretained -include ../ios3/compat/AppDropBlocks.h $(AppDrop_CFLAGS)
 AppDrop_LDFLAGS = -L$(MBEDTLS_LIB) -lmbedtls -lmbedx509 -lmbedcrypto -lsqlite3 -lz -Wl,-dead_strip
 AppDrop_STRIP_FLAGS = -x -S
 AppDrop_CODESIGN_FLAGS = -Sentitlements.plist
