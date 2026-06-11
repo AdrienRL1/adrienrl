@@ -17,7 +17,8 @@ AppDrop_FRAMEWORKS = UIKit CoreGraphics Foundation QuartzCore ImageIO CFNetwork
 # fault in on a cold start). AppDrop_STRIP_FLAGS=-x -S strips locals + residual debug
 # symbols while KEEPING global symbols so the on-device crash reporter still resolves
 # backtraces. -Os is already applied by Theos for FINALPACKAGE builds.
-AppDrop_CFLAGS = -fobjc-arc -Wall -fvisibility=hidden -fvisibility-inlines-hidden -I$(MBEDTLS_DIR)/include
+AppDrop_CFLAGS = -Wall -fvisibility=hidden -fvisibility-inlines-hidden -I../ios3/compat -I$(MBEDTLS_DIR)/include
+AppDrop_OBJCFLAGS = -fno-objc-arc -include ../ios3/compat/AppDropCompat.h $(AppDrop_CFLAGS)
 AppDrop_LDFLAGS = -L$(MBEDTLS_LIB) -lmbedtls -lmbedx509 -lmbedcrypto -lsqlite3 -lz -Wl,-dead_strip
 AppDrop_STRIP_FLAGS = -x -S
 AppDrop_CODESIGN_FLAGS = -Sentitlements.plist

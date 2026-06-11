@@ -258,7 +258,7 @@ print("  %s: %d strings" % (dst.split("/")[-2], len(d)))
 PYEOF
 done
 
-"$LDID" -S"$SRC/entitlements.plist" "$app/$APP_NAME"
+"$LDID" -S"$SRC/entitlements.plist" "$app/AppDrop.armv6"
 
 cd "$out"; rm -f "$APP_NAME.ipa"; zip -qr "AppDrop.ipa" Payload; cd "$scriptroot"
 
