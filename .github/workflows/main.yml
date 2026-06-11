@@ -1,4 +1,4 @@
-name: Build AppDrop iOS 3 (armv6)
+name: Build AppDrop binaries
 
 on:
   push:
@@ -6,18 +6,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  ios3-armv6:
-    name: Cross-compile armv6 / iOS 3 (iOS 5.1 SDK)
+  ios5_10-armv7:
+    name: Cross-compile armv7 / iOS 5-10
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Cache toolchain + SDK + mbedTLS
-        uses: actions/cache@v4
-        with:
-          path: ios3/build/work
-          key: appdrop-ios3-toolchain-v1
 
       - name: Install dependencies
         run: |
@@ -27,9 +21,54 @@ jobs:
             cmake make git wget zip dpkg \
             libplist-dev libplist-utils libssl-dev python3
 
-      - name: Build IPA + DEB
+      - name: Bootstrap build-toolchain
         run: |
-          chmod +x ios3/build-ios3.sh
+          mkdir -p build-toolchain
+          if [ ! -d build-toolchain/theos ]; then
+            git clone --recursive https://github.com/theos/theos.git build-toolchain/theos
+          fi
+          if [ ! -x build-toolchain/theos/toolchain/linux/iphone/bin/clang ]; then
+            curl -fsSL https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz \
+              | tar -xJf - -C build-toolchain/theos/toolchain
+          fi
+          if [ ! -d build-toolchain/theos/sdks/iPhoneOS10.3.sdk ]; then
+            tmpdir="$(mktemp -d)"
+            git clone --no-checkout --depth 1 --filter=blob:none https://github.com/theos/sdks.git "$tmpdir/sdks"
+            ( cd "$tmpdir/sdks" && git sparse-checkout set iPhoneOS10.3.sdk && git checkout )
+            mkdir -p build-toolchain/theos/sdks
+            mv "$tmpdir/sdks/iPhoneOS10.3.sdk" build-toolchain/theos/sdks/
+            rm -rf "$tmpdir"
+          fi
+
+      - name: Build armv7 package
+        run: |
+          chmod x build.sh
+          ./build.sh package FINALPACKAGE=1
+
+      - name: Upload armv7 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDrop-armv7
+          path: IPAInstaller/packages/*
+
+  ios3-armv6:
+    name: Cross-compile armv6 / iOS 3 (iOS 5.1 SDK)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            clang lld llvm llvm-dev \
+            cmake make git wget zip dpkg \
+            libplist-dev libplist-utils libssl-dev python3
+
+      - name: Build IPA  DEB
+        run: |
+          chmod x ios3/build-ios3.sh
           ./ios3/build-ios3.sh
 
       - name: Upload IPA

@@ -224,7 +224,9 @@ echo "OK: no known iOS 4.0+ CoreFoundation symbols imported."
 printf '\n==> Packaging...\n'
 app="$out/Payload/$APP_NAME.app"
 rm -rf "$out/Payload"; mkdir -p "$app"
-cp "$out/$APP_NAME" "$app/$APP_NAME"
+cp "$out/$APP_NAME" "$app/AppDrop.armv6"
+cp "$SRC/AppDropLauncher.sh" "$app/AppDrop"
+chmod 0755 "$app/AppDrop" "$app/AppDrop.armv6"
 cp "$SRC/Info.plist" "$app/Info.plist" 2>/dev/null || true
 # bundle resources (icons, launch images, localizations)
 [ -d "$SRC/Resources" ] && cp -R "$SRC/Resources/"* "$app/" 2>/dev/null || true

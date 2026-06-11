@@ -32,6 +32,9 @@ after-stage::
 	cp -f Layout/DEBIAN/postinst $(THEOS_STAGING_DIR)/DEBIAN/postinst
 	cp -f Layout/DEBIAN/postrm   $(THEOS_STAGING_DIR)/DEBIAN/postrm
 	chmod 0755 $(THEOS_STAGING_DIR)/DEBIAN/postinst $(THEOS_STAGING_DIR)/DEBIAN/postrm
+	mv $(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop $(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop.armv7
+	cp -f AppDropLauncher.sh $(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop
+	chmod 0755 $(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop
 	@echo "Generating Localizable.json per language (Theos compiles .strings to binary plist, which iOS 6 mis-parses for some Unicode e.g. Turkish; JSON + NSJSONSerialization is bulletproof)…"
 	@for d in $(THEOS_STAGING_DIR)/Applications/AppDrop.app/*.lproj; do \
 		lang=`basename "$$d" .lproj`; \
