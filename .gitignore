@@ -6,7 +6,7 @@ obj/
 # Linux build environment (Theos + toolchain + iOS SDK, ~300 MB of binaries).
 # Lives in the project folder so it persists, but must NOT be committed to git.
 # Recreate it with build-toolchain/setup-system-deps.sh + see BUILD-LINUX.md.
-build-toolchain/
+#build-toolchain/
 
 # macOS
 .DS_Store
