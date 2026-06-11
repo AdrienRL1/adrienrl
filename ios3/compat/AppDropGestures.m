@@ -442,8 +442,12 @@ static BOOL gADScrollMomentumActive = NO;
 static NSTimer *gADScrollMomentumTimer = nil;
 static id gADScrollMomentumDriver = nil;
 
+static BOOL ADTouchLooksUsable(id touch) {
+    return touch && [touch respondsToSelector:@selector(phase)] && [touch respondsToSelector:@selector(view)];
+}
+
 static BOOL ADScrollTouchIsActive(UITouch *touch) {
-    if (!touch) return NO;
+    if (!ADTouchLooksUsable(touch)) return NO;
     switch ([touch phase]) {
         case UITouchPhaseBegan:
         case UITouchPhaseMoved:
@@ -522,7 +526,7 @@ static void ADScrollReset(void) {
 @end
 
 static void ADScrollBeginIfNeeded(UITouch *touch, UIView *hitView) {
-    if (!touch || !hitView) return;
+    if (!ADTouchLooksUsable(touch) || !hitView) return;
     if (ADViewHasControlAncestor(hitView)) return;
     if (gADScrollTouch && !ADScrollTouchIsActive(gADScrollTouch)) {
         ADScrollReset();
@@ -550,7 +554,7 @@ static void ADScrollBeginIfNeeded(UITouch *touch, UIView *hitView) {
 }
 
 static void ADScrollUpdateIfNeeded(UITouch *touch) {
-    if (!gADScrollTouch || touch != gADScrollTouch || !gADScrollView) return;
+    if (!ADTouchLooksUsable(touch) || !gADScrollTouch || touch != gADScrollTouch || !gADScrollView) return;
     if (!ADScrollTouchIsActive(touch)) return;
     CGPoint p = [touch locationInView:gADScrollView.window];
     CFTimeInterval now = CACurrentMediaTime();
@@ -586,7 +590,7 @@ static void ADScrollUpdateIfNeeded(UITouch *touch) {
 }
 
 static void ADScrollFinishIfNeeded(UITouch *touch) {
-    if (!gADScrollTouch || touch != gADScrollTouch) return;
+    if (!ADTouchLooksUsable(touch) || !gADScrollTouch || touch != gADScrollTouch) return;
     gADScrollTouch = nil;
     gADScrollMomentumActive = YES;
     gADScrollEngaged = NO;
@@ -666,12 +670,16 @@ static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
 
     @try {
         touches = [event allTouches];
-        UITouch *any = [touches anyObject];
-        if (any) {
-            UIView *hit = [any view];   // the view the touch landed in
-            // Group touches by phase (AppDrop only ever uses single-finger
-            // gestures, but handle the set generally and cheaply).
-            for (UITouch *t in touches) {
+        if (touches) {
+            // Group touches by phase, but only after we prove the object is a
+            // real touch. Old UIKit code can hand us unexpected private cluster
+            // objects, and we must never message `phase` to a dictionary.
+            for (id rawTouch in touches) {
+                if (!ADTouchLooksUsable(rawTouch)) continue;
+                UITouch *t = (UITouch *)rawTouch;
+                if (!deliverFrom) {
+                    deliverFrom = [t view] ?: self;
+                }
                 UITouchPhase ph = [t phase];
                 NSMutableSet **bucket =
                     (ph == UITouchPhaseBegan)     ? &began :
@@ -681,7 +689,6 @@ static void ADWindow_sendEvent(id self, SEL _cmd, UIEvent *event) {
                 if (!*bucket) *bucket = [NSMutableSet set];
                 [*bucket addObject:t];
             }
-            deliverFrom = hit ?: self;
         }
     } @catch (id e) {
         // Never let gesture bookkeeping take down event delivery.
