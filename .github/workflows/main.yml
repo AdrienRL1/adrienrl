@@ -82,3 +82,61 @@ jobs:
         with:
           name: AppDrop-iOS3-armv6-deb
           path: ios3/build/AppDrop.deb
+
+  universal-ipa:
+    name: Assemble universal IPA (armv6 + armv7, separate slices)
+    runs-on: ubuntu-24.04
+    needs: [ ios5_10-armv7, ios3-armv6 ]
+    steps:
+      - name: Download armv7 package
+        uses: actions/download-artifact@v4
+        with:
+          name: AppDrop-armv7
+          path: artifacts/armv7
+
+      - name: Download armv6 IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: AppDrop-iOS3-armv6-ipa
+          path: artifacts/armv6-ipa
+
+      - name: Build universal IPA
+        run: |
+          set -euo pipefail
+          rm -rf merge
+          mkdir -p merge
+          cd merge
+
+          # The armv6 .ipa already carries AppDrop.armv6 + the AppDrop launcher
+          # shell script (which picks armv6 on iOS <=4, armv7 otherwise) + all
+          # resources + an Info.plist whose MinimumOSVersion is 3.0 and with the
+          # armv7 device-capability requirement removed. We start from it.
+          armv6_ipa="$(find ../artifacts/armv6-ipa -name 'AppDrop.ipa' | head -n1)"
+          # The armv7 binary lives inside the FINALPACKAGE .deb produced by the
+          # theos build (after-stage renamed AppDrop -> AppDrop.armv7).
+          deb="$(find ../artifacts/armv7 -name '*.deb' | head -n1)"
+          if [ -z "$armv6_ipa" ] || [ -z "$deb" ]; then
+            echo "ERROR: missing armv6 IPA or armv7 DEB artifact" >&2
+            exit 1
+          fi
+
+          unzip -q "$armv6_ipa"
+          tmp="$(mktemp -d)"
+          dpkg-deb -x "$deb" "$tmp"
+
+          # Drop the armv7 slice in next to the armv6 one — two SEPARATE Mach-O
+          # binaries, NOT a fat/lipo'd binary. The AppDrop launcher (already in
+          # the bundle from the armv6 ipa) exec's whichever matches the running
+          # OS at launch.
+          cp "$tmp/Applications/AppDrop.app/AppDrop.armv7" Payload/AppDrop.app/AppDrop.armv7
+          chmod 0755 Payload/AppDrop.app/AppDrop.armv7
+
+          zip -qr AppDrop-universal.ipa Payload
+          echo "Assembled universal IPA:"
+          unzip -l AppDrop-universal.ipa | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
+
+      - name: Upload universal IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDrop-universal-ipa
+          path: merge/AppDrop-universal.ipa
