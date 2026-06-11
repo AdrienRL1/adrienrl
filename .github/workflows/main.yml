@@ -66,9 +66,9 @@ jobs:
             cmake make git wget zip dpkg \
             libplist-dev libplist-utils libssl-dev python3
 
-      - name: Build IPA  DEB
+      - name: Build IPA + DEB
         run: |
-          chmod x ios3/build-ios3.sh
+          chmod +x ios3/build-ios3.sh
           ./ios3/build-ios3.sh
 
       - name: Upload IPA
