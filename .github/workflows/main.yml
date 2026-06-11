@@ -100,7 +100,7 @@ jobs:
           name: AppDrop-iOS3-armv6-deb
           path: artifacts/armv6-deb
 
-      - name: Build universal IPA
+      - name: Build universal DEB
         run: |
           set -euo pipefail
           rm -rf merge
@@ -115,24 +115,28 @@ jobs:
             exit 1
           fi
 
-          # Extract app structure from armv6 DEB (base bundle)
+          # Extract full structure from armv6 DEB (base bundle)
           tmp_armv6="$(mktemp -d)"
           dpkg-deb -x "$armv6_deb" "$tmp_armv6"
-          mkdir -p Payload
-          cp -r "$tmp_armv6/Applications/AppDrop.app" Payload/
-
+          
           # Extract armv7 binary from armv7 DEB and add it
           tmp_armv7="$(mktemp -d)"
           dpkg-deb -x "$armv7_deb" "$tmp_armv7"
-          cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" Payload/AppDrop.app/AppDrop.armv7
-          chmod 0755 Payload/AppDrop.app/AppDrop.armv7
+          cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" "$tmp_armv6/Applications/AppDrop.app/AppDrop.armv7"
+          chmod 0755 "$tmp_armv6/Applications/AppDrop.app/AppDrop.armv7"
 
-          zip -qr AppDrop-universal.ipa Payload
-          echo "Assembled universal IPA:"
-          unzip -l AppDrop-universal.ipa | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
+          # Recalculate md5sums for the package
+          cd "$tmp_armv6"
+          find . -type f ! -path './DEBIAN/*' -exec md5sum {} \; > DEBIAN/md5sums
+          
+          # Build the universal DEB
+          cd ..
+          dpkg-deb --build "$tmp_armv6" "$(pwd)/AppDrop-universal.deb"
+          echo "Assembled universal DEB:"
+          dpkg-deb -c "AppDrop-universal.deb" | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
 
-      - name: Upload universal IPA
+      - name: Upload universal DEB
         uses: actions/upload-artifact@v4
         with:
-          name: AppDrop-universal-ipa
-          path: merge/AppDrop-universal.ipa
+          name: AppDrop-universal-deb
+          path: merge/AppDrop-universal.deb
