@@ -126,9 +126,9 @@ jobs:
           chmod 0755 "$tmp_armv6/Applications/AppDrop.app/AppDrop.armv7"
           
           # Build the universal DEB
-          dpkg-deb --build "$tmp_armv6" "$(pwd)/merge/AppDrop-universal.deb"
+          dpkg-deb --build "$tmp_armv6" AppDrop-universal.deb
           echo "Assembled universal DEB:"
-          dpkg-deb -c "AppDrop-universal.deb" | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
+          dpkg-deb -c AppDrop-universal.deb | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
 
       - name: Upload universal DEB
         uses: actions/upload-artifact@v4
