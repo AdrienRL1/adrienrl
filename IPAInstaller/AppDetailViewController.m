@@ -10,6 +10,11 @@
 #import "MachOInspector.h"
 #import "CategorySuggestViewController.h"
 
+// Fonction « Suggérer une catégorie » retirée à la demande de l'utilisateur (trop de suggestions
+// inutiles). Mis à NO : le bouton n'apparaît plus. Code conservé, juste éteint. Pour les anciennes
+// versions déjà publiées, la route /category du Worker est aussi neutralisée côté serveur.
+static const BOOL kEnableSuggestCategory = NO;
+
 @interface AppDetailViewController () <UIAlertViewDelegate>
 @property (nonatomic, strong) UIImageView *iconView;
 @property (nonatomic, strong) UILabel *titleLabel;
@@ -743,7 +748,8 @@ static UIImage *ADCancelGlyph(void) {
     // bottom bar for the "suggest category" action (#156); revival/modded apps have no category.
     // Suggest-category only applies to the categorized 43k catalog — NOT to "Works today" (revival)
     // or "Modded" apps, which live in their own sections and have no catalog category. (v3.1.1)
-    BOOL showSuggestCat = ([self.app[@"bundleId"] length] > 0)
+    BOOL showSuggestCat = kEnableSuggestCategory
+        && ([self.app[@"bundleId"] length] > 0)
         && ![self.app[@"isRevival"] boolValue]
         && ![self.app[@"isModded"] boolValue];
     CGFloat suggestH = showSuggestCat ? 54.0f : 0.0f;

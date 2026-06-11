@@ -11,6 +11,11 @@
 #import "IconLoader.h"
 #import "UploadViewController.h"
 
+// Fonction « Partager une app » (upload) retirée à la demande de l'utilisateur. Défense en
+// profondeur : ces listes ne sont déjà plus joignables (voir kEnableWorksTodayModded dans
+// CategoryViewController.m), mais on masque aussi le bouton ici. Remettre à YES pour réactiver.
+static const BOOL kEnableAppUpload = NO;
+
 // numeric version compare: -1 (a<b), 0 (a==b), 1 (a>b)
 static int RevVerCmp(NSString *a, NSString *b) {
     NSArray *ca = [(a ?: @"") componentsSeparatedByString:@"."];
@@ -184,7 +189,7 @@ static NSString *RevHumanSize(long long bytes) {
     [hdr addSubview:intro];
 
     // Glossy iOS-6 accent button to share an app the user has the right to share (→ upload screen).
-    if (self.uploadTarget.length) {
+    if (kEnableAppUpload && self.uploadTarget.length) {
         CGFloat by = hdrH, bh = 40;
         UIButton *share = [UIButton buttonWithType:UIButtonTypeCustom];
         share.frame = CGRectMake(12, by, W - 24, bh);

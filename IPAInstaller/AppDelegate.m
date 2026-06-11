@@ -10,6 +10,7 @@
 #import "SettingsViewController.h"
 #import "Localization.h"
 #import "UpdateChecker.h"
+#import "LocalCatalog.h"
 #import "CheckpointLog.h"
 #import "CrashReporter.h"
 #import "IconLoader.h"
@@ -280,6 +281,22 @@ static UIImage *AppDropFavoritesTabIcon(void) {
 - (void)applicationDidReceiveMemoryWarning:(UIApplication *)application {
     [[IconLoader shared] clearCache];
     [IOS6Theme purgeImageCache];
+}
+
+// 0xdead10cc fix: close the catalog SQLite handle before iOS suspends us, so the app is never
+// suspended while holding the catalog file open (the #1 auto-crash on iOS 5/6/7). Reopened on
+// foreground from the cached file (no re-download).
+- (void)applicationDidEnterBackground:(UIApplication *)application {
+    __block UIBackgroundTaskIdentifier bg = [application beginBackgroundTaskWithExpirationHandler:^{
+        if (bg != UIBackgroundTaskInvalid) { [application endBackgroundTask:bg]; bg = UIBackgroundTaskInvalid; }
+    }];
+    [[LocalCatalog shared] closeForBackgroundCompletion:^{
+        if (bg != UIBackgroundTaskInvalid) { [application endBackgroundTask:bg]; bg = UIBackgroundTaskInvalid; }
+    }];
+}
+
+- (void)applicationWillEnterForeground:(UIApplication *)application {
+    [[LocalCatalog shared] loadWithProgress:nil completion:nil];
 }
 
 // URL scheme handler. The ipainstall:// scheme is registered in Info.plist for future

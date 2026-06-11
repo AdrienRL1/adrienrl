@@ -1,8 +1,8 @@
 Package: ca.adrien.appdrop
 Name: AppDrop
-Version: 3.1.3
+Version: 3.1.4
 Architecture: iphoneos-arm
-Description: Browse 43,000+ iOS apps by category and install them on iOS 3-10. Fully iPad-optimized. v3.1.3: Polish added (9th language, UI + app descriptions), a multi-select download button on iPhone, Respring & Clear-catalog-cache options, app names load while scrolling, and a big performance pass (faster, lower CPU/GPU/RAM, smoother fast-scrolling, near-instant category/version browsing) tuned from the iPad 1 up. (17 themes + dark mode, Favorites & folders, app sharing, 9 languages.)
+Description: Browse 43,000+ iOS apps by category and install them on iOS 3-10. Fully iPad-optimized. v3.1.4: fixed the Respring button (Settings), and removed the "Works Today", "Modded apps", "Share an app" and "Suggest a category" features. (17 themes + dark mode, Favorites & folders, 9 languages.)
 Homepage: https://github.com/AdrienRL1/AppDrop
 Depiction: https://adrienrl1.github.io/cydia/depiction.html
 Icon: https://adrienrl1.github.io/cydia/PackageIcon.png

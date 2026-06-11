@@ -51,6 +51,21 @@ static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
     sqlite3_exec(db, pragma, NULL, NULL, NULL);
 }
 
+// 0xdead10cc fix (belt-and-suspenders with closeForBackground): take the catalog DB out of any
+// data-protection class so iOS can't kill the app for holding the file open while the device is
+// locked and the app is suspended. No-op on devices without a passcode (no data protection anyway),
+// and safe on jailbroken systems. Covers the main file + any SQLite sidecars.
+static void ADSetNoFileProtection(NSString *path) {
+    if (!path.length) return;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSDictionary *attr = @{ NSFileProtectionKey: NSFileProtectionNone };
+    [fm setAttributes:attr ofItemAtPath:path error:NULL];
+    for (NSString *sfx in @[@"-wal", @"-shm", @"-journal"]) {
+        NSString *p = [path stringByAppendingString:sfx];
+        if ([fm fileExistsAtPath:p]) [fm setAttributes:attr ofItemAtPath:p error:NULL];
+    }
+}
+
 @interface LocalCatalog ()
 @property (nonatomic, assign) sqlite3 *db;
 @property (nonatomic, strong) NSDictionary *urls;  // cached at open (only 27k entries, ~2 MB)
@@ -70,6 +85,7 @@ static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
     // (every search, hot-swap, and override/extras re-apply run there), so no extra locking is needed.
     NSString *_countCacheKey;     // table|whereClause|qLike of the cached total, or nil = invalid
     long long _countCacheTotal;   // the memoized COUNT(*) for _countCacheKey
+    BOOL _emptyCatalogRetried;    // "0 apps" recovery: re-download an empty cached catalog at most once
 }
 
 + (instancetype)shared {
@@ -387,6 +403,7 @@ static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
             return;
         }
         _dbPath = [path copy];
+        ADSetNoFileProtection(_dbPath);   // 0xdead10cc: keep the file out of any data-protection class
 
         // #171: FULLMUTEX (was NOMUTEX). Several read methods (versionsForBundleId, categoryCounts,
         // iconPoolForCategory, uniqueAppCount…) run sqlite3_* on the CALLING thread — often the main
@@ -440,6 +457,26 @@ static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
         }
         sqlite3_finalize(st);
 
+        // "0 apps" recovery (feedback #222/#226/#243/#257/#272/#277…): a CACHED catalog that opens
+        // but is EMPTY (a truncated/corrupt download that still passed the >1 MB size check) would
+        // otherwise leave the user stuck on an empty app forever. If the opened catalog has 0 apps
+        // and it's the cached download (not the bundled fallback), drop it + the freshness baseline
+        // and re-download — once per session, so a genuinely-empty source can't loop.
+        BOOL isCachedDownload = ([_dbPath rangeOfString:@"appdrop_catalog.db"].location != NSNotFound);
+        if (entryCount == 0 && isCachedDownload && !_emptyCatalogRetried) {
+            _emptyCatalogRetried = YES;
+            sqlite3_close(db);
+            NSFileManager *fm = [NSFileManager defaultManager];
+            [fm removeItemAtPath:_dbPath error:NULL];
+            [fm removeItemAtPath:[_dbPath stringByAppendingString:@".gz"] error:NULL];
+            [[NSUserDefaults standardUserDefaults] removeObjectForKey:kCatalogGzSizeKey];
+            _dbPath = nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self loadWithProgress:progressBlock completion:completion];   // loaded is still NO → re-resolves + re-downloads
+            });
+            return;
+        }
+
         self.db = db;
         self.urls = urls;
         self.loaded = YES;
@@ -452,6 +489,19 @@ static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
             if (progressBlock) progressBlock([NSString stringWithFormat:@"Catalogue : %lld apps", entryCount]);
             if (completion) completion(YES, nil);
         });
+    });
+}
+
+// 0xdead10cc fix: close the open catalog handle when the app is backgrounded. Set loaded=NO FIRST
+// (on the calling/main thread) so any further read bails on its (loaded && db) guard before we touch
+// the handle; then close on _searchQueue so it runs AFTER any in-flight search on that serial queue.
+// loadWithProgress: (called on foreground) reopens the cached file — no re-download.
+- (void)closeForBackgroundCompletion:(void (^)(void))completion {
+    self.loaded = NO;
+    dispatch_async(_searchQueue, ^{
+        if (self.db) { sqlite3_close(self.db); self.db = NULL; }
+        self->_countCacheKey = nil;
+        if (completion) completion();
     });
 }
 
