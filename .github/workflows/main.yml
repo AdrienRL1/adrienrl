@@ -97,8 +97,8 @@ jobs:
       - name: Download armv6 IPA
         uses: actions/download-artifact@v4
         with:
-          name: AppDrop-iOS3-armv6-ipa
-          path: artifacts/armv6-ipa
+          name: AppDrop-iOS3-armv6-deb
+          path: artifacts/armv6-deb
 
       - name: Build universal IPA
         run: |
