@@ -107,6 +107,15 @@ jobs:
           mkdir -p merge
           cd merge
 
+          # Extract ZIP archives if present
+          for zips in ../artifacts/armv7/*.zip ../artifacts/armv6-deb/*.zip; do
+            if [ -f "$zips" ]; then
+              dir=$(dirname "$zips")
+              echo "Extracting $(basename "$zips")..."
+              unzip -q "$zips" -d "$dir"
+            fi
+          done
+          
           # Find DEBs - look in subdirectories too
           armv7_deb="$(find ../artifacts/armv7 -type f -name '*.deb' 2>/dev/null | head -n1)"
           armv6_deb="$(find ../artifacts/armv6-deb -type f -name '*.deb' 2>/dev/null | head -n1)"
