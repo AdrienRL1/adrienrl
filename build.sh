@@ -38,6 +38,15 @@ if ! command -v fakeroot >/dev/null 2>&1 \
     bash "$PROJECT_REAL/build-toolchain/setup-system-deps.sh"
 fi
 
+# deps/mbedtls (headers) n'est PAS commite (.gitignore) — seules les libs statiques
+# deps/build/*.a (mbedTLS 3.6.0, armv7) le sont. Sur un runner CI fraichement clone,
+# on recupere donc les headers de la MEME version pour que HTTPSClient.m compile.
+if [ ! -f "$PROJECT_REAL/deps/mbedtls/include/mbedtls/ssl.h" ]; then
+    echo "==> Headers mbedTLS absents — clonage de mbedtls v3.6.0 (headers only)..."
+    rm -rf "$PROJECT_REAL/deps/mbedtls"
+    git clone -q --depth 1 --branch v3.6.0 https://github.com/Mbed-TLS/mbedtls.git "$PROJECT_REAL/deps/mbedtls"
+fi
+
 # Cible : SDK iPhoneOS10.3 installe (le Makefile demande 7.0, absent ici), deploiement min iOS 5.0.
 # GO_EASY_ON_ME=1 : ne pas transformer les warnings en erreurs (-Werror), comme le build macOS.
 TARGET_TRIPLE="iphone:clang:10.3:5.0"
