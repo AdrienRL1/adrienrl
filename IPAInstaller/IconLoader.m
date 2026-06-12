@@ -1,7 +1,48 @@
 #import "IconLoader.h"
 #import "HTTPSClient.h"
 #import "IOS5Compat.h"
-#import <ImageIO/ImageIO.h>
+#import <ImageIO/ImageIO.h>   // header only (types/CGImageSourceRef) — NOT linked; see dlopen below
+#import <dlfcn.h>
+
+// ---------------------------------------------------------------------------
+// Runtime-loaded ImageIO (dlopen/dlsym) — one binary for both iOS 3 and iOS 4.
+//
+// ImageIO lives at DIFFERENT paths depending on the OS:
+//   iOS 4.0+ : /System/Library/Frameworks/ImageIO.framework         (public)
+//   iOS 3.x  : /System/Library/PrivateFrameworks/ImageIO.framework  (private)
+// A hard LC_LOAD_DYLIB on either path makes dyld abort at launch on the OTHER
+// OS. So the binary is NOT linked against ImageIO at all: we dlopen() the
+// public path first (iOS 4+), fall back to the private path (iOS 3), and
+// resolve every function/key via dlsym(). If both fail (or any symbol is
+// missing) decodeAndResize: falls back to the iOS 2.0 UIImage path below.
+// ---------------------------------------------------------------------------
+typedef CGImageSourceRef (*ADCGImageSourceCreateWithDataFn)(CFDataRef, CFDictionaryRef);
+typedef CGImageRef (*ADCGImageSourceCreateThumbnailAtIndexFn)(CGImageSourceRef, size_t, CFDictionaryRef);
+
+static void *ADImageIOHandle(void) {
+    static void *handle = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        handle = dlopen("/System/Library/Frameworks/ImageIO.framework/ImageIO",
+                        RTLD_LAZY | RTLD_LOCAL);                       // iOS 4+
+        if (!handle)
+            handle = dlopen("/System/Library/PrivateFrameworks/ImageIO.framework/ImageIO",
+                            RTLD_LAZY | RTLD_LOCAL);                   // iOS 3.x
+    });
+    return handle;
+}
+
+static void *ADImageIOSym(const char *name) {
+    void *h = ADImageIOHandle();
+    return h ? dlsym(h, name) : NULL;
+}
+
+// kCGImageSource* keys are CFStringRef GLOBALS, so dlsym returns a POINTER to
+// the CFStringRef — dereference it (guarded) to get the actual key.
+static CFStringRef ADImageIOKey(const char *name) {
+    CFStringRef *p = (CFStringRef *)ADImageIOSym(name);
+    return p ? *p : NULL;
+}
 
 // One pending icon request. Returned to the caller (AppTileView) as an opaque cancel token so a
 // reused cell can drop the icon it no longer needs. Several requests can share one URL key (dedup):
@@ -9,11 +50,24 @@
 // request short-circuits instead of decoding — this is what drains the stale backlog during a
 // fast fling so the currently-visible tiles' icons resolve immediately.
 @interface ADIconReq : NSObject
-@property (nonatomic, copy)   void (^completion)(UIImage *);
 @property (nonatomic, copy)   NSString *key;
 @property (nonatomic, assign) BOOL cancelled;
+// iOS 3: blocks aren't ObjC objects, so a synthesized copy setter would crash in
+// objc_msgSend. Back the completion manually via the C blocks runtime — see
+// AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+- (void (^)(UIImage *))completion;
+- (void)setCompletion:(void (^)(UIImage *))blk;
 @end
-@implementation ADIconReq @end
+@implementation ADIconReq {
+    void (^_completionBlock)(UIImage *);
+}
+AD_BLOCK_ACCESSORS(completion, setCompletion, _completionBlock, void(^)(UIImage *))
+- (void)dealloc {
+    if (_completionBlock) _Block_release((const void *)_completionBlock);
+    [_key release];
+    [super dealloc];
+}
+@end
 
 @interface IconLoader ()
 @property (nonatomic, strong) NSCache *cache;            // decoded UIImages (RAM)
@@ -81,7 +135,11 @@ static UIImage *IconForceDecode(UIImage *image) {
         // iPad 1 (256 MB). Anything evicted is re-loaded from disk in ~ms, not re-downloaded.
         // Scale the RAM cache to the device: A4 256 MB devices get a tiny cap, 512 MB the
         // (unchanged) 240/28 MB, newer devices a larger one. Eviction just re-reads disk.
-        NSUInteger ram = (NSUInteger)[[NSProcessInfo processInfo] physicalMemory];
+        // -[NSProcessInfo physicalMemory] is iOS 4.0+; on iOS 3.1.3 fall back to the
+        // smallest bucket (every 3.x device has 128-256 MB anyway).
+        NSUInteger ram = 0;
+        if ([[NSProcessInfo processInfo] respondsToSelector:@selector(physicalMemory)])
+            ram = (NSUInteger)[[NSProcessInfo processInfo] physicalMemory];
         if (ram <= 300 * 1024 * 1024) {
             _cache.countLimit = 120;
             _cache.totalCostLimit = 14 * 1024 * 1024;
@@ -96,11 +154,18 @@ static UIImage *IconForceDecode(UIImage *image) {
         // ivar instead of touching UIScreen off-main (same value, just thread-safe).
         CGFloat s = [UIScreen mainScreen].scale;
         _screenScale = s > 0 ? s : 1.0;
-        _pending = [NSMutableDictionary dictionary];
-        _failedAt = [NSMutableDictionary dictionary];
+        // MRC (-fno-objc-arc): these are singleton-lifetime ivars, so they must be OWNED.
+        // Convenience constructors (+dictionary/+array) return autoreleased objects; assigning
+        // them straight to an ivar leaves a dangling pointer once the pool drains → the download
+        // threads later message freed memory (SIGBUS in objc_msgSend). alloc/init gives us +1.
+        _pending  = [[NSMutableDictionary alloc] init];
+        _failedAt = [[NSMutableDictionary alloc] init];
 
         _downloadQueue = [[NSOperationQueue alloc] init];
-        _downloadQueue.name = @"icon-download";
+        // -[NSOperationQueue setName:] is iOS 4.0+; iOS 3.x throws unrecognized
+        // selector. The name is debug-only (Instruments label), so guard it.
+        if ([_downloadQueue respondsToSelector:@selector(setName:)])
+            _downloadQueue.name = @"icon-download";
         // Bounded concurrency now ACTUALLY applies to the HTTPS path (icons run as
         // operations here). 8 fills the visible page a bit faster without the old
         // "90 simultaneous TLS handshakes" thrash that spiked CPU+RAM on old devices.
@@ -108,13 +173,14 @@ static UIImage *IconForceDecode(UIImage *image) {
         // thrash the one core. >=2 cores keeps the unchanged 8.
         NSUInteger cores = ADRecommendedConcurrency();
         _downloadQueue.maxConcurrentOperationCount = (cores <= 1) ? 2 : MIN((NSUInteger)8, cores * 4);
-        _queuedOps = [NSMutableArray array];
+        _queuedOps = [[NSMutableArray alloc] init];   // MRC: owned ivar (see note above)
 
         // Separate queue for disk read+decode. Kept apart from the network queue so that
         // suspend/resume (scroll gating) only pauses NETWORK fetches — already-cached icons
         // keep decoding off disk during a scroll. Tiny concurrency to avoid disk thrash.
         _diskDecodeQueue = [[NSOperationQueue alloc] init];
-        _diskDecodeQueue.name = @"icon-disk";
+        if ([_diskDecodeQueue respondsToSelector:@selector(setName:)])
+            _diskDecodeQueue.name = @"icon-disk";
         // Disk read + decode runs on a LOW-priority background queue (never starves the UI thread).
         // Mono-core A4 → 2: while one op blocks on a slow cold NAND read, the other decodes an
         // already-read icon (real overlap on slow storage, negligible context-switch vs NAND latency).
@@ -124,7 +190,7 @@ static UIImage *IconForceDecode(UIImage *image) {
         // Persistent on-disk thumbnail cache (survives eviction AND app relaunch → an
         // icon downloaded once is instant forever; the #1 real-world speedup).
         NSString *caches = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
-        _diskDir = [caches stringByAppendingPathComponent:@"appdrop-icons"];
+        _diskDir = [[caches stringByAppendingPathComponent:@"appdrop-icons"] copy];   // owned (+1) under MRC
         [[NSFileManager defaultManager] createDirectoryAtPath:_diskDir
                                   withIntermediateDirectories:YES attributes:nil error:NULL];
         [self pruneDiskCacheAsync];
@@ -146,6 +212,7 @@ static UIImage *IconForceDecode(UIImage *image) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (NSString *)keyForURL:(NSString *)url size:(CGSize)size {
@@ -175,7 +242,9 @@ static UIImage *IconForceDecode(UIImage *image) {
 
     // One request token (returned as an opaque cancel handle). Dedup: if a request for this key is
     // already in flight, attach this token to the existing waiter list; otherwise start a new op.
-    ADIconReq *req = [[ADIconReq alloc] init];
+    // MRC: autorelease the token — the waiter array retains it; the caller's
+    // `strong` property retains it again if it keeps the handle.
+    ADIconReq *req = [[[ADIconReq alloc] init] autorelease];
     req.completion = completion;
     req.key = key;
     @synchronized (self.pending) {
@@ -226,7 +295,7 @@ static UIImage *IconForceDecode(UIImage *image) {
     BOOL isHTTPS = [[finalURL lowercaseString] hasPrefix:@"https://"];
     NSTimeInterval timeout = 30;  // mbedTLS handshake on iPad 1 can take several seconds.
 
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     NSBlockOperation *op = [NSBlockOperation blockOperationWithBlock:^{
         __strong typeof(ws) self = ws; if (!self) return;
         if ([self keyAbandoned:key]) return;   // every requester scrolled away → skip the network fetch
@@ -282,7 +351,12 @@ static UIImage *IconForceDecode(UIImage *image) {
 - (void)fireWaiters:(NSString *)key withImage:(UIImage *)img {
     NSArray *waiters = nil;
     @synchronized (self.pending) {
-        waiters = self.pending[key];
+        // MRC (-fno-objc-arc): the pending dict holds the ONLY +1 on this array.
+        // -removeObjectForKey: below releases it → refcount 0 → it deallocs while we
+        // still hold a dangling `waiters` pointer, and the for-loop then enumerates
+        // freed memory → EXC_BAD_ACCESS (SIGBUS) in objc_msgSend (the "random" crash
+        // on the icon-download thread). retain+autorelease keeps it alive for the loop.
+        waiters = [[self.pending[key] retain] autorelease];
         [self.pending removeObjectForKey:key];
     }
     for (ADIconReq *r in waiters) {
@@ -318,22 +392,51 @@ static UIImage *IconForceDecode(UIImage *image) {
     CGFloat scale = self.screenScale;
     CGSize px = CGSizeMake(targetSize.width * scale, targetSize.height * scale);
 
-    CGImageSourceRef src = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
-    if (!src) return nil;
-    NSDictionary *opts = @{
-        (__bridge id)kCGImageSourceCreateThumbnailFromImageAlways: (__bridge id)kCFBooleanTrue,
-        (__bridge id)kCGImageSourceCreateThumbnailWithTransform:   (__bridge id)kCFBooleanTrue,
-        (__bridge id)kCGImageSourceThumbnailMaxPixelSize: @((int)MAX(px.width, px.height)),
-    };
-    CGImageRef thumb = CGImageSourceCreateThumbnailAtIndex(src, 0, (__bridge CFDictionaryRef)opts);
-    CFRelease(src);
+    CGImageRef thumb = NULL;   // the source image we draw (then downscale)
+    BOOL ownThumb = NO;        // YES only if WE created `thumb` (must release it)
+
+    // Preferred path: ImageIO thumbnailing — decodes + downsamples in one pass.
+    // Every function and key is resolved via dlsym() from the runtime-dlopen()ed
+    // ImageIO (public path on iOS 4+, private path on iOS 3 — see ADImageIOHandle).
+    // The binary itself carries NO ImageIO load command and NO ImageIO imports, so
+    // dyld is happy on both OSes. If the library or any symbol is missing, every
+    // pointer below is NULL and we fall through to the UIImage path.
+    ADCGImageSourceCreateWithDataFn srcCreate =
+        (ADCGImageSourceCreateWithDataFn)ADImageIOSym("CGImageSourceCreateWithData");
+    ADCGImageSourceCreateThumbnailAtIndexFn thumbCreate =
+        (ADCGImageSourceCreateThumbnailAtIndexFn)ADImageIOSym("CGImageSourceCreateThumbnailAtIndex");
+    if (srcCreate && thumbCreate) {
+        CGImageSourceRef src = srcCreate((__bridge CFDataRef)data, NULL);
+        if (src) {
+            CFStringRef kAlways    = ADImageIOKey("kCGImageSourceCreateThumbnailFromImageAlways");
+            CFStringRef kTransform = ADImageIOKey("kCGImageSourceCreateThumbnailWithTransform");
+            CFStringRef kMaxPx     = ADImageIOKey("kCGImageSourceThumbnailMaxPixelSize");
+            NSMutableDictionary *opts = [NSMutableDictionary dictionary];
+            if (kAlways)    opts[(__bridge id)kAlways]    = (__bridge id)kCFBooleanTrue;
+            if (kTransform) opts[(__bridge id)kTransform] = (__bridge id)kCFBooleanTrue;
+            if (kMaxPx)     opts[(__bridge id)kMaxPx]     = @((int)MAX(px.width, px.height));
+            thumb = thumbCreate(src, 0, (__bridge CFDictionaryRef)opts);
+            if (thumb) ownThumb = YES;
+            CFRelease(src);
+        }
+    }
+
+    // Fallback (iOS 3.1.3, or any ImageIO miss above): full-decode with the rock-solid
+    // iOS 2.0 API. We still downscale by drawing into the px-sized rounded context
+    // below, so the on-screen result is identical — just a little more transient RAM.
+    UIImage *full = nil;
+    if (!thumb) {
+        full = [UIImage imageWithData:data];
+        thumb = full.CGImage;   // owned by `full`; do NOT release it ourselves
+        ownThumb = NO;
+    }
     if (!thumb) return nil;
 
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)px.width, (size_t)px.height,
                                               8, (size_t)px.width * 4, colorSpace,
                                               kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
-    if (!ctx) { CGColorSpaceRelease(colorSpace); CGImageRelease(thumb); return nil; }
+    if (!ctx) { CGColorSpaceRelease(colorSpace); if (ownThumb) CGImageRelease(thumb); return nil; }
     CGContextSetInterpolationQuality(ctx, kCGInterpolationMedium);
 
     CGFloat radius = targetSize.width * 0.21 * scale;
@@ -346,7 +449,7 @@ static UIImage *IconForceDecode(UIImage *image) {
     CGImageRef cg = CGBitmapContextCreateImage(ctx);
     UIImage *out = [UIImage imageWithCGImage:cg scale:scale orientation:UIImageOrientationUp];
     CGImageRelease(cg);
-    CGImageRelease(thumb);
+    if (ownThumb) CGImageRelease(thumb);
     CGContextRelease(ctx);
     CGColorSpaceRelease(colorSpace);
     return out;

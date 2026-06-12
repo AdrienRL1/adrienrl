@@ -1,7 +1,6 @@
 #import "ParallelDownloader.h"
 #import "HTTPSClient.h"
 #import "Localization.h"
-#import <CoreFoundation/CoreFoundation.h>
 
 @implementation ParallelDownloader
 
@@ -101,7 +100,12 @@
         [chunkErrArr addObject:[NSNull null]];
         [chunkCodeArr addObject:@0];
     }
-    __block CFAbsoluteTime lastAggregateFire = 0;  // 0 = "never fired"; first tick always passes the 0.3s gate
+    // NOTE (iOS 3 / MRC): under -fno-objc-arc, object-typed __block variables are
+    // NOT retained on block copy, so an autoreleased NSDate stored here would be
+    // freed before the chunk progress blocks fire on their background threads
+    // (crash in objc_msgSend). Use a primitive NSTimeInterval; 0 acts as
+    // "distant past" so the first tick always fires.
+    __block NSTimeInterval lastAggregateFire = 0;
     NSLock *lock = [[NSLock alloc] init];
     __block BOOL anyChunkFailed = NO;
 
@@ -134,7 +138,7 @@
             long long aggregateReceived = 0;
             [lock lock];
             chunkBytesArr[idx] = @(chunkReceived);
-            CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+            NSTimeInterval now = CFAbsoluteTimeGetCurrent();
             if (now - lastAggregateFire > 0.3) {
                 shouldFire = YES;
                 lastAggregateFire = now;

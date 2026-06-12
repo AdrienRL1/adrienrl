@@ -17,7 +17,7 @@ static const CGFloat kToolbarH = 44.0;
 @property (nonatomic, strong) UIToolbar *toolbar;
 @property (nonatomic, assign) BOOL selecting;
 @property (nonatomic, strong) NSMutableSet *selectedKeys;
-@property (nonatomic, weak)   UIBarButtonItem *editBarButton;   // anchors the edit menu popover on iPad
+@property (nonatomic, assign)   UIBarButtonItem *editBarButton;   // anchors the edit menu popover on iPad
 @end
 
 @implementation CollectionViewController
@@ -25,7 +25,7 @@ static const CGFloat kToolbarH = 44.0;
 - (instancetype)initWithCollectionId:(NSString *)cid {
     if ((self = [super init])) {
         _collectionId = [cid copy];
-        _selectedKeys = [NSMutableSet set];
+        _selectedKeys = [[NSMutableSet alloc] init];   // owned (+1) under MRC — +set is autoreleased and would dangle
     }
     return self;
 }
@@ -379,6 +379,6 @@ static const CGFloat kToolbarH = 44.0;
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)o { return YES; }
 - (NSUInteger)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
 
-- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; [super dealloc]; }
 
 @end

@@ -203,7 +203,7 @@ static NSUInteger ADMaxConcurrentEncProbes(void) {
 - (void)scheduleEncProbeForURL:(NSString *)url {
     if (url.length == 0 || [self.encInflight containsObject:url]) return;
     [self.encInflight addObject:url];
-    __weak VersionsViewController *weakSelf = self;
+    AD_WEAK VersionsViewController *weakSelf = self;
     [MachOInspector inspectURL:url completion:^(MachOInspectionResult r) {
         VersionsViewController *s = weakSelf;
         if (!s) return;

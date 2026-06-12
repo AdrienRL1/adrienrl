@@ -39,7 +39,11 @@ NSString *const LocalCatalogDidUpdateNotification = @"LocalCatalogDidUpdateNotif
 // machines more cache. Purely a perf knob — it changes no query RESULT.
 static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
     if (!db) return;
-    unsigned long long ram = [[NSProcessInfo processInfo] physicalMemory];
+    // -[NSProcessInfo physicalMemory] is iOS 4.0+; on iOS 3.1.3 assume the smallest
+    // tier (every 3.x device has <= 256 MB anyway).
+    unsigned long long ram = 256ULL * 1024 * 1024;
+    if ([[NSProcessInfo processInfo] respondsToSelector:@selector(physicalMemory)])
+        ram = [[NSProcessInfo processInfo] physicalMemory];
     const char *pragma;
     if (ram <= 320ULL * 1024 * 1024)        pragma = "PRAGMA cache_size = -8000";    // ≤256 MB → 8 MB (unchanged)
     else if (ram <= 640ULL * 1024 * 1024)   pragma = "PRAGMA cache_size = -16000";   // ≤512 MB → 16 MB
@@ -51,12 +55,21 @@ static void ADApplyAdaptiveCacheSize(sqlite3 *db) {
 // data-protection class so iOS can't kill the app for holding the file open while the device is
 // locked and the app is suspended. No-op on devices without a passcode (no data protection anyway),
 // and safe on jailbroken systems. Covers the main file + any SQLite sidecars.
+// iOS3: NSFileProtectionKey/NSFileProtectionNone are iOS 4.0+. They're weak-imported here, so on
+// 3.x dyld binds them to NULL — touching them was a guaranteed SIGBUS at 0x0 (crash in
+// loadWithProgress's _searchQueue block, thread 4). Guard on the symbol ADDRESS before use;
+// data protection doesn't exist on 3.x anyway, so bailing out is the correct behaviour.
+extern NSString * const NSFileProtectionKey  __attribute__((weak_import));
+extern NSString * const NSFileProtectionNone __attribute__((weak_import));
 static void ADSetNoFileProtection(NSString *path) {
     if (!path.length) return;
+    if (&NSFileProtectionKey == NULL || &NSFileProtectionNone == NULL) return;  // iOS < 4.0
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSDictionary *attr = @{ NSFileProtectionKey: NSFileProtectionNone };
+    NSDictionary *attr = [NSDictionary dictionaryWithObject:NSFileProtectionNone
+                                                     forKey:NSFileProtectionKey];
     [fm setAttributes:attr ofItemAtPath:path error:NULL];
-    for (NSString *sfx in @[@"-wal", @"-shm", @"-journal"]) {
+    NSArray *sidecars = [NSArray arrayWithObjects:@"-wal", @"-shm", @"-journal", nil];
+    for (NSString *sfx in sidecars) {
         NSString *p = [path stringByAppendingString:sfx];
         if ([fm fileExistsAtPath:p]) [fm setAttributes:attr ofItemAtPath:p error:NULL];
     }
@@ -103,6 +116,9 @@ static void ADSetNoFileProtection(NSString *path) {
         sqlite3_close(_db);
         _db = NULL;
     }
+	[_dbPath release];
+    [_countCacheKey release];
+    [super dealloc];
 }
 
 - (BOOL)isReady { return self.loaded; }
@@ -356,7 +372,9 @@ static void ADSetNoFileProtection(NSString *path) {
         sqlite3 *old = self.db;
         self.db = newdb;
         self.urls = urls;
+        [_dbPath release];
         _dbPath = [cached copy];
+        [_countCacheKey release];   // MRC: release the previously copied key
         _countCacheKey = nil;   // SQL-01: new DB → discard the memoized COUNT (still on _searchQueue)
         if (old) sqlite3_close(old);
         [self applyStoredCategoryOverrides];     // #156: re-apply category corrections to the fresh DB
@@ -401,6 +419,7 @@ static void ADSetNoFileProtection(NSString *path) {
             });
             return;
         }
+        [_dbPath release];
         _dbPath = [path copy];
         ADSetNoFileProtection(_dbPath);   // 0xdead10cc: keep the file out of any data-protection class
 
@@ -471,6 +490,7 @@ static void ADSetNoFileProtection(NSString *path) {
             [fm removeItemAtPath:_dbPath error:NULL];
             [fm removeItemAtPath:[_dbPath stringByAppendingString:@".gz"] error:NULL];
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:kCatalogGzSizeKey];
+            [_dbPath release];
             _dbPath = nil;
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self loadWithProgress:progressBlock completion:completion];   // loaded is still NO → re-resolves + re-downloads
@@ -502,6 +522,7 @@ static void ADSetNoFileProtection(NSString *path) {
     self.loaded = NO;
     dispatch_async(_searchQueue, ^{
         if (self.db) { sqlite3_close(self.db); self.db = NULL; }
+        [self->_countCacheKey release];   // MRC: release the previously copied key
         self->_countCacheKey = nil;
         if (completion) completion();
     });
@@ -559,6 +580,12 @@ static NSString *ADCategoryPredicate(NSString *category) {
     if (!self.loaded || !self.db) {
         return @{@"error": @"catalog not loaded", @"results": @[], @"total": @0};
     }
+    if (!q) q = @"";
+    if (!minIOSStr) minIOSStr = @"";
+    if (!maxIOSStr) maxIOSStr = @"";
+    if (!deviceClass) deviceClass = @"all";
+    if (!category) category = @"";
+    if (!subgenre) subgenre = @"";
 
     NSString *table = unique ? @"entries_unique" : @"entries";
     NSString *qLower = [[q stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]] lowercaseString];
@@ -633,7 +660,8 @@ static NSString *ADCategoryPredicate(NSString *category) {
             if (sqlite3_step(st) == SQLITE_ROW) total = sqlite3_column_int64(st, 0);
         }
         sqlite3_finalize(st);
-        _countCacheKey = countKey;
+        [_countCacheKey release];          // MRC: countKey is autoreleased — we must own our copy,
+        _countCacheKey = [countKey copy];  // otherwise _countCacheKey dangles and the next search crashes
         _countCacheTotal = total;
     }
 
@@ -1122,6 +1150,7 @@ static NSString *iconURLForImgPk(long imgPk) {
         [data writeToFile:[self categoryOverridesCachePath] atomically:YES];
         dispatch_async(self->_searchQueue, ^{
             [self applyStoredCategoryOverrides];
+            [self->_countCacheKey release];   // MRC: release the previously copied key
             self->_countCacheKey = nil;   // SQL-01: category/subgenre changed → counts may differ
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[NSNotificationCenter defaultCenter] postNotificationName:LocalCatalogDidUpdateNotification object:nil];
@@ -1350,6 +1379,7 @@ static NSString *iconURLForImgPk(long imgPk) {
         [data writeToFile:[self catalogExtrasCachePath] atomically:YES];
         dispatch_async(self->_searchQueue, ^{
             [self applyCatalogExtras];
+            [self->_countCacheKey release];   // MRC: release the previously copied key
             self->_countCacheKey = nil;   // SQL-01: extras inserted/removed rows → counts may differ
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[NSNotificationCenter defaultCenter] postNotificationName:LocalCatalogDidUpdateNotification object:nil];

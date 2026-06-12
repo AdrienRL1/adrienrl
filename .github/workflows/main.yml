@@ -1,0 +1,132 @@
+name: Build AppDrop binaries
+
+on:
+  push:
+    branches: [ iOS3iThink ]
+  workflow_dispatch:
+
+jobs:
+  ios5_10-armv7:
+    name: Cross-compile armv7 / iOS 5-10
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            clang lld llvm llvm-dev \
+            cmake make git wget zip dpkg \
+            libplist-dev libplist-utils libssl-dev python3
+
+      - name: Bootstrap build-toolchain
+        run: |
+          mkdir -p build-toolchain
+          if [ ! -d build-toolchain/theos ]; then
+            git clone --recursive https://github.com/theos/theos.git build-toolchain/theos
+          fi
+          if [ ! -x build-toolchain/theos/toolchain/linux/iphone/bin/clang ]; then
+            curl -fsSL https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz \
+              | tar -xJf - -C build-toolchain/theos/toolchain
+          fi
+          if [ ! -d build-toolchain/theos/sdks/iPhoneOS10.3.sdk ]; then
+            tmpdir="$(mktemp -d)"
+            git clone --no-checkout --depth 1 --filter=blob:none https://github.com/theos/sdks.git "$tmpdir/sdks"
+            ( cd "$tmpdir/sdks" && git sparse-checkout set iPhoneOS10.3.sdk && git checkout )
+            mkdir -p build-toolchain/theos/sdks
+            mv "$tmpdir/sdks/iPhoneOS10.3.sdk" build-toolchain/theos/sdks/
+            rm -rf "$tmpdir"
+          fi
+
+      - name: Build armv7 package
+        run: |
+          chmod +x build.sh
+          ./build.sh package FINALPACKAGE=1
+
+      - name: Upload armv7 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDrop-armv7
+          path: IPAInstaller/packages/*
+
+  ios3-armv6:
+    name: Cross-compile armv6 / iOS 3 (iOS 5.1 SDK)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            clang lld llvm llvm-dev \
+            cmake make git wget zip dpkg \
+            libplist-dev libplist-utils libssl-dev python3
+
+      - name: Build IPA + DEB
+        run: |
+          chmod +x ios3/build-ios3.sh
+          ./ios3/build-ios3.sh
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDrop-iOS3-armv6-ipa
+          path: ios3/build/AppDrop.ipa
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDrop-iOS3-armv6-deb
+          path: ios3/build/AppDrop.deb
+
+  universal-deb:
+    name: Assemble universal DEB (armv6 + armv7, separate slices)
+    runs-on: ubuntu-24.04
+    needs: [ ios5_10-armv7, ios3-armv6 ]
+    steps:
+      - name: Download armv7 DEB
+        uses: actions/download-artifact@v4
+        with:
+          name: AppDrop-armv7
+          path: artifacts/armv7
+
+      - name: Download armv6 DEB
+        uses: actions/download-artifact@v4
+        with:
+          name: AppDrop-iOS3-armv6-deb
+          path: artifacts/armv6-deb
+
+      - name: Build universal DEB
+        run: |
+          set -euo pipefail
+          rm -rf merge
+          mkdir -p merge/root
+
+          armv7_deb="$(find artifacts/armv7 -name '*.deb' | head -n1)"
+          armv6_deb="$(find artifacts/armv6-deb -name '*.deb' | head -n1)"
+          if [ -z "$armv7_deb" ] || [ -z "$armv6_deb" ]; then
+            echo "ERROR: missing armv7 or armv6 DEB artifact" >&2
+            exit 1
+          fi
+
+          dpkg-deb -R "$armv6_deb" merge/root
+          tmp_armv7="$(mktemp -d)"
+          dpkg-deb -x "$armv7_deb" "$tmp_armv7"
+          cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" merge/root/Applications/AppDrop.app/AppDrop.armv7
+          chmod 0755 merge/root/Applications/AppDrop.app/AppDrop.armv7
+
+          mkdir -p merge/out
+          dpkg-deb -Zgzip -b merge/root merge/out/AppDrop-universal.deb >/dev/null
+          mv merge/out/AppDrop-universal.deb merge/AppDrop-universal.deb
+          echo "Assembled universal DEB:"
+          dpkg-deb -I merge/AppDrop-universal.deb | sed -n '1,20p'
+
+      - name: Upload universal DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppDrop-universal-deb
+          path: merge/AppDrop-universal.deb

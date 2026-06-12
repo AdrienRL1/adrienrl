@@ -5,7 +5,7 @@
 
 @interface FilterViewController : UIViewController <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, strong) CatalogFilter *filter;
-@property (nonatomic, weak) id<FilterViewControllerDelegate> delegate;
+@property (nonatomic, assign) id<FilterViewControllerDelegate> delegate;  // MRC: non-zeroing weak (was weak under ARC)
 @end
 
 @protocol FilterViewControllerDelegate <NSObject>

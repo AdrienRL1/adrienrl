@@ -8,7 +8,20 @@
 @property (nonatomic, strong) NSArray *ipas;        // .ipa file names
 @end
 
-@implementation FilePickerViewController
+@implementation FilePickerViewController {
+    void (^_onPickBlock)(NSString *);
+}
+
+// iOS 3: blocks aren't ObjC objects, so the synthesized copy setter crashes in
+// objc_msgSend. Back onPick manually via the C blocks runtime — see
+// AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+@dynamic onPick;
+AD_BLOCK_ACCESSORS(onPick, setOnPick, _onPickBlock, void(^)(NSString *))
+
+- (void)dealloc {
+    if (_onPickBlock) _Block_release((const void *)_onPickBlock);
+    [super dealloc];
+}
 
 - (instancetype)initWithDirectory:(NSString *)dir {
     if ((self = [super initWithStyle:UITableViewStyleGrouped])) { _directory = [dir copy]; }

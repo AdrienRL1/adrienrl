@@ -88,6 +88,7 @@ static NSString *RevHumanSize(long long bytes) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 // #142: the hosted Works-Today / Modded list was refreshed mid-session → reload our data + view.
@@ -218,7 +219,7 @@ static NSString *RevHumanSize(long long bytes) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     // ===== Grid: multi-tile row (iPad always; iPhone when density > list) — exactly the catalogue =====
     if ([AppRowCell tilesPerRowForWidth:tv.bounds.size.width] > 1) {
         static NSString *rid = @"revrow";

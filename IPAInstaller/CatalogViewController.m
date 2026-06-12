@@ -244,7 +244,11 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
 - (NSInteger)pageSize {
     if (_pageSize <= 0) {
         NSUInteger cores = [[NSProcessInfo processInfo] activeProcessorCount];
-        NSUInteger ram   = (NSUInteger)[[NSProcessInfo processInfo] physicalMemory];
+        // -[NSProcessInfo physicalMemory] is iOS 4.0+; on iOS 3.1.3 assume 256 MB
+        // (all 3.x-era hardware) so the mono-core branch below stays correct.
+        NSUInteger ram = 256UL * 1024 * 1024;
+        if ([[NSProcessInfo processInfo] respondsToSelector:@selector(physicalMemory)])
+            ram = (NSUInteger)[[NSProcessInfo processInfo] physicalMemory];
         // Mono-core A4 (iPad 1 / iPhone 4): a modest 50 — bigger runway, still negligible cost
         // (off-main query, only visible cells are built). Dual-core 512 MB → 100, 1 GB+ → 200 so a
         // hard fling on iPad 4 / iPhone 5 essentially never outruns the loader.
@@ -503,7 +507,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
 - (void)addSelectedToFolder {
     NSArray *batch = [self.selectedAppsByPk.allValues copy];
     if (!batch.count) return;
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [FolderPicker presentAddToFolderFrom:self completion:^(NSString *cid) {
         if (!cid) return;
         for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:cid];
@@ -558,6 +562,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
@@ -586,7 +591,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
         NSInteger n = [self tilesPerRowForWidth:tv.bounds.size.width];
         row.tilesPerRow = n;
         [row setContentRasterized:!self.gridScrolling];   // rasterize at rest, plain while scrolling
-        __weak typeof(self) ws = self;
+        AD_WEAK typeof(self) ws = self;
         row.selectionMode = self.selectionMode;
         // Selection lookup callback — runs for each tile during layout so the
         // check overlay reflects the source-of-truth dict, not stale visuals.
@@ -661,7 +666,7 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
         // Capture self WEAKLY: the returned token is now stored on the cell (cell.iconReq), which the
         // table retains, so a strong capture here would form a permanent VC↔block retain cycle and
         // leak the whole controller after leaving the screen. (AppTileView already captures weakly.)
-        __weak typeof(self) ws = self;
+        AD_WEAK typeof(self) ws = self;
         cell.iconReq = [[IconLoader shared] loadImageForURL:iconUrl
                                    targetSize:sz
                                           via:nil

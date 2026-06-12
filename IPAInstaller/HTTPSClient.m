@@ -73,7 +73,7 @@ static NSString *HC_resolveViaDoH(NSString *host) {
 
     static NSMutableDictionary *cache = nil;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
+    dispatch_once(&once, ^{ cache = [[NSMutableDictionary dictionary] retain]; });
     @synchronized (cache) { NSString *hit = [cache objectForKey:host]; if (hit) return hit; }
 
     NSString *u = [NSString stringWithFormat:@"https://8.8.8.8/resolve?name=%@&type=A", host];

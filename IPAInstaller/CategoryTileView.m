@@ -2,6 +2,26 @@
 #import "IconLoader.h"
 #import "IOS6Theme.h"
 
+// Pick up to n distinct random elements from arr (Fisher–Yates partial shuffle).
+// Returns a new autoreleased NSArray; if arr has <= n items, returns a shuffled copy of all of them.
+static NSArray *pickN(NSArray *arr, NSUInteger n) {
+    if (arr.count == 0) return @[];
+    NSMutableArray *m = [arr mutableCopy];
+    NSUInteger count = m.count;
+    NSUInteger take = (n < count) ? n : count;
+    for (NSUInteger i = 0; i < take; i++) {
+        NSUInteger j = i + arc4random_uniform((uint32_t)(count - i));
+        [m exchangeObjectAtIndex:i withObjectAtIndex:j];
+    }
+    return [m subarrayWithRange:NSMakeRange(0, take)];
+}
+
+// iOS 3 has no ObjC NSBlock class: sending a block any ObjC message (e.g.
+// -copyWithZone: from a @property(copy) setter, or -copy) crashes in
+// objc_msgSend. onTap/onDelete are therefore backed by manual accessors that
+// copy/release through the C blocks runtime — see AppDropBlocks.h
+// (AD_BLOCK_ACCESSORS), force-included via AppDropCompat.h.
+
 @interface CategoryTileView ()
 @property (nonatomic, strong) UIImageView *bgView;
 @property (nonatomic, strong) UIImageView *iconView;
@@ -22,18 +42,20 @@
 @property (nonatomic, strong) UIButton *deleteBadge;        // top-left ⊗ (edit mode, folders only)
 @end
 
-// Pick up to n random items from a pool (partial Fisher–Yates) — gives the mosaic variety per visit.
-static NSArray *pickN(NSArray *pool, NSUInteger n) {
-    if (pool.count <= n) return pool ?: @[];
-    NSMutableArray *m = [pool mutableCopy];
-    for (NSUInteger i = 0; i < n; i++) {
-        NSUInteger j = i + arc4random_uniform((uint32_t)(m.count - i));
-        [m exchangeObjectAtIndex:i withObjectAtIndex:j];
-    }
-    return [m subarrayWithRange:NSMakeRange(0, n)];
+@implementation CategoryTileView {
+    void (^_onTapBlock)(void);
+    void (^_onDeleteBlock)(void);
 }
 
-@implementation CategoryTileView
+@dynamic onTap, onDelete;
+AD_BLOCK_ACCESSORS(onTap, setOnTap, _onTapBlock, void(^)(void))
+AD_BLOCK_ACCESSORS(onDelete, setOnDelete, _onDeleteBlock, void(^)(void))
+
+- (void)dealloc {
+    if (_onTapBlock)    _Block_release((const void *)_onTapBlock);
+    if (_onDeleteBlock) _Block_release((const void *)_onDeleteBlock);
+    [super dealloc];
+}
 
 #pragma mark - Drawing helpers
 
@@ -42,7 +64,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
 + (UIImage *)cardBgForSize:(CGSize)size {
     if (size.width < 2 || size.height < 2) return nil;
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     // Key includes the theme id so cards are re-drawn (not served stale) after a theme switch.
     NSString *key = [NSString stringWithFormat:@"%@|%.0fx%.0f", [IOS6Theme currentThemeID], size.width, size.height];
     UIImage *cached = cache[key];
@@ -137,7 +159,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     CGContextSetLineCap(ctx, kCGLineCapRound);
     CGContextMoveToPoint(ctx, 9, 17);  CGContextAddLineToPoint(ctx, 17, 9);  CGContextStrokePath(ctx);
     CGContextMoveToPoint(ctx, 12.5, 18.5); CGContextAddLineToPoint(ctx, 18.5, 12.5); CGContextStrokePath(ctx);
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -161,7 +183,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     CGContextSetLineCap(ctx, kCGLineCapRound);
     CGContextMoveToPoint(ctx, 9, 9);   CGContextAddLineToPoint(ctx, 17, 17); CGContextStrokePath(ctx);
     CGContextMoveToPoint(ctx, 17, 9);  CGContextAddLineToPoint(ctx, 9, 17);  CGContextStrokePath(ctx);
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -181,7 +203,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     CGContextAddLineToPoint(ctx, 9, 7);
     CGContextAddLineToPoint(ctx, 4, 11);
     CGContextStrokePath(ctx);
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -313,7 +335,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     } else {
         self.iconView.image = nil;   // placeholder applied in layoutSubviews
         [self setNeedsLayout];
-        __weak typeof(self) weakSelf = self;
+        AD_WEAK typeof(self) weakSelf = self;
         [[IconLoader shared] loadImageForURL:iconURL targetSize:sz via:nil
                                   completion:^(UIImage *img) {
             __strong typeof(self) s = weakSelf;
@@ -331,7 +353,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     UIImage *cached = [[IconLoader shared] cachedImageForURL:iconURL targetSize:sz];
     if (cached) { self.iconView.image = cached; return; }
     // Keep the current image visible (no placeholder flash) until the new one loads.
-    __weak typeof(self) weakSelf = self;
+    AD_WEAK typeof(self) weakSelf = self;
     [[IconLoader shared] loadImageForURL:iconURL targetSize:sz via:nil
                               completion:^(UIImage *img) {
         __strong typeof(self) s = weakSelf;
@@ -395,7 +417,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
 - (void)loadMosaicSlots {
     CGSize sz = CGSizeMake(64, 64);
     NSInteger gen = self.mosaicGen;
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     for (NSUInteger i = 0; i < self.mosaicSlots.count; i++) {
         if ([self.mosaicImgs[i] isKindOfClass:[UIImage class]]) continue;
         id slotURL = self.mosaicSlots[i];
@@ -428,7 +450,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
     CGSize sz = CGSizeMake(64, 64);
     UIImage *c = [[IconLoader shared] cachedImageForURL:next targetSize:sz];
     if (c) { self.mosaicImgs[slot] = c; [self compositeMosaic]; return; }
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [[IconLoader shared] loadImageForURL:next targetSize:sz via:nil completion:^(UIImage *img) {
         __strong typeof(self) s = ws; if (!s || s.mosaicGen != gen) return;
         if (img) { s.mosaicImgs[slot] = img; [s compositeMosaic]; }
@@ -537,7 +559,7 @@ static NSArray *pickN(NSArray *pool, NSUInteger n) {
 
 - (void)tapped {
     if (!self.onTap) return;
-    void (^cb)(void) = [self.onTap copy];
+    void (^cb)(void) = _onTapBlock;   // already a heap block (our setter Block_copy'd it); do NOT send -copy (iOS 3 blocks aren't ObjC objects)
     self.alpha = 0.55;
     [UIView animateWithDuration:0.16 animations:^{ self.alpha = 1.0; }
                      completion:^(BOOL done) { cb(); }];

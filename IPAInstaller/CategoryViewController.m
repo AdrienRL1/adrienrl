@@ -51,7 +51,7 @@ static NSString *fmtCount(NSInteger n) {
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) NSArray *items;          // model: one dict per tile (pinned first, then the rest)
 @property (nonatomic, strong) NSArray *tiles;          // CategoryTileView*, parallel to items
-@property (nonatomic, weak)   CategoryTileView *topDLTile;  // v3.2 : tuile « Plus téléchargées » (icônes = top 4)
+@property (nonatomic, assign)   CategoryTileView *topDLTile;  // v3.2 : tuile « Plus téléchargées » (icônes = top 4)
 @property (nonatomic, assign) NSInteger pinnedCount;   // first N items are in the pinned (top) zone
 @property (nonatomic, strong) UIView *zoneDivider;     // thin rule between pinned + unpinned zones
 @property (nonatomic, strong) UIButton *addFolderButton;   // small distinct "+ Nouveau dossier", always at top
@@ -157,9 +157,9 @@ static NSString *fmtCount(NSInteger n) {
 
     if (!sub) {
         [[NSNotificationCenter defaultCenter] addObserver:self
-            selector:@selector(appDidBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
+            selector:@selector(appDidBecomeActive) name:@"UIApplicationDidBecomeActiveNotification" object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
-            selector:@selector(appDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
+            selector:@selector(appDidEnterBackground) name:@"UIApplicationDidEnterBackgroundNotification" object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
             selector:@selector(catalogDidUpdate) name:LocalCatalogDidUpdateNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
@@ -601,7 +601,7 @@ static UIImage *AppDropDownloadsGlyph(void) {
 
     // ---- Tiles ----
     NSMutableArray *tiles = [NSMutableArray array];
-    __weak typeof(self) wself = self;
+    AD_WEAK typeof(self) wself = self;
     for (NSDictionary *it in self.items) {
         CategoryTileView *t = [[CategoryTileView alloc] initWithFrame:CGRectZero];
         // Tiles always show the auto mosaic (preview-image pinning was removed).
@@ -1180,6 +1180,7 @@ static void parseSpan(NSString *s, int *w, int *h) {
 - (void)dealloc {
     [self.activeUsersTimer invalidate];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 @end

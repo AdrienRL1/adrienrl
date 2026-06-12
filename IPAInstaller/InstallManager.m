@@ -4,6 +4,7 @@
 #import "ParallelDownloader.h"
 #import "Localization.h"
 #import "MachOInspector.h"
+#import "InProcessInstaller.h"
 #import "IPAPackage.h"   // #163 — read the .ipa's real bundle id to verify the install on-device
 #include <spawn.h>
 #include <sys/wait.h>
@@ -96,9 +97,16 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                                                     userInfo:nil
                                                      repeats:YES];
         CPLog(@"  InstallManager.init: notification observers");
+        // iOS 3 backport: UIApplicationDidEnterBackgroundNotification is a weak-imported
+        // iOS 4.0+ symbol. On 3.1.3 it resolves to NULL, and reading its value to pass as
+        // the `name:` argument dereferences 0 -> EXC_BAD_ACCESS (SIGBUS) at launch, the moment
+        // InstallManager is first touched (opening any app detail page). iOS 3 has no
+        // multitasking / background state anyway, so we register with the constant's literal
+        // string value: identical behaviour on iOS 4+ (the observer fires on backgrounding),
+        // and a harmless no-op observer on iOS 3 (the notification is simply never posted).
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                   selector:@selector(saveJobsToDisk)
-                                                      name:UIApplicationDidEnterBackgroundNotification
+                                                      name:@"UIApplicationDidEnterBackgroundNotification"
                                                     object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                   selector:@selector(saveJobsToDisk)
@@ -374,7 +382,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 - (void)startAutonomousInstallWithURL:(NSString *)url
                             completion:(void (^)(NSString *, NSError *))completion {
     NSString *jobId = [NSString stringWithFormat:@"local-%@",
-                         [[NSUUID UUID] UUIDString] ?: [NSString stringWithFormat:@"%lu", (unsigned long)[NSDate date].timeIntervalSince1970]];
+                         [[NSUUID UUID] UUIDString] ?: [NSString stringWithFormat:@"%lu", (unsigned long)[[NSDate date] timeIntervalSince1970]]];
 
     InstallJob *job = [[InstallJob alloc] init];
     job.jobId = jobId;
@@ -562,11 +570,18 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 
     __block long long lastReceived = 0;
     __block long long lastTotal = 0;   // #171: latest known total size, for the near-done guard below
-    __block NSDate *lastTick = [NSDate date];
+    // NOTE (iOS 3 / MRC): under -fno-objc-arc, object-typed __block variables are
+    // NOT retained when the block is copied. An autoreleased `[NSDate date]` stored
+    // here is dead as soon as the enclosing autorelease pool drains — and the
+    // download blocks below run 30s+ later on a background thread, so any message
+    // to it (e.g. timeIntervalSinceNow) crashes in objc_msgSend (EXC_BAD_ACCESS).
+    // Store wall-clock as a primitive NSTimeInterval (double) instead — no object
+    // lifetime to manage, identical behaviour on iOS 3–10.
+    __block NSTimeInterval lastTick = CFAbsoluteTimeGetCurrent();
     // Slow-mirror detection state. We sample the byte counter every kSlowCheckWindow
     // seconds; if avg throughput in that window is under the threshold AND we have
     // retry budget, we trip slowAbort which the isCancelled block returns YES for.
-    __block NSDate *windowStart = [NSDate date];
+    __block NSTimeInterval windowStart = CFAbsoluteTimeGetCurrent();
     __block long long windowStartBytes = 0;
     __block BOOL slowAbort = NO;
     // #169: tripped on the first progress tick if free disk < kDLSpaceFactor × file size.
@@ -578,7 +593,9 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     // at "0%" forever). We trip slowAbort so it retries on a fresh mirror (and, out of retry budget,
     // fails cleanly) instead of hanging indefinitely.
     __block long long stallBytes = 0;
-    __block NSDate *stallSince = [NSDate date];
+    // iOS3/MRC: primitive NSTimeInterval, same reasoning as lastTick/windowStart above —
+    // an autoreleased NSDate captured by these long-lived blocks dangles under MRC.
+    __block NSTimeInterval stallSince = CFAbsoluteTimeGetCurrent();
 
     // Stream count from Settings (default 4). 1 disables parallelism and
     // ParallelDownloader transparently falls back to the legacy single-stream
@@ -594,7 +611,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     BOOL autoSwitchMirror = ([prefs objectForKey:@"IPAInstall.AutoSwitchMirror"] == nil)
                             ? YES : [prefs boolForKey:@"IPAInstall.AutoSwitchMirror"];
 
-    __weak InstallJob *weakJob = job;
+    AD_WEAK InstallJob *weakJob = job;
     [ParallelDownloader downloadURL:job.url
                               toFile:localPath
                          streamCount:streams
@@ -608,11 +625,11 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
         // #278: no NEW bytes for 90 s → the connection is dead. Trip slowAbort to retry/fail cleanly
         // rather than sit at "0%" forever (the slow-mirror window above is skipped when the user
         // turned AutoSwitchMirror OFF, so this absolute guard must be unconditional).
-        if (-[stallSince timeIntervalSinceNow] > 90.0) { slowAbort = YES; return YES; }
+        if (CFAbsoluteTimeGetCurrent() - stallSince > 90.0) { slowAbort = YES; return YES; }
         // Only consider slow-mirror abort if the user left auto-switch ON (#171 level 2) AND we
         // still have retry budget — otherwise there's no point dropping the connection.
         if (autoSwitchMirror && attempt < kMaxMirrorAttempts - 1) {
-            NSTimeInterval elapsed = -[windowStart timeIntervalSinceNow];
+            NSTimeInterval elapsed = CFAbsoluteTimeGetCurrent() - windowStart;
             if (elapsed >= kSlowCheckWindow) {
                 long long delta = lastReceived - windowStartBytes;
                 double bps = elapsed > 0 ? delta / elapsed : 0;
@@ -628,7 +645,7 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                     return YES;
                 }
                 // Healthy speed (or a near-done mirror we're letting finish) — reset the window.
-                windowStart = [NSDate date];
+                windowStart = CFAbsoluteTimeGetCurrent();
                 windowStartBytes = lastReceived;
             }
         }
@@ -647,8 +664,8 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
             // already occupies space) so we don't falsely abort a nearly-finished resume.
             if (freeB >= 0 && (freeB + received) < need) { spaceNeedBytes = need; spaceAbort = YES; }
         }
-        NSDate *now = [NSDate date];
-        NSTimeInterval dt = [now timeIntervalSinceDate:lastTick];
+        NSTimeInterval now = CFAbsoluteTimeGetCurrent();
+        NSTimeInterval dt = now - lastTick;
         double bps = dt > 0 ? (received - lastReceived) / dt : 0;
         lastReceived = received;
         lastTotal = total;
@@ -980,6 +997,21 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 // exit code, or -1 if no installer binary is found (outOutput then holds a friendly message).
 // Synchronous (spawns + waits) — call OFF the main thread.
 - (int)runIpainstallerArgs:(NSArray *)args capturedOutput:(NSString **)outOutput {
+    // v3 / iOS 3 support: prefer installing in-process via MobileInstallationInstall
+    // (no external helper binary needed). This is the "install an .ipa" case:
+    // a single path argument (NOT the "-i <bid>" version query, which has no
+    // MobileInstallation equivalent and must fall through to the CLI tool below).
+    // On iOS 3.1.3 the «IPA Installer Console» package can't be installed at all
+    // (it requires firmware >= 4.0), so this in-process path is the ONLY way to
+    // install there — and on iOS 5-7 it also lets AppDrop work with no ipainstaller
+    // present, matching what autopear's ipainstaller / AppSync's appinst do internally.
+    if (args.count == 1 && ![args[0] isEqualToString:@"-i"]) {
+        NSString *path = [args[0] description];
+        if (path.length && [path hasPrefix:@"/"] && [InProcessInstaller isAvailable]) {
+            return [InProcessInstaller installIPAAtPath:path capturedOutput:outOutput];
+        }
+    }
+
     // Candidate installer paths, in priority order:
     //   - /usr/bin/ipainstaller        (legacy / iOS 5-9 jailbreaks: autopear's package)
     //   - /usr/bin/appinst             (newer alias used by some repos)
@@ -1080,6 +1112,17 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
 // (`-l` / `-i` queries still go through runIpainstallerArgs:, which just uses the first installer.)
 - (int)runIpainstallerOnFile:(NSString *)path capturedOutput:(NSString **)outOutput {
     NSArray *args = (path.length ? @[path] : @[]);
+    // v3 / iOS 3 support: prefer installing in-process via MobileInstallationInstall
+    // (no external helper binary needed), exactly like runIpainstallerArgs: does for
+    // the non-autonomous path. This is the AUTONOMOUS-download install path; without
+    // this it skips InProcessInstaller and goes straight to the CLI tools below, which
+    // don't exist on iOS 3.1.3 (the «IPA Installer Console» package needs firmware
+    // >= 4.0), so the install failed with "ipainstaller not found" even though the
+    // in-process installer was available. On iOS 5-9 the CLI tools (if present) still
+    // run via the fall-through below when MobileInstallationInstall is unavailable.
+    if (path.length && [path hasPrefix:@"/"] && [InProcessInstaller isAvailable]) {
+        return [InProcessInstaller installIPAAtPath:path capturedOutput:outOutput];
+    }
     static const char *kIpaFamily[] = { "/usr/bin/ipainstaller", "/var/jb/usr/bin/ipainstaller", "/opt/procursus/bin/ipainstaller", NULL };
     static const char *kAppFamily[] = { "/usr/bin/appinst", "/var/jb/usr/bin/appinst", NULL };
     const char *primary = NULL, *alternate = NULL;

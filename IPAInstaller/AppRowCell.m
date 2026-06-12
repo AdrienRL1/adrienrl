@@ -7,7 +7,23 @@
 @property (nonatomic, copy) NSArray *appsCache;
 @end
 
-@implementation AppRowCell
+@implementation AppRowCell {
+    void (^_onTileTapBlock)(NSDictionary *);
+    BOOL (^_isAppSelectedBlock)(NSDictionary *);
+}
+
+// iOS 3: blocks aren't ObjC objects, so the synthesized copy setters crash in
+// objc_msgSend. Back them manually via the C blocks runtime — see
+// AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+@dynamic onTileTap, isAppSelectedBlock;
+AD_BLOCK_ACCESSORS(onTileTap, setOnTileTap, _onTileTapBlock, void(^)(NSDictionary *))
+AD_BLOCK_ACCESSORS(isAppSelectedBlock, setIsAppSelectedBlock, _isAppSelectedBlock, BOOL(^)(NSDictionary *))
+
+- (void)dealloc {
+    if (_onTileTapBlock)   _Block_release((const void *)_onTileTapBlock);
+    if (_isAppSelectedBlock) _Block_release((const void *)_isAppSelectedBlock);
+    [super dealloc];
+}
 
 // v3.0: the catalogue grid is configured by an explicit COLUMN COUNT (chosen via the native wheel
 // picker in Settings → Affichage), not a 0–1 density. Idiom-aware default: iPhone 1 = single-column
@@ -91,7 +107,7 @@
 - (void)ensureTileCount {
     while ((NSInteger)self.tiles.count < self.tilesPerRow) {
         AppTileView *t = [[AppTileView alloc] initWithFrame:CGRectZero];
-        __weak typeof(self) ws = self;
+        AD_WEAK typeof(self) ws = self;
         t.onTap = ^(NSDictionary *app) {
             if (ws.onTileTap) ws.onTileTap(app);
         };

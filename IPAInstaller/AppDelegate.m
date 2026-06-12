@@ -441,6 +441,16 @@ static UIImage *AppDropFavoritesTabIcon(void) {
     // harmless belt-and-suspenders for anything not reached directly.
     if ([IOS6Theme isDefaultTheme]) return;
 
+    // The entire UIAppearance proxy system is iOS 5.0+. On iOS 3.x, +[UINavigationBar
+    // appearance] / +[UITabBar appearance] / +[UIBarButtonItem appearance] are themselves
+    // unrecognized selectors on the CLASS — sending them throws NSInvalidArgumentException
+    // before any respondsToSelector: on the (never-returned) proxy can guard us. That is the
+    // "+[UINavigationBar appearance]: unrecognized selector" launch crash seen after switching
+    // to a non-default theme. Dark/colour themes already do the real styling per-instance via
+    // [IOS6Theme applyToNavigationBar:] / applyToTabBar: (ADNavigationController + the tab bar),
+    // so the proxy here is purely belt-and-suspenders — skip it entirely when unavailable.
+    if (![UINavigationBar respondsToSelector:@selector(appearance)]) return;
+
     id navProxy = [UINavigationBar appearance];
     {
         UIImage *navBg = [IOS6Theme navBarBackground];

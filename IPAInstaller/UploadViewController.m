@@ -117,7 +117,7 @@ static NSString *uvLocSub(NSString *s) { return uvLocName(@"sub.", s); }
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(kbHide:)
         name:UIKeyboardWillHideNotification object:nil];
 }
-- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self];  [super dealloc]; }
 
 - (void)rebuildSections {
     NSMutableArray *k = [@[ @(K_FILE), @(K_TYPE) ] mutableCopy];
@@ -134,7 +134,14 @@ static NSString *uvLocSub(NSString *s) { return uvLocName(@"sub.", s); }
 #pragma mark - Keyboard
 
 - (void)kbShow:(NSNotification *)n {
-    CGRect f = [[n.userInfo objectForKey:UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    // iOS 3 backport: UIKeyboardFrameEndUserInfoKey is weak-imported (iOS 3.2+) and resolves to
+    // NULL on 3.1.3 — referencing the symbol crashes, and userInfo[NULL] would throw. Look the
+    // key up by its literal string (its value equals its name) and fall back to the iOS-2
+    // UIKeyboardBoundsUserInfoKey, which 3.x actually posts.
+    NSValue *fv = [n.userInfo objectForKey:@"UIKeyboardFrameEndUserInfoKey"];
+    if (!fv) fv = [n.userInfo objectForKey:@"UIKeyboardBoundsUserInfoKey"];
+    if (!fv) return;
+    CGRect f = [fv CGRectValue];
     f = [self.view convertRect:f fromView:nil];
     CGFloat overlap = MAX(0, self.view.bounds.size.height - f.origin.y);
     UIEdgeInsets in = self.tableView.contentInset; in.bottom = overlap;
@@ -376,7 +383,7 @@ static NSString *uvLocSub(NSString *s) { return uvLocName(@"sub.", s); }
     [self.view endEditing:YES];
     CategorySuggestViewController *p = [[CategorySuggestViewController alloc]
         initForPickingCategory:self.pickedCategory subgenre:self.pickedSubgenre];
-    __weak UploadViewController *weakSelf = self;
+    AD_WEAK UploadViewController *weakSelf = self;
     p.onPick = ^(NSString *category, NSString *subgenre) {
         UploadViewController *s = weakSelf; if (!s) return;
         s.pickedCategory = category;
@@ -421,7 +428,7 @@ static NSString *uvLocSub(NSString *s) { return uvLocName(@"sub.", s); }
 - (void)pickFile {
     [self.view endEditing:YES];
     FilePickerViewController *fp = [[FilePickerViewController alloc] initWithDirectory:nil];
-    __weak UploadViewController *weakSelf = self;
+    AD_WEAK UploadViewController *weakSelf = self;
     fp.onPick = ^(NSString *path) {
         UploadViewController *s = weakSelf; if (!s) return;
         s.chosenPath = path;
@@ -438,7 +445,7 @@ static NSString *uvLocSub(NSString *s) { return uvLocName(@"sub.", s); }
 - (void)analyzePickedIPA:(NSString *)path {
     self.analyzing = YES;
     self.iconB64 = nil;
-    __weak UploadViewController *weakSelf = self;
+    AD_WEAK UploadViewController *weakSelf = self;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         MachOInspectionResult enc = [MachOInspector inspectIPA:path];
         NSDictionary *meta = (enc == MachOInspectionResultEncrypted) ? nil : [IPAPackage metadataForIPA:path];

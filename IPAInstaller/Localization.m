@@ -133,21 +133,21 @@ static NSBundle *_enBundle = nil;
         path = [[NSBundle mainBundle] pathForResource:base ofType:@"lproj"];
     }
     if (!path) path = [[NSBundle mainBundle] pathForResource:@"en" ofType:@"lproj"];
-    _cachedBundle = [NSBundle bundleWithPath:path] ?: [NSBundle mainBundle];
+    _cachedBundle = [([NSBundle bundleWithPath:path] ?: [NSBundle mainBundle]) retain];
     return _cachedBundle;
 }
 
 + (NSBundle *)englishBundle {
     if (_enBundle) return _enBundle;
     NSString *path = [[NSBundle mainBundle] pathForResource:@"en" ofType:@"lproj"];
-    _enBundle = (path ? [NSBundle bundleWithPath:path] : nil) ?: [NSBundle mainBundle];
+    _enBundle = [((path ? [NSBundle bundleWithPath:path] : nil) ?: [NSBundle mainBundle]) retain];
     return _enBundle;
 }
 
 + (NSDictionary *)stringsForCode:(NSString *)code {
     if (!code.length) code = @"en";
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     NSDictionary *cached = cache[code];
     if (cached) return cached;   // per-code, immutable → safe to keep across switches
     NSString *lproj = [[NSBundle mainBundle] pathForResource:code ofType:@"lproj"];
@@ -222,7 +222,7 @@ static NSBundle *_enBundle = nil;
 + (NSString *)displayNameForLanguageCode:(NSString *)code {
     static NSDictionary *names = nil;
     if (!names) {
-        names = @{
+        names = [@{
             @"en":      @"English",
             @"fr":      @"Français",
             @"es":      @"Español",
@@ -238,7 +238,7 @@ static NSBundle *_enBundle = nil;
             @"it":      @"Italiano",
             @"ko":      @"한국어",
             @"ru":      @"Русский",
-        };
+        } retain];
     }
     return names[code] ?: code;
 }

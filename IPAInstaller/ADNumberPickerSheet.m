@@ -8,13 +8,28 @@
 @interface ADNumberPickerSheet () <UIPickerViewDataSource, UIPickerViewDelegate>
 @property (nonatomic, strong) NSArray *values;   // NSNumber<int>
 @property (nonatomic, strong) NSArray *labels;   // NSString
-@property (nonatomic, copy)   void (^onPick)(NSInteger value);
 @property (nonatomic, strong) UIControl *dim;
 @property (nonatomic, strong) UIView *panel;
 @property (nonatomic, strong) UIPickerView *picker;
+@property (nonatomic, copy)   void (^onPick)(NSInteger value);
 @end
 
-@implementation ADNumberPickerSheet
+@implementation ADNumberPickerSheet {
+    // iOS 3: blocks aren't ObjC objects, so a synthesized @property(copy) block
+    // setter calls objc_setProperty(copy=YES) → -copyWithZone: on the block →
+    // objc_msgSend dereferences a zeroed isa → Bus error (signal 10). This is the
+    // crash when opening "Apps per row" / "Home tiles per row". Back the block
+    // manually through the C blocks runtime (_Block_copy/_Block_release) — see
+    // AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+    void (^_onPickBlock)(NSInteger value);
+}
+@dynamic onPick;
+AD_BLOCK_ACCESSORS(onPick, setOnPick, _onPickBlock, void(^)(NSInteger value))
+
+- (void)dealloc {
+    if (_onPickBlock) _Block_release((const void *)_onPickBlock);
+    [super dealloc];
+}
 
 + (void)presentInView:(UIView *)host
                 title:(NSString *)title

@@ -161,6 +161,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (void)updateCheckerChanged:(NSNotification *)note {
@@ -811,7 +812,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
         vc.version = uc.latestVersion;
         vc.releaseDate = uc.latestReleaseDate;
         vc.notesMarkdown = uc.latestReleaseNotes;
-        __weak typeof(self) weakSelf = self;
+        AD_WEAK typeof(self) weakSelf = self;
         vc.installHandler = ^{
             __strong typeof(self) s = weakSelf;
             if (s) [s openCydiaForUpdate];
@@ -908,7 +909,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
         [labels addObject:(v.integerValue <= 1) ? T(@"settings.cols_list")
                                                 : [NSString stringWithFormat:@"%ld", (long)v.integerValue]];
     }
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [ADNumberPickerSheet presentInView:self.view
                                  title:T(@"settings.grid_density")
                                 values:vals
@@ -935,7 +936,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     NSArray *vals = pad ? @[@2,@3,@4,@5,@6,@7,@8] : @[@2,@3];
     NSMutableArray *labels = [NSMutableArray array];
     for (NSNumber *v in vals) [labels addObject:[NSString stringWithFormat:@"%ld", (long)v.integerValue]];
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [ADNumberPickerSheet presentInView:self.view
                                  title:T(@"settings.home_grid_density")
                                 values:vals
@@ -966,7 +967,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     NSArray *vals = @[@1,@2,@3,@4,@5,@6,@7,@8];
     NSMutableArray *labels = [NSMutableArray array];
     for (NSNumber *v in vals) [labels addObject:[NSString stringWithFormat:@"%ld", (long)v.integerValue]];
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [ADNumberPickerSheet presentInView:self.view
                                  title:T(@"settings.max_downloads")
                                 values:vals
@@ -995,7 +996,7 @@ static NSString * const kSupportURL = @"https://paypal.me/adrienrl1";
     }
     NSInteger current = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefParallelStreams];
     if (current <= 0) current = 4;
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [ADNumberPickerSheet presentInView:self.view
                                  title:T(@"settings.parallel_streams")
                                 values:vals

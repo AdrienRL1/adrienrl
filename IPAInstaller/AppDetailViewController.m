@@ -110,7 +110,7 @@ static UIImage *ADLaterClockGlyph(void) {
     CGContextStrokeEllipseInRect(ctx, CGRectMake(4, 4, 18, 18));
     CGContextMoveToPoint(ctx, 13, 13); CGContextAddLineToPoint(ctx, 13, 7.5);  CGContextStrokePath(ctx);
     CGContextMoveToPoint(ctx, 13, 13); CGContextAddLineToPoint(ctx, 17.5, 15); CGContextStrokePath(ctx);
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -128,7 +128,7 @@ static UIImage *ADInstallGlyph(void) {
     CGContextMoveToPoint(ctx, 13, 4);  CGContextAddLineToPoint(ctx, 13, 15);  CGContextStrokePath(ctx); // shaft
     CGContextMoveToPoint(ctx, 8, 10);  CGContextAddLineToPoint(ctx, 13, 15);  CGContextAddLineToPoint(ctx, 18, 10); CGContextStrokePath(ctx); // arrowhead
     CGContextMoveToPoint(ctx, 6, 20);  CGContextAddLineToPoint(ctx, 20, 20);  CGContextStrokePath(ctx); // tray
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -141,7 +141,7 @@ static UIImage *ADPauseGlyph(void) {
     [[UIColor whiteColor] setFill];
     [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(8, 7, 3.4, 12) cornerRadius:1.5] fill];
     [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(15, 7, 3.4, 12) cornerRadius:1.5] fill];
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -158,7 +158,7 @@ static UIImage *ADResumeGlyph(void) {
     [p closePath];
     [[UIColor whiteColor] setFill];
     [p fill];
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -174,7 +174,7 @@ static UIImage *ADCancelGlyph(void) {
     CGContextSetLineCap(ctx, kCGLineCapRound);
     CGContextMoveToPoint(ctx, 8, 8);   CGContextAddLineToPoint(ctx, 18, 18); CGContextStrokePath(ctx);
     CGContextMoveToPoint(ctx, 18, 8);  CGContextAddLineToPoint(ctx, 8, 18);  CGContextStrokePath(ctx);
-    img = UIGraphicsGetImageFromCurrentImageContext();
+    img = [UIGraphicsGetImageFromCurrentImageContext() retain];
     UIGraphicsEndImageContext();
     return img;
 }
@@ -448,12 +448,12 @@ static UIImage *ADCancelGlyph(void) {
     self.encryptionProbed = YES;
     NSString *url = self.app[@"url"];
     if (url.length == 0) return;
-    __weak AppDetailViewController *weakSelf = self;
+    AD_WEAK AppDetailViewController *weakSelf = self;
     [MachOInspector inspectURL:url completion:^(MachOInspectionResult r) {
         AppDetailViewController *s = weakSelf;
         if (!s) return;
         if (r != MachOInspectionResultEncrypted) return;   // decrypted/unknown → nothing to do
-        __weak AppDetailViewController *ws = s;
+        AD_WEAK AppDetailViewController *ws = s;
         if (s.allowVersionSwitch) {
             // Auto path (catalog/search): resolve SILENTLY — no transient 🔒 banner. Switch to a
             // clean build in place if one exists; otherwise say there's none.
@@ -498,7 +498,7 @@ static UIImage *ADCancelGlyph(void) {
 - (void)probeCandidates:(NSArray *)candidates index:(NSUInteger)i then:(void (^)(NSDictionary *))done {
     if (i >= candidates.count) { if (done) done(nil); return; }
     NSDictionary *v = [candidates objectAtIndex:i];
-    __weak AppDetailViewController *weakSelf = self;
+    AD_WEAK AppDetailViewController *weakSelf = self;
     [MachOInspector inspectURL:v[@"url"] completion:^(MachOInspectionResult r) {
         AppDetailViewController *s = weakSelf;
         if (!s) return;
@@ -1104,6 +1104,7 @@ static UIImage *ADCancelGlyph(void) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)o { return YES; }

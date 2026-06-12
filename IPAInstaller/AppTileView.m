@@ -20,7 +20,20 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 @property (nonatomic, strong) UIImageView *selectionBadge;
 @end
 
-@implementation AppTileView
+@implementation AppTileView {
+    void (^_onTapBlock)(NSDictionary *);
+}
+
+// iOS 3: blocks aren't ObjC objects, so the synthesized copy setter crashes in
+// objc_msgSend. Back onTap manually via the C blocks runtime — see
+// AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+@dynamic onTap;
+AD_BLOCK_ACCESSORS(onTap, setOnTap, _onTapBlock, void(^)(NSDictionary *))
+
+- (void)dealloc {
+    if (_onTapBlock) _Block_release((const void *)_onTapBlock);
+    [super dealloc];
+}
 
 + (void)setSuppressTileText:(BOOL)suppress { _suppressTileText = suppress; }
 
@@ -36,7 +49,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 + (UIImage *)cardImageForSize:(CGSize)size {
     if (size.width < 2 || size.height < 2) return nil;
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     NSString *k = [NSString stringWithFormat:@"%@|%.0fx%.0f", [IOS6Theme currentThemeID], size.width, size.height];
     UIImage *hit = cache[k];
     if (hit) return hit;
@@ -61,7 +74,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 // accent ring. The white ring/disc keep the badge legible on top of ANY app icon.
 + (UIImage *)checkGlyphOn {
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     NSString *k = [IOS6Theme currentThemeID] ?: @"_";
     UIImage *hit = cache[k];
     if (hit) return hit;
@@ -88,7 +101,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
 
 + (UIImage *)checkGlyphOff {
     static NSMutableDictionary *cache = nil;
-    if (!cache) cache = [NSMutableDictionary dictionary];
+    if (!cache) cache = [[NSMutableDictionary dictionary] retain];
     NSString *k = [IOS6Theme currentThemeID] ?: @"_";
     UIImage *hit = cache[k];
     if (hit) return hit;
@@ -176,7 +189,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     UIImage *cached = iconUrl.length ? [[IconLoader shared] cachedImageForURL:iconUrl targetSize:sz] : nil;
     self.iconView.image = cached;   // already force-decoded by IconLoader → pure composite
     if (iconUrl.length && !cached) {
-        __weak typeof(self) ws = self;
+        AD_WEAK typeof(self) ws = self;
         self.currentIconReq = [[IconLoader shared] loadImageForURL:iconUrl targetSize:sz via:nil completion:^(UIImage *img) {
             if (!img) return;
             __strong typeof(self) s = ws;
@@ -289,7 +302,7 @@ static BOOL _suppressTileText = NO;   // YES during a fast fling → tiles draw 
     // Normal browse: brief press flash, then open the detail screen.
     self.alpha = 0.5;
     NSDictionary *appCopy = self.app;
-    void (^onTap)(NSDictionary *) = [self.onTap copy];
+    void (^onTap)(NSDictionary *) = _onTapBlock;   // already heap-copied by our setter; do NOT send -copy (iOS 3)
     [UIView animateWithDuration:0.18
                       animations:^{ self.alpha = 1.0; }
                       completion:^(BOOL done) { onTap(appCopy); }];

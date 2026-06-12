@@ -99,23 +99,27 @@ static UIImage *ADDownloadLaterNavGlyph(void) {
     BOOL active = [[InstallManager shared] hasActiveJobs];   // includes paused (non-terminal)
     BOOL paused = [[InstallManager shared] hasPausedJobs];
     if (!active && !paused) { self.navigationItem.leftBarButtonItems = nil; return; }
-    UIBarButtonItem *cancelAll = [[UIBarButtonItem alloc] initWithTitle:T(@"install.cancel_all")
-        style:UIBarButtonItemStyleBordered target:self action:@selector(cancelAllTapped)];
-    cancelAll.tintColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.15 alpha:1.0];   // destructive-ish
+    UIBarButtonItem *cancelAll = [[[UIBarButtonItem alloc] initWithTitle:T(@"install.cancel_all")
+        style:UIBarButtonItemStyleBordered target:self action:@selector(cancelAllTapped)] autorelease];
+    // -[UIBarButtonItem setTintColor:] is iOS 5.0+. On iOS 3.x it's an unrecognized
+    // selector → NSInvalidArgumentException → SIGABRT (the Install-tab crash). Guard it.
+    if ([cancelAll respondsToSelector:@selector(setTintColor:)])
+        cancelAll.tintColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.15 alpha:1.0];   // destructive-ish
     NSMutableArray *items = [NSMutableArray arrayWithObject:cancelAll];
     // Resume-all if anything is paused; otherwise Pause-all when downloads are active.
     if (paused) {
-        [items addObject:[[UIBarButtonItem alloc] initWithTitle:T(@"install.resume_all")
-            style:UIBarButtonItemStyleBordered target:self action:@selector(resumeAllTapped)]];
+        [items addObject:[[[UIBarButtonItem alloc] initWithTitle:T(@"install.resume_all")
+            style:UIBarButtonItemStyleBordered target:self action:@selector(resumeAllTapped)] autorelease]];
     } else {
-        [items addObject:[[UIBarButtonItem alloc] initWithTitle:T(@"install.pause_all")
-            style:UIBarButtonItemStyleBordered target:self action:@selector(pauseAllTapped)]];
+        [items addObject:[[[UIBarButtonItem alloc] initWithTitle:T(@"install.pause_all")
+            style:UIBarButtonItemStyleBordered target:self action:@selector(pauseAllTapped)] autorelease]];
     }
     self.navigationItem.leftBarButtonItems = items;
 }
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (void)buildHeader {

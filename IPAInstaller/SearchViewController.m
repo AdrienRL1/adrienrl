@@ -255,7 +255,7 @@ static const NSInteger kPageLimit = 50;
 - (void)addSelectedToFolder {
     NSArray *batch = [self.selectedAppsByPk.allValues copy];
     if (!batch.count) return;
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [FolderPicker presentAddToFolderFrom:self completion:^(NSString *cid) {
         if (!cid) return;
         for (NSDictionary *app in batch) [[CollectionStore shared] addApp:app toCollection:cid];
@@ -431,7 +431,7 @@ static const NSInteger kPageLimit = 50;
         row.tilesPerRow = n;
         [row setContentRasterized:!self.gridScrolling];   // rasterize at rest, plain while scrolling
         row.selectionMode = self.selectionMode;
-        __weak typeof(self) ws = self;
+        AD_WEAK typeof(self) ws = self;
         row.isAppSelectedBlock = ^BOOL(NSDictionary *app) {
             NSNumber *pk = app[@"id"];
             return pk && ws.selectedAppsByPk[pk] != nil;
@@ -636,6 +636,7 @@ static const NSInteger kPageLimit = 50;
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [super dealloc];
 }
 
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)o { return YES; }

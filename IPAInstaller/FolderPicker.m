@@ -3,13 +3,26 @@
 #import "Localization.h"
 
 @interface FolderPicker () <UIActionSheetDelegate, UIAlertViewDelegate>
-@property (nonatomic, copy)   void (^completion)(NSString *);
 @property (nonatomic, strong) NSArray *folderIds;     // parallel to the action-sheet folder buttons
 @property (nonatomic, assign) NSInteger newFolderIndex;
+@property (nonatomic, copy)   void (^completion)(NSString *);
 @property (nonatomic, strong) FolderPicker *selfRef;  // keep alive across the async sheet/alert
 @end
 
-@implementation FolderPicker
+@implementation FolderPicker {
+    // iOS 3: blocks aren't ObjC objects, so a synthesized @property(copy) block
+    // setter calls objc_setProperty(copy=YES) → -copyWithZone: on the block →
+    // Bus error (signal 10). Back the block manually through the C blocks runtime
+    // (_Block_copy/_Block_release) — see AppDropBlocks.h (AD_BLOCK_ACCESSORS).
+    void (^_completionBlock)(NSString *);
+}
+@dynamic completion;
+AD_BLOCK_ACCESSORS(completion, setCompletion, _completionBlock, void(^)(NSString *))
+
+- (void)dealloc {
+    if (_completionBlock) _Block_release((const void *)_completionBlock);
+    [super dealloc];
+}
 
 + (void)presentAddToFolderFrom:(UIViewController *)vc completion:(void (^)(NSString *))completion {
     FolderPicker *p = [[FolderPicker alloc] init];

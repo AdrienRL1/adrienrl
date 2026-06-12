@@ -20,7 +20,7 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = AppDrop
 
-AppDrop_FILES = main.m AppDelegate.m RootViewController.m InstallManager.m CatalogViewController.m CatalogFilter.m FilterViewController.m AppDetailViewController.m IconLoader.m JobCell.m AppTileView.m AppRowCell.m VersionsViewController.m IOS6Theme.m SettingsViewController.m HTTPSClient.m LocalCatalog.m Localization.m CatalogAppCell.m SearchViewController.m CategoryViewController.m CategoryTileView.m FeedbackViewController.m MachOInspector.m ParallelDownloader.m UpdateChecker.m UpdateNotesViewController.m DeviceInfo.m IOS5Compat.m CheckpointLog.m RevivalCatalog.m RevivalListViewController.m ThemePickerViewController.m CollectionStore.m CollectionViewController.m HomeLayoutStore.m FolderPicker.m ModdedCatalog.m FilePickerViewController.m UploadViewController.m ADNumberPickerSheet.m CategorySuggestViewController.m IPAPackage.m CrashReporter.m StatsClient.m
+AppDrop_FILES = main.m AppDelegate.m RootViewController.m InstallManager.m InProcessInstaller.m CatalogViewController.m CatalogFilter.m FilterViewController.m AppDetailViewController.m IconLoader.m JobCell.m AppTileView.m AppRowCell.m VersionsViewController.m IOS6Theme.m SettingsViewController.m NetworkClient.m HTTPSClient.m LocalCatalog.m Localization.m CatalogAppCell.m SearchViewController.m CategoryViewController.m CategoryTileView.m FeedbackViewController.m MachOInspector.m ParallelDownloader.m UpdateChecker.m UpdateNotesViewController.m DeviceInfo.m IOS5Compat.m CheckpointLog.m RevivalCatalog.m RevivalListViewController.m ThemePickerViewController.m CollectionStore.m CollectionViewController.m HomeLayoutStore.m FolderPicker.m ModdedCatalog.m FilePickerViewController.m UploadViewController.m ADNumberPickerSheet.m CategorySuggestViewController.m IPAPackage.m CrashReporter.m StatsClient.m
 # CoreFoundation is listed explicitly so it always has a stable LC_LOAD_DYLIB ordinal — the
 # post-link iOS-5 fix (build.sh) rebinds NSObject's class/metaclass symbols to it. See CFSHIM note above.
 AppDrop_FRAMEWORKS = UIKit CoreGraphics Foundation CoreFoundation QuartzCore ImageIO CFNetwork
@@ -30,7 +30,10 @@ AppDrop_FRAMEWORKS = UIKit CoreGraphics Foundation CoreFoundation QuartzCore Ima
 # fault in on a cold start). AppDrop_STRIP_FLAGS=-x -S strips locals + residual debug
 # symbols while KEEPING global symbols so the on-device crash reporter still resolves
 # backtraces. -Os is already applied by Theos for FINALPACKAGE builds.
-AppDrop_CFLAGS = -fobjc-arc -Wall -fvisibility=hidden -fvisibility-inlines-hidden -I$(MBEDTLS_DIR)/include
+AppDrop_CFLAGS = -Wall -fvisibility=hidden -fvisibility-inlines-hidden -I../ios3/compat -I$(MBEDTLS_DIR)/include
+# armv7 builds against the modern SDK, so we only need the shared block helpers and the
+# AD_WEAK alias; the full ios3 compat prefix header redefines UIKit/Foundation symbols.
+AppDrop_OBJCFLAGS = -fno-objc-arc -DAD_WEAK=__unsafe_unretained -include ../ios3/compat/AppDropBlocks.h $(AppDrop_CFLAGS)
 AppDrop_LDFLAGS = -L$(MBEDTLS_LIB) -lmbedtls -lmbedx509 -lmbedcrypto -lsqlite3 -lz -Wl,-dead_strip
 AppDrop_STRIP_FLAGS = -x -S
 AppDrop_CODESIGN_FLAGS = -Sentitlements.plist
@@ -45,12 +48,21 @@ after-stage::
 	cp -f Layout/DEBIAN/postinst $(THEOS_STAGING_DIR)/DEBIAN/postinst
 	cp -f Layout/DEBIAN/postrm   $(THEOS_STAGING_DIR)/DEBIAN/postrm
 	chmod 0755 $(THEOS_STAGING_DIR)/DEBIAN/postinst $(THEOS_STAGING_DIR)/DEBIAN/postrm
+	mv $(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop $(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop.armv7
+	cp -f AppDropLauncher.sh $(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop
+	chmod 0755 $(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop
 	@echo "Generating Localizable.json per language (Theos compiles .strings to binary plist, which iOS 6 mis-parses for some Unicode e.g. Turkish; JSON + NSJSONSerialization is bulletproof)…"
 	@for d in $(THEOS_STAGING_DIR)/Applications/AppDrop.app/*.lproj; do \
 		lang=`basename "$$d" .lproj`; \
 		src="Resources/$$lang.lproj/Localizable.strings"; \
-		if [ -f "$$src" ]; then plutil -convert json -o "$$d/Localizable.json" "$$src" && echo "  $$lang ok" || echo "  $$lang FAILED"; fi; \
+		if [ -f "$$src" ]; then \
+			if command -v plutil >/dev/null 2>&1; then \
+				plutil -convert json -o "$$d/Localizable.json" "$$src" && echo "  $$lang ok" || echo "  $$lang FAILED"; \
+			else \
+				python3 "$(PWD)/../tools/strings2json.py" "$$src" "$$d/Localizable.json" && echo "  $$lang ok" || echo "  $$lang FAILED"; \
+			fi; \
+		fi; \
 	done
 	@echo "iOS 5 fix: rebinding NSObject (libobjc -> CoreFoundation) so the app launches on iOS 5.x, then re-signing…"
-	@python3 "$(PWD)/../tools/ios5_rebind.py" "$(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop"
-	@"$(THEOS)/toolchain/linux/iphone/bin/ldid" -Sentitlements.plist "$(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop" && echo "  re-signed ok"
+	@python3 "$(PWD)/../tools/ios5_rebind.py" "$(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop.armv7"
+	@"$(THEOS)/toolchain/linux/iphone/bin/ldid" -Sentitlements.plist "$(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop.armv7" && echo "  re-signed ok"
