@@ -119,7 +119,9 @@ jobs:
           cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" merge/root/Applications/AppDrop.app/AppDrop.armv7
           chmod 0755 merge/root/Applications/AppDrop.app/AppDrop.armv7
 
-          dpkg-deb -b merge/root merge/AppDrop-universal.deb >/dev/null
+          mkdir -p merge/out
+          dpkg-deb -Zgzip -b merge/root merge/out/AppDrop-universal.deb >/dev/null
+          mv merge/out/AppDrop-universal.deb merge/AppDrop-universal.deb
           echo "Assembled universal DEB:"
           dpkg-deb -I merge/AppDrop-universal.deb | sed -n '1,20p'
 
