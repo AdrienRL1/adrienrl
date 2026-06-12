@@ -9,6 +9,6 @@ Icon: https://adrienrl1.github.io/cydia/PackageIcon.png
 Maintainer: Adrien Ruest-Lorquet
 Author: Adrien Ruest-Lorquet
 Section: Utilities
-Depends: firmware (>= 3.0), ai.akemi.appsyncunified | net.angelxwind.appsyncunified | com.linusyang.appsync | us.hackulo.appsync31 | us.hackulo.appsync32
+Depends: firmware (>= 3.0), ai.akemi.appsyncunified | net.angelxwind.appsyncunified | com.linusyang.appsync | us.hackulo.appsync31 | us.hackulo.appsync32 | net.angelxwind.appsync40plus
 Recommends: com.autopear.installipa | ai.akemi.appinst
 Tag: compatible_min::ios3.0
