@@ -63,7 +63,7 @@
 "app.no_url_msg" = "У этого приложения нет действительного URL-адреса.";
 
 /* ===== Install (root) screen ===== */
-"install.title" = "Установить IPA";
+"install.title" = "Установ. IPA";
 "install.clear" = "Очистить";
 "install.url_label" = "IPA URL (https:// или itms-services://)";
 "install.url_placeholder" = "https://archive.org/.../app.ipa";
@@ -224,6 +224,10 @@
 "filter.sort.name_long" = "Название A-Z";
 "filter.sort.size_long" = "Размер";
 "filter.sort.minos_long" = "Мин iOS";
+"filter.sort.downloads_long" = "По загрузкам";
+"catalog.short.downloads" = "загрузки";
+"categories.top_downloads" = "Популярные";
+"app.downloads_count" = "%@ загрузок";
 "filter.none" = "нет";
 "filter.choose_none" = "Нет";
 "filter.reset" = "Сбросить настройки";
@@ -566,3 +570,7 @@
 "suggestcat.same_category" = "Это приложение уже в этой категории. Выберите другую категорию или секцию, чтобы предложить изменение.";
 "settings.clear_catalog" = "Очистить кеш каталога (перезагрузить)";
 "settings.catalog_cleared_msg" = "Кеш каталога очищен. AppDrop загружает свежую версию прямо сейчас (или при следующем запуске, если вы офлайн).";
+"cat.Uncategorized" = "Разное";
+"home.active" = "%@ в сети";
+"home.active_one" = "%@ пользователь в сети";
+"home.active_other" = "%@ пользователей в сети";
