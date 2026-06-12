@@ -108,6 +108,11 @@ static NSString *const kOnboardingKey = @"IPAInstall.onboarding.ipainstaller.sho
             name:@"AppDropGridDensityChanged" object:nil];
 
     self.filter = [CatalogFilter load_];
+    // v3.2 : raccourci « Plus téléchargées » — force le tri sans persister (le filtre sauvegardé reste intact).
+    if (self.initialSort.length) {
+        self.filter.sort = self.initialSort;
+        self.filter.sortDescending = [CatalogFilter defaultDescendingForSort:self.initialSort];
+    }
     self.results = [NSMutableArray array];
     self.selectedAppsByPk = [NSMutableDictionary dictionary];
     self.currentQuery = @"";

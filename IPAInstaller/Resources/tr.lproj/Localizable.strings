@@ -222,6 +222,10 @@
 "filter.sort.name_long" = "İsim A-Z";
 "filter.sort.size_long" = "Boyut";
 "filter.sort.minos_long" = "Min iOS";
+"filter.sort.downloads_long" = "İndirmeler";
+"catalog.short.downloads" = "indirme";
+"categories.top_downloads" = "En çok indirilen";
+"app.downloads_count" = "%@ indirme";
 "filter.none" = "yok";
 "filter.choose_none" = "Hiçbiri";
 "filter.reset" = "Varsayılanlara sıfırla";
@@ -558,3 +562,7 @@
 "suggestcat.same_category" = "Bu uygulama zaten o kategoride. Değişiklik önermek için farklı bir kategori veya bölüm seç.";
 "settings.clear_catalog" = "Katalog önbelleğini temizle (yeniden indir)";
 "settings.catalog_cleared_msg" = "Katalog önbelleği temizlendi. AppDrop en güncel kataloğu şimdi yeniden indiriyor (çevrimdışıysan bir sonraki açılışta).";
+"cat.Uncategorized" = "Kategorisiz";
+"home.active" = "%@ çevrimiçi";
+"home.active_one" = "%@ kullanıcı çevrimiçi";
+"home.active_other" = "%@ kullanıcı çevrimiçi";

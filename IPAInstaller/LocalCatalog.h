@@ -93,6 +93,14 @@ extern NSString *const LocalCatalogDidUpdateNotification;
 // v1.7: total number of unique apps in the catalogue (for the "All apps" row / header).
 - (NSInteger)uniqueAppCount;
 
+// v3.2: fusionne {bid_lower:count} (stats Cloudflare) dans une table `downloads` de catalog.db,
+// pour permettre le tri SQL `sort=downloads` et le top des plus téléchargées. Thread-safe (file interne).
+- (void)mergeDownloadCounts:(NSDictionary *)bidLowerToCount;
+
+// v3.2: jusqu'à `n` URLs d'icônes des apps les plus téléchargées (device-runnable), ordre décroissant.
+// Sert aux 4 icônes du raccourci « Plus téléchargées » sur l'accueil. Renvoie [] si rien.
+- (NSArray *)topDownloadedIconURLs:(NSInteger)n;
+
 // v1.7: pool of representative icon URLs (the ~16 biggest apps with an icon) for a
 // category / subgenre, precomputed in cat_icon_pool. The category home picks one at
 // random per card so the icons vary on each visit. Returns [] if unavailable.

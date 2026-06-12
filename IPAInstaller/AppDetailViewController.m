@@ -1,4 +1,5 @@
 #import "AppDetailViewController.h"
+#import "StatsClient.h"
 #import "InstallManager.h"
 #import "IconLoader.h"
 #import "VersionsViewController.h"
@@ -55,7 +56,20 @@ static const BOOL kEnableSuggestCategory = NO;
 // chose a build in the Versions list. Drives encryption handling: auto path REDIRECTS to a
 // decrypted build, explicit path just shows the tappable 🔒 banner.
 @property (nonatomic, assign) BOOL allowVersionSwitch;
+// v3.2 : morceaux de la zone description, mémorisés pour recomposer le texte (incl. nb de téléchargements)
+// quand la map des stats se rafraîchit (StatsDownloadsChangedNotification).
+@property (nonatomic, copy) NSString *infoHead;          // notes de revival (sans séparateur), ou nil
+@property (nonatomic, copy) NSString *infoDesc;          // description IA nettoyée, ou nil
+@property (nonatomic, copy) NSString *infoTech;          // bloc détails techniques
+@property (nonatomic, copy) NSString *infoExternalBody;  // corps complet pour une entrée revival externe, ou nil
 @end
+
+// Mille-séparateur localisé (identique à l'accueil).
+static NSString *ADFmtCount(NSInteger n) {
+    NSNumberFormatter *f = [[NSNumberFormatter alloc] init];
+    f.numberStyle = NSNumberFormatterDecimalStyle;
+    return [f stringFromNumber:@(n)];
+}
 
 // Numeric version compare: -1 (a<b), 0 (a==b), 1 (a>b). e.g. "0.8.7" < "0.8.8".
 static int ADVerCmp(NSString *a, NSString *b) {
@@ -181,9 +195,24 @@ static UIImage *ADCancelGlyph(void) {
         if (allow) {
             LocalCatalog *cat = [LocalCatalog shared];
             NSString *bid = app[@"bundleId"];
-            if (bid.length && ![cat deviceCanRunMinIOS:app[@"minOS"]]) {
-                NSDictionary *compat = [cat latestCompatibleVersionForBundleId:bid];
-                if (compat) { app = compat; self.pickedCompatibleVersion = YES; }
+            BOOL special = [app[@"isRevival"] boolValue] || [app[@"isModded"] boolValue];
+            if (bid.length && !special) {
+                // TOUJOURS afficher la version compatible la PLUS RÉCENTE de cette app — pas seulement
+                // quand la version pointée est incompatible. La ligne du catalogue (entries_unique) n'est
+                // PAS toujours la plus récente (~42 % des apps multi-versions) → sans ça on affichait
+                // souvent une vieille version (ex. 1.0 au lieu de 3.2.1). versionsForBundleId est trié du
+                // plus récent au plus ancien (numérique), donc la 1ère compatible = la plus récente compatible.
+                NSArray *all = [cat versionsForBundleId:bid];
+                NSDictionary *compat = nil;
+                for (NSDictionary *v in all) {
+                    if ([cat deviceCanRunMinIOS:v[@"minOS"]]) { compat = v; break; }
+                }
+                if (compat) {
+                    if (![compat[@"version"] isEqualToString:app[@"version"]]) app = compat;
+                    // Bandeau « version compatible choisie » seulement si une version ENCORE plus récente
+                    // existe mais nécessite un iOS plus élevé (sinon c'est déjà la toute dernière).
+                    self.pickedCompatibleVersion = (all.count > 0 && ![all[0][@"version"] isEqualToString:compat[@"version"]]);
+                }
             }
         }
         self.app = app;
@@ -792,17 +821,18 @@ static UIImage *ADCancelGlyph(void) {
         NSString *link = self.app[@"revivalLink"];
         if ([link isKindOfClass:[NSString class]] && link.length)
             [body appendFormat:@"\n%@ : %@", T(@"app.info_project"), [self softWrap:link]];
-        self.infoView.text = body;
+        self.infoExternalBody = body;
     } else {
-        NSString *head = hasRevNotes
-            ? [NSString stringWithFormat:@"%@\n\n———————————\n\n", revNotes] : @"";
-        if (descText.length) {
-            // (revival notes →) AI description → divider → technical details.
-            self.infoView.text = [NSString stringWithFormat:@"%@%@\n\n———————————\n\n%@", head, descText, tech];
-        } else {
-            self.infoView.text = [NSString stringWithFormat:@"%@%@", head, tech];
-        }
+        // Mémorise les morceaux ; applyInfoText les assemble + ajoute le nb de téléchargements
+        // sous la description, et sait recomposer quand les stats arrivent (notification).
+        self.infoHead = hasRevNotes ? revNotes : nil;
+        self.infoDesc = descText.length ? descText : nil;
+        self.infoTech = tech;
     }
+    [self applyInfoText];   // compteur affiché depuis le cache (pas de fetch réseau ici — l'accueil rafraîchit)
+    // v3.2 : recompose le compteur de téléchargements quand la map des stats se rafraîchit (accueil/install).
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applyInfoText)
+                                                 name:StatsDownloadsChangedNotification object:nil];
     [self.view addSubview:self.infoView];
 
     if (showSuggestCat) {
@@ -824,6 +854,36 @@ static UIImage *ADCancelGlyph(void) {
         [strip addSubview:sc];
         [self.view addSubview:strip];
     }
+}
+
+// v3.2 — ligne « N téléchargements » affichée sous la description. Compteur inconnu = 0 (la map
+// ne liste que les apps déjà téléchargées au moins une fois ; on affiche quand même pour chaque app).
+- (NSString *)downloadsLine {
+    NSString *bid = self.app[@"bundleId"];
+    if (![bid isKindOfClass:[NSString class]] || !bid.length) return @"";
+    NSInteger n = [[StatsClient shared] downloadsForBundleId:bid];
+    if (n < 0) n = 0;
+    return [NSString stringWithFormat:T(@"app.downloads_count"), ADFmtCount(n)];
+}
+
+// (Re)compose le texte de la zone description : (notes revival →) description → nb de téléchargements
+// → détails techniques. Appelée au montage et à chaque StatsDownloadsChangedNotification.
+- (void)applyInfoText {
+    if (!self.infoView) return;
+    if (self.infoExternalBody) { self.infoView.text = self.infoExternalBody; return; }
+    NSMutableString *body = [NSMutableString string];
+    if (self.infoHead.length) [body appendFormat:@"%@\n\n———————————\n\n", self.infoHead];
+    if (self.infoDesc.length) [body appendString:self.infoDesc];
+    NSString *dl = [self downloadsLine];
+    if (dl.length) {
+        if (self.infoDesc.length) [body appendString:@"\n\n"];
+        [body appendString:dl];
+    }
+    if (self.infoTech.length) {
+        if (body.length) [body appendString:@"\n\n———————————\n\n"];
+        [body appendString:self.infoTech];
+    }
+    self.infoView.text = body;
 }
 
 // Insert zero-width break opportunities into long, space-less strings (download URLs,
@@ -955,6 +1015,8 @@ static UIImage *ADCancelGlyph(void) {
             [a show];
             return;
         }
+        // v3.2 : comptabilise le téléchargement (anti-double côté serveur Cloudflare). +1 optimiste local.
+        [[StatsClient shared] recordDownloadForBundleId:self.app[@"bundleId"]];
         // Stay on the detail screen — title reflects progress via the notification
         // handler. The Jobs tab still works for a list view.
         [self refreshInstallButtonTitle];
