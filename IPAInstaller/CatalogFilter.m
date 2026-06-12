@@ -22,7 +22,7 @@ static NSString *const kKey = @"IPAInstall.CatalogFilter";
 + (BOOL)defaultDescendingForSort:(NSString *)sort {
     if ([sort isEqualToString:@"name"]) return NO;
     if ([sort isEqualToString:@"minos"]) return NO;
-    return YES;  // recent / size / default
+    return YES;  // recent / size / downloads / default → plus grand d'abord
 }
 
 + (instancetype)defaultFilter {
@@ -122,10 +122,11 @@ static NSString *const kKey = @"IPAInstall.CatalogFilter";
     }
     if (self.uniqueOnly) [p addObject:T(@"filter.unique")];
     NSDictionary *sortMap = @{
-        @"recent": T(@"catalog.short.recent"),
-        @"name":   T(@"catalog.short.name"),
-        @"size":   T(@"catalog.short.size"),
-        @"minos":  T(@"catalog.short.minos"),
+        @"recent":    T(@"catalog.short.recent"),
+        @"name":      T(@"catalog.short.name"),
+        @"size":      T(@"catalog.short.size"),
+        @"minos":     T(@"catalog.short.minos"),
+        @"downloads": T(@"catalog.short.downloads"),
     };
     NSString *sortLabel = sortMap[self.sort] ?: self.sort;
     [p addObject:[NSString stringWithFormat:T(@"filter.sort_label"), sortLabel]];

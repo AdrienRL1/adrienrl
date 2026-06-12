@@ -7,10 +7,11 @@ static NSArray *iOSChoices(void) {
 }
 
 static NSArray *sortChoices(void) {
-    return @[@"recent", @"name", @"size", @"minos"];
+    return @[@"downloads", @"recent", @"name", @"size", @"minos"];
 }
 
 static NSString *sortLabel(NSString *key) {
+    if ([key isEqualToString:@"downloads"]) return T(@"filter.sort.downloads_long");
     if ([key isEqualToString:@"recent"]) return T(@"filter.sort.recent_long");
     if ([key isEqualToString:@"name"]) return T(@"filter.sort.name_long");
     if ([key isEqualToString:@"size"]) return T(@"filter.sort.size_long");

@@ -224,6 +224,10 @@
 "filter.sort.name_long" = "Name A-Z";
 "filter.sort.size_long" = "Size";
 "filter.sort.minos_long" = "Min iOS";
+"filter.sort.downloads_long" = "Downloads";
+"catalog.short.downloads" = "downloads";
+"categories.top_downloads" = "Most downloaded";
+"app.downloads_count" = "%@ downloads";
 "filter.none" = "none";
 "filter.choose_none" = "None";
 "filter.reset" = "Reset to defaults";
@@ -566,3 +570,7 @@
 "suggestcat.same_category" = "This app is already in that category. Pick a different category or section to suggest a change.";
 "settings.clear_catalog" = "Clear catalog cache (re-download)";
 "settings.catalog_cleared_msg" = "Catalog cache cleared. AppDrop is re-downloading the latest catalogue now (or on next launch if you're offline).";
+"cat.Uncategorized" = "Unsorted";
+"home.active" = "%@ online";
+"home.active_one" = "%@ user online";
+"home.active_other" = "%@ users online";

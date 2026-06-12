@@ -216,6 +216,10 @@
 "filter.sort.name_long" = "名前 A-Z";
 "filter.sort.size_long" = "サイズ";
 "filter.sort.minos_long" = "最小 iOS";
+"filter.sort.downloads_long" = "ダウンロード数";
+"catalog.short.downloads" = "DL数";
+"categories.top_downloads" = "ダウンロード上位";
+"app.downloads_count" = "%@ 回ダウンロード";
 "filter.none" = "なし";
 "filter.choose_none" = "なし";
 "filter.reset" = "デフォルトにリセット";
@@ -558,3 +562,7 @@
 "suggestcat.same_category" = "このアプリはすでにそのカテゴリにあります。変更を提案するには別のカテゴリまたはセクションを選んでください。";
 "settings.clear_catalog" = "カタログのキャッシュを消去 (再ダウンロード)";
 "settings.catalog_cleared_msg" = "カタログのキャッシュを消去しました。最新のカタログを今すぐ再ダウンロードします (オフラインの場合は次回起動時)。";
+"cat.Uncategorized" = "未分類";
+"home.active" = "%@人がオンライン";
+"home.active_one" = "オンラインユーザー %@ 人";
+"home.active_other" = "オンラインユーザー %@ 人";

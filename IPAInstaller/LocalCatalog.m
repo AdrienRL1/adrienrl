@@ -15,7 +15,7 @@ static NSString *const kCategoryOverridesURL = @"https://adrienrl1.github.io/cyd
 static NSString *const kCatalogExtrasURL     = @"https://adrienrl1.github.io/cydia/catalog-extras.json";      // v3.1
 // v3.1 ⇄ v3.2 SWITCH (must match kEnableCatalogType in UploadViewController.m). The community-app
 // catalog-extras merge is DEFERRED to v3.2 — methods are KEPT but not called. Flip to YES for v3.2.
-static const BOOL kEnableCatalogExtras = NO;
+static const BOOL kEnableCatalogExtras = YES;   // v3.2 : fusionne les apps contribuées (catégorie « Non triées »)
 // Inserted "extra" rows are tagged base_idx = -1 so a re-apply can purge + rebuild them idempotently
 // (real catalogue rows always have base_idx >= 0).
 // Size (bytes) of the catalog.db.gz we last downloaded — the freshness baseline for
@@ -335,6 +335,9 @@ static void ADSetNoFileProtection(NSString *path) {
         sqlite3_exec(newdb, "PRAGMA mmap_size = 0", NULL, NULL, NULL);   // #171: no mmap → no 0xdead10cc suspend-kill
         ADApplyAdaptiveCacheSize(newdb);                                 // SQL-08: RAM-adaptive page cache
         sqlite3_exec(newdb, "PRAGMA temp_store = MEMORY",   NULL, NULL, NULL);
+        sqlite3_busy_timeout(newdb, 4000);   // v3.2.1 : si une écriture (table downloads / extras) verrouille le
+                                             // fichier, les LECTURES (catégories, etc.) ATTENDENT au lieu d'échouer
+                                             // (sinon SQLITE_BUSY → requête vide → accueil sans catégories).
 
         NSMutableDictionary *urls = [NSMutableDictionary dictionaryWithCapacity:30000];
         sqlite3_stmt *st = NULL;
@@ -357,6 +360,7 @@ static void ADSetNoFileProtection(NSString *path) {
         _countCacheKey = nil;   // SQL-01: new DB → discard the memoized COUNT (still on _searchQueue)
         if (old) sqlite3_close(old);
         [self applyStoredCategoryOverrides];     // #156: re-apply category corrections to the fresh DB
+        [self ensureDownloadsTable];             // v3.2 : recréer la table downloads dans le nouveau fichier
         if (kEnableCatalogExtras) [self applyCatalogExtras];     // v3.2 (deferred): re-merge community apps
 
         if (expectedGzSize > 0)
@@ -429,6 +433,8 @@ static void ADSetNoFileProtection(NSString *path) {
         sqlite3_exec(db, "PRAGMA mmap_size = 0", NULL, NULL, NULL);          // no mmap → no 0xdead10cc
         ADApplyAdaptiveCacheSize(db);                                        // SQL-08: RAM-adaptive page cache
         sqlite3_exec(db, "PRAGMA temp_store = MEMORY", NULL, NULL, NULL);
+        sqlite3_busy_timeout(db, 4000);   // v3.2.1 : lectures attendent les écritures concurrentes (table
+                                          // downloads/extras) au lieu d'échouer en SQLITE_BUSY → plus d'accueil vide.
 
         // Pre-load all urls.
         NSMutableDictionary *urls = [NSMutableDictionary dictionaryWithCapacity:30000];
@@ -477,6 +483,7 @@ static void ADSetNoFileProtection(NSString *path) {
         self.loaded = YES;
         [self applyStoredCategoryOverrides];   // #156: apply cached category corrections to this DB
         [self refreshCategoryOverrides];       // #156: fetch the latest in the background, apply + notify
+        [self ensureDownloadsTable];           // v3.2 : table downloads prête pour le tri SQL
         if (kEnableCatalogExtras) [self applyCatalogExtras];     // v3.2 (deferred): merge community apps
         if (kEnableCatalogExtras) [self refreshCatalogExtras];   // v3.2 (deferred): fetch catalog-extras
 
@@ -586,6 +593,17 @@ static void ADSetNoFileProtection(NSString *path) {
     if ([sortKey isEqualToString:@"name"]) orderCol = @"title_lower";
     else if ([sortKey isEqualToString:@"size"]) orderCol = @"size_kb";
     else if ([sortKey isEqualToString:@"minos"]) orderCol = @"minos";
+    else if ([sortKey isEqualToString:@"downloads"]) {
+        // v3.2: tri par nombre de téléchargements (table `downloads` remplie par les stats Cloudflare).
+        // Sous-requête corrélée sur bid_lower (présent dans entries ET entries_unique ; downloads.bid_lower
+        // est la clé primaire → lookup indexé). Les apps sans compteur (NULL) tombent en bas en DESC.
+        // Garde : si la table n'existe pas encore (catalogue read-only / pas de stats), on retombe sur pk
+        // pour que la liste ne soit JAMAIS vide.
+        if ([self downloadsTableExists]) {
+            orderCol = [NSString stringWithFormat:
+                @"(SELECT count FROM downloads WHERE downloads.bid_lower = %@.bid_lower)", table];
+        }
+    }
     NSString *orderBy = [NSString stringWithFormat:@"%@ %@", orderCol, dir];
 
     // Count + data in two queries — both indexed, so each is sub-millisecond.
@@ -836,6 +854,113 @@ static NSString *iconURLForImgPk(long imgPk) {
     return n;
 }
 
+#pragma mark - Téléchargements (v3.2)
+
+// YES si la table `downloads` existe dans la connexion read-only courante (self.db).
+- (BOOL)downloadsTableExists {
+    if (!self.db) return NO;
+    BOOL exists = NO;
+    sqlite3_stmt *st = NULL;
+    if (sqlite3_prepare_v2(self.db,
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='downloads' LIMIT 1",
+            -1, &st, NULL) == SQLITE_OK) {
+        exists = (sqlite3_step(st) == SQLITE_ROW);
+    }
+    sqlite3_finalize(st);
+    return exists;
+}
+
+// Garantit que la table `downloads(bid_lower, count)` existe dans le fichier catalog.db, pour que la
+// sous-requête de tri `sort=downloads` puisse toujours préparer (même avant toute fusion de stats).
+// Écrit via une 2e connexion read-write (self.db reste read-only). À appeler sur _searchQueue.
+- (void)ensureDownloadsTable {
+    if (!_dbPath.length) return;
+    sqlite3 *wdb = NULL;
+    if (sqlite3_open_v2([_dbPath UTF8String], &wdb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, NULL) != SQLITE_OK) {
+        if (wdb) sqlite3_close(wdb);
+        return;   // DB read-only sur disque → tant pis (le tri retombera vide, sans planter)
+    }
+    sqlite3_busy_timeout(wdb, 4000);   // v3.2.1 : attendre un éventuel verrou plutôt qu'échouer
+    sqlite3_exec(wdb, "CREATE TABLE IF NOT EXISTS downloads (bid_lower TEXT PRIMARY KEY, count INTEGER)",
+                 NULL, NULL, NULL);
+    sqlite3_close(wdb);
+}
+
+- (void)mergeDownloadCounts:(NSDictionary *)bidLowerToCount {
+    if (![bidLowerToCount isKindOfClass:[NSDictionary class]] || !bidLowerToCount.count) return;
+    NSDictionary *snapshot = [bidLowerToCount copy];
+    dispatch_async(_searchQueue, ^{
+        if (!self->_dbPath.length) return;
+        sqlite3 *wdb = NULL;
+        if (sqlite3_open_v2([self->_dbPath UTF8String], &wdb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, NULL) != SQLITE_OK) {
+            if (wdb) sqlite3_close(wdb);
+            return;
+        }
+        sqlite3_busy_timeout(wdb, 4000);   // v3.2.1 : attendre un verrou plutôt qu'échouer (lectures protégées)
+        sqlite3_exec(wdb, "CREATE TABLE IF NOT EXISTS downloads (bid_lower TEXT PRIMARY KEY, count INTEGER)", NULL, NULL, NULL);
+        sqlite3_exec(wdb, "BEGIN", NULL, NULL, NULL);
+        sqlite3_stmt *ins = NULL;
+        if (sqlite3_prepare_v2(wdb, "INSERT OR REPLACE INTO downloads (bid_lower, count) VALUES (?,?)", -1, &ins, NULL) == SQLITE_OK) {
+            for (NSString *bid in snapshot) {
+                if (![bid isKindOfClass:[NSString class]]) continue;
+                NSNumber *c = snapshot[bid];
+                if (![c isKindOfClass:[NSNumber class]]) continue;
+                sqlite3_reset(ins);
+                sqlite3_bind_text(ins, 1, [bid UTF8String], -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int64(ins, 2, (sqlite3_int64)[c longLongValue]);
+                sqlite3_step(ins);
+            }
+        }
+        sqlite3_finalize(ins);
+        sqlite3_exec(wdb, "COMMIT", NULL, NULL, NULL);
+        sqlite3_close(wdb);
+    });
+}
+
+- (NSArray *)topDownloadedIconURLs:(NSInteger)n {
+    if (!self.loaded || !self.db || n <= 0) return @[];
+    NSMutableArray *out = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    NSString *platClause = [self deviceIdiomPlatClause];   // "" sur iPad, " AND (plat&2)!=0" sur iPhone
+    NSString *sqlStr = [NSString stringWithFormat:
+        @"SELECT e.img_pk FROM entries_unique e JOIN downloads d ON d.bid_lower = e.bid_lower "
+        @"WHERE d.count > 0 AND e.min_minos <= ?1 AND e.img_pk > 0%@ "
+        @"ORDER BY d.count DESC LIMIT ?2", platClause];
+    sqlite3_stmt *st = NULL;
+    if (sqlite3_prepare_v2(self.db, [sqlStr UTF8String], -1, &st, NULL) == SQLITE_OK) {
+        sqlite3_bind_int64(st, 1, [self deviceMaxMinos]);
+        sqlite3_bind_int64(st, 2, (sqlite3_int64)n);
+        while (sqlite3_step(st) == SQLITE_ROW) {
+            int pk = sqlite3_column_int(st, 0);
+            NSString *u = iconURLForImgPk(pk);
+            if (u && ![seen containsObject:@(pk)]) { [seen addObject:@(pk)]; [out addObject:u]; }
+        }
+    }
+    sqlite3_finalize(st);
+    // Early on, few apps have any recorded downloads yet (the stats backend is fresh), so the JOIN
+    // above can return fewer than n — the tile would then show a lone icon instead of a full 2×2
+    // mosaic. Top up with the biggest device-runnable apps (deduped) so the preview always looks
+    // complete. This only affects the tile's PREVIEW icons; the list itself is still sorted by
+    // downloads when tapped.
+    if ((NSInteger)out.count < n) {
+        NSString *fillStr = [NSString stringWithFormat:
+            @"SELECT img_pk FROM entries_unique WHERE min_minos <= ?1 AND img_pk > 0%@ "
+            @"ORDER BY size_kb DESC LIMIT ?2", platClause];
+        sqlite3_stmt *f = NULL;
+        if (sqlite3_prepare_v2(self.db, [fillStr UTF8String], -1, &f, NULL) == SQLITE_OK) {
+            sqlite3_bind_int64(f, 1, [self deviceMaxMinos]);
+            sqlite3_bind_int64(f, 2, (sqlite3_int64)(n * 4));   // headroom for dedupe collisions
+            while ((NSInteger)out.count < n && sqlite3_step(f) == SQLITE_ROW) {
+                int pk = sqlite3_column_int(f, 0);
+                NSString *u = iconURLForImgPk(pk);
+                if (u && ![seen containsObject:@(pk)]) { [seen addObject:@(pk)]; [out addObject:u]; }
+            }
+        }
+        sqlite3_finalize(f);
+    }
+    return out;
+}
+
 // v1.7: the most recent version of `bundleId` runnable on this device (min iOS <=
 // device iOS). versionsForBundleId is ordered version DESC, pk DESC, so the FIRST
 // compatible hit is the latest compatible version. Returns nil if none exist.
@@ -951,6 +1076,7 @@ static NSString *iconURLForImgPk(long imgPk) {
         if (wdb) sqlite3_close(wdb);
         return;   // read-only file (e.g. a bundled DB) → can't apply; harmless
     }
+    sqlite3_busy_timeout(wdb, 4000);   // v3.2.1 : attendre un verrou plutôt qu'échouer
     sqlite3_exec(wdb, "BEGIN", NULL, NULL, NULL);
     sqlite3_stmt *st = NULL;
     if (sqlite3_prepare_v2(wdb, "UPDATE entries_unique SET category=?, subgenre=? WHERE bid_lower=?",
@@ -1027,6 +1153,7 @@ static NSString *iconURLForImgPk(long imgPk) {
         if (wdb) sqlite3_close(wdb);
         return;   // read-only DB → can't merge; harmless
     }
+    sqlite3_busy_timeout(wdb, 4000);   // v3.2.1 : attendre un verrou plutôt qu'échouer
     sqlite3_exec(wdb, "BEGIN", NULL, NULL, NULL);
     sqlite3_exec(wdb, "DELETE FROM entries_unique WHERE base_idx = -1", NULL, NULL, NULL);   // purge prior extras
     sqlite3_exec(wdb, "DELETE FROM entries WHERE base_idx = -1", NULL, NULL, NULL);
@@ -1165,6 +1292,20 @@ static NSString *iconURLForImgPk(long imgPk) {
 
 #pragma mark - versionsForBundleId
 
+// Compare deux versions NUMÉRIQUEMENT, composant par composant : "1.9" < "1.10", "2.0" < "10.0".
+// -1 si a<b, 0 si égal, 1 si a>b. integerValue tolère un suffixe non numérique (ex. "3.0.1 (build)").
+static int ADCatVerCmp(NSString *a, NSString *b) {
+    NSArray *ca = [(a ?: @"") componentsSeparatedByString:@"."];
+    NSArray *cb = [(b ?: @"") componentsSeparatedByString:@"."];
+    NSUInteger n = MAX(ca.count, cb.count);
+    for (NSUInteger i = 0; i < n; i++) {
+        NSInteger x = (i < ca.count) ? [ca[i] integerValue] : 0;
+        NSInteger y = (i < cb.count) ? [cb[i] integerValue] : 0;
+        if (x != y) return x < y ? -1 : 1;
+    }
+    return 0;
+}
+
 - (NSArray *)versionsForBundleId:(NSString *)bundleId {
     if (!self.loaded || !bundleId.length || !self.db) return @[];
     NSMutableArray *out = [NSMutableArray array];
@@ -1178,6 +1319,17 @@ static NSString *iconURLForImgPk(long imgPk) {
         }
     }
     sqlite3_finalize(st);
+    // Le ORDER BY SQL est LEXICOGRAPHIQUE (texte) → "1.9" passerait AVANT "1.10". On re-trie
+    // NUMÉRIQUEMENT (vraie version la plus récente d'abord ; pk décroissant à égalité) pour que la
+    // sélection « dernière version compatible » + la liste des versions soient correctes (bug : choisissait
+    // parfois une version plus ancienne ; et le repli « version décryptée » cherchait dans le mauvais ordre).
+    [out sortUsingComparator:^NSComparisonResult(NSDictionary *x, NSDictionary *y) {
+        int c = ADCatVerCmp(x[@"version"], y[@"version"]);
+        if (c != 0) return (c > 0) ? NSOrderedAscending : NSOrderedDescending;
+        NSInteger px = [x[@"id"] integerValue], py = [y[@"id"] integerValue];
+        if (px != py) return (px > py) ? NSOrderedAscending : NSOrderedDescending;
+        return NSOrderedSame;
+    }];
     return out;
 }
 

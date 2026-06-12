@@ -3,6 +3,7 @@
 #import "CategoryTileView.h"
 #import "Localization.h"
 #import "LocalCatalog.h"
+#import "StatsClient.h"
 #import "IOS6Theme.h"
 #import "SearchViewController.h"
 #import "RevivalListViewController.h"
@@ -39,13 +40,18 @@ static NSString *fmtCount(NSInteger n) {
     return [f stringFromNumber:@(n)];
 }
 
+// v3.2 — utilisateurs actifs + nombres de téléchargements : tout passe par StatsClient (Worker
+// Cloudflare, HORS du serveur de l'utilisateur). L'identifiant anonyme + l'URL y sont centralisés.
+
 @interface CategoryViewController () <UIGestureRecognizerDelegate, UIAlertViewDelegate>
 @property (nonatomic, strong) UIScrollView *scroll;
 @property (nonatomic, strong) UIView *header;          // welcome banner (top level only)
 @property (nonatomic, strong) UILabel *statusLabel;    // shown while loading
+@property (nonatomic, copy)   NSString *welcomeSubBase; // v3.2 : sous-titre de base, sans le « X en ligne »
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) NSArray *items;          // model: one dict per tile (pinned first, then the rest)
 @property (nonatomic, strong) NSArray *tiles;          // CategoryTileView*, parallel to items
+@property (nonatomic, weak)   CategoryTileView *topDLTile;  // v3.2 : tuile « Plus téléchargées » (icônes = top 4)
 @property (nonatomic, assign) NSInteger pinnedCount;   // first N items are in the pinned (top) zone
 @property (nonatomic, strong) UIView *zoneDivider;     // thin rule between pinned + unpinned zones
 @property (nonatomic, strong) UIButton *addFolderButton;   // small distinct "+ Nouveau dossier", always at top
@@ -72,6 +78,7 @@ static NSString *fmtCount(NSInteger n) {
 @property (nonatomic, assign) BOOL catalogLoading;
 @property (nonatomic, assign) BOOL builtContent;
 @property (nonatomic, strong) UITapGestureRecognizer *retryTap;
+@property (nonatomic, strong) NSTimer *activeUsersTimer;   // v3.2 : rafraîchit « X en ligne » en continu
 @end
 
 @implementation CategoryViewController
@@ -151,6 +158,8 @@ static NSString *fmtCount(NSInteger n) {
         [[NSNotificationCenter defaultCenter] addObserver:self
             selector:@selector(appDidBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
+            selector:@selector(appDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
             selector:@selector(catalogDidUpdate) name:LocalCatalogDidUpdateNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
             selector:@selector(catalogDidUpdate) name:CollectionStoreDidChangeNotification object:nil];
@@ -159,6 +168,12 @@ static NSString *fmtCount(NSInteger n) {
             selector:@selector(catalogDidUpdate) name:RevivalCatalogDidChangeNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
             selector:@selector(catalogDidUpdate) name:ModdedCatalogDidChangeNotification object:nil];
+        // v3.2 : met à jour les 4 icônes du raccourci « Plus téléchargées » quand les compteurs changent.
+        [[NSNotificationCenter defaultCenter] addObserver:self
+            selector:@selector(statsDownloadsChanged) name:StatsDownloadsChangedNotification object:nil];
+        // v3.2 : met à jour le libellé « X en ligne » dès qu'un battement renvoie un nouveau compte.
+        [[NSNotificationCenter defaultCenter] addObserver:self
+            selector:@selector(activeUsersChanged) name:StatsActiveUsersChangedNotification object:nil];
     }
     [self attemptCatalogLoad];
 }
@@ -222,7 +237,15 @@ static NSString *fmtCount(NSInteger n) {
 - (void)appDidBecomeActive {
     if (![[LocalCatalog shared] isReady]) [self attemptCatalogLoad];
     else [[LocalCatalog shared] checkForCatalogUpdate];
+    // v3.2 : de retour au premier plan sur l'accueil → battement immédiat + relance le timer.
+    if (!self.parentCategory.length) {
+        [self pulseActiveUsers];
+        [self startActiveUsersTimer];
+    }
 }
+
+// v3.2 : en arrière-plan, on coupe le timer (aucune requête réseau hors écran).
+- (void)appDidEnterBackground { [self stopActiveUsersTimer]; }
 
 // Catalogue hot-swapped OR a collection changed → rebuild the whole grid from scratch.
 - (void)catalogDidUpdate {
@@ -256,6 +279,17 @@ static NSString *fmtCount(NSInteger n) {
         [self reshuffleIcons];
     }
     self.didFirstAppear = YES;
+    // v3.2 : reprend le suivi « X en ligne » en revenant sur l'accueil (un battement immédiat + le timer).
+    if (!self.parentCategory.length && [[LocalCatalog shared] isReady]) {
+        [self applyActiveLabel];
+        [self pulseActiveUsers];
+        [self startActiveUsersTimer];
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self stopActiveUsersTimer];   // pas de trafic réseau quand l'accueil n'est pas visible
 }
 
 - (void)reshuffleIcons {
@@ -352,6 +386,28 @@ static UIImage *AppDropModdedGlyph(void) {
     return img;
 }
 
+// v3.2 — glyphe « Plus téléchargées » : badge orange avec une flèche descendante vers un plateau.
+// Affiché sur le raccourci tant qu'aucune app téléchargée n'a encore d'icône à montrer.
+static UIImage *AppDropDownloadsGlyph(void) {
+    CGSize s = CGSizeMake(46, 46);
+    UIGraphicsBeginImageContextWithOptions(s, NO, 6.0);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    UIBezierPath *bg = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(1, 1, 44, 44) cornerRadius:10];
+    [[UIColor colorWithRed:0.95 green:0.55 blue:0.15 alpha:1.0] setFill];   // orange
+    [bg fill];
+    CGContextSetStrokeColorWithColor(ctx, [UIColor whiteColor].CGColor);
+    CGContextSetLineWidth(ctx, 2.8);
+    CGContextSetLineCap(ctx, kCGLineCapRound);
+    CGContextSetLineJoin(ctx, kCGLineJoinRound);
+    CGContextMoveToPoint(ctx, 23, 12); CGContextAddLineToPoint(ctx, 23, 27); CGContextStrokePath(ctx);   // shaft
+    CGContextMoveToPoint(ctx, 16, 21); CGContextAddLineToPoint(ctx, 23, 28);                              // arrowhead
+    CGContextAddLineToPoint(ctx, 30, 21); CGContextStrokePath(ctx);
+    CGContextMoveToPoint(ctx, 14, 33); CGContextAddLineToPoint(ctx, 32, 33); CGContextStrokePath(ctx);    // tray
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return img;
+}
+
 // v3.0: Home/category grid — its OWN setting (Settings → Affichage), separate from the catalogue one.
 // Configured by an explicit COLUMN COUNT via the native wheel picker (IPAInstall.HomeColumns), not a
 // 0–1 density. Idiom-aware default reproduces the classic ~165 pt tile (iPhone 2, iPad 4). Min 2 — the
@@ -428,9 +484,11 @@ static UIImage *AppDropModdedGlyph(void) {
         subL.tag = 102; subL.font = [UIFont systemFontOfSize:13];
         subL.textColor = [IOS6Theme labelGray]; subL.numberOfLines = 2;
         subL.backgroundColor = [UIColor clearColor];
-        subL.text = [NSString stringWithFormat:T(@"categories.welcome_sub"), fmtCount([cat uniqueAppCount])];
+        self.welcomeSubBase = [NSString stringWithFormat:T(@"categories.welcome_sub"), fmtCount([cat uniqueAppCount])];
+        subL.text = self.welcomeSubBase;
         [self.header addSubview:subL];
         [self.scroll addSubview:self.header];
+        [self refreshActiveUsers];   // v3.2 : affiche les utilisateurs actifs (+ envoie un battement anonyme)
 
         // Small, DISTINCT "+ Nouveau dossier" button — always pinned at the top (NOT a grid tile,
         // not reorderable/resizable). A green outlined pill, clearly unlike the app/category cards.
@@ -448,7 +506,7 @@ static UIImage *AppDropModdedGlyph(void) {
             NSString *cn = d[@"category"] ?: @"";
             NSArray *pool = [cat iconPoolForCategory:cn] ?: @[];
             [catItems addObject:@{ @"id": [@"cat:" stringByAppendingString:cn], @"kind": @"cat", @"cat": cn,
-                @"label": locCat(cn), @"seed": cn, @"defSpan": @"1x1", @"defaultPinned": @NO,
+                @"label": locCat(cn), @"seed": cn, @"defSpan": @"1x1", @"defaultPinned": @NO,   // « Non triées » en bas comme les autres (triée par nombre)
                 @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([d[@"count"] integerValue])],
                 @"iconPool": pool }];
             for (NSInteger i = 0; i < 2 && i < (NSInteger)pool.count; i++) [allSample addObject:pool[i]];
@@ -479,6 +537,12 @@ static UIImage *AppDropModdedGlyph(void) {
             @"seed": @"all_apps", @"defSpan": bigSpan, @"defaultPinned": @YES,
             @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([cat uniqueAppCount])],
             @"iconPool": allSample }];
+        // ---- v3.2 : raccourci « Plus téléchargées » (tout le catalogue trié par téléchargements). Ses 4
+        // icônes = les 4 apps EN CE MOMENT les plus téléchargées (mises à jour via statsDownloadsChanged). ----
+        [items addObject:@{ @"id": @"item.topdl", @"kind": @"topdl", @"label": T(@"categories.top_downloads"),
+            @"seed": @"top_downloads", @"defSpan": bigSpan, @"defaultPinned": @YES,
+            @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([cat uniqueAppCount])],
+            @"iconPool": [cat topDownloadedIconURLs:4] ?: @[] }];
         // ---- Works today / Revival + Apps modifiées / Modded ----
         // Retirées de l'accueil (kEnableWorksTodayModded = NO). Le code des tuiles + listes + upload
         // reste en place mais inatteignable tant que le flag est NO.
@@ -546,7 +610,9 @@ static UIImage *AppDropModdedGlyph(void) {
                      [it[@"cid"] isEqualToString:CollectionFavoritesId]) [t setGlyphImage:AppDropFavoritesGlyph()];
             else if ([it[@"kind"] isEqualToString:@"col"] &&
                      [it[@"cid"] isEqualToString:CollectionLaterId]) [t setGlyphImage:AppDropLaterGlyph()];
+            else if ([it[@"kind"] isEqualToString:@"topdl"]) [t setGlyphImage:AppDropDownloadsGlyph()];
         }
+        if ([it[@"kind"] isEqualToString:@"topdl"]) self.topDLTile = t;   // v3.2 : pour rafraîchir ses 4 icônes
         NSDictionary *item = it;
         t.onTap = ^{ [wself handleTapForItem:item]; };
         if ([self isUserFolderItem:it]) t.onDelete = ^{ [wself confirmDeleteFolderForItem:item]; };
@@ -570,6 +636,12 @@ static UIImage *AppDropModdedGlyph(void) {
     } else if ([kind isEqualToString:@"all"]) {
         CatalogViewController *vc = [[CatalogViewController alloc] init];
         vc.title = T(@"categories.all");
+        [self.navigationController pushViewController:vc animated:YES];
+    } else if ([kind isEqualToString:@"topdl"]) {
+        // v3.2 : tout le catalogue, trié par téléchargements (sans toucher au filtre sauvegardé).
+        CatalogViewController *vc = [[CatalogViewController alloc] init];
+        vc.title = T(@"categories.top_downloads");
+        vc.initialSort = @"downloads";
         [self.navigationController pushViewController:vc animated:YES];
     } else if ([kind isEqualToString:@"revival"]) {
         RevivalListViewController *vc = [[RevivalListViewController alloc] init];
@@ -896,6 +968,62 @@ static void parseSpan(NSString *s, int *w, int *h) {
     [[HomeLayoutStore shared] savePinned:pinned unpinned:unpinned];
 }
 
+// v3.2 — premier affichage : envoie un battement anonyme (via StatsClient → Worker Cloudflare),
+// affiche « X en ligne » et rafraîchit aussi la table downloads (tri + top + détail). Démarre
+// ensuite le timer qui garde le compteur à jour en continu tant que l'accueil est visible.
+- (void)refreshActiveUsers {
+    [[StatsClient shared] sendHeartbeatWithCompletion:nil];   // le libellé se met à jour via la notification
+    [[StatsClient shared] refreshDownloads];                  // table downloads (tri/top) + notifie
+    [self applyActiveLabel];                                  // affiche tout de suite la valeur en cache
+    [self startActiveUsersTimer];
+}
+
+// Met à jour le libellé « X en ligne » depuis la dernière valeur connue (cache StatsClient). Appelé
+// au build, sur la notification StatsActiveUsersChanged, et à chaque battement périodique.
+- (void)applyActiveLabel {
+    NSInteger active = [[StatsClient shared] cachedActiveUsers];
+    if (active <= 0) return;
+    UILabel *subL = (UILabel *)[self.header viewWithTag:102];
+    if (subL && self.welcomeSubBase.length) {
+        NSString *k = (active == 1) ? @"home.active_one" : @"home.active_other";
+        subL.text = [NSString stringWithFormat:@"%@ · %@", self.welcomeSubBase,
+                     [NSString stringWithFormat:T(k), fmtCount(active)]];
+    }
+}
+
+- (void)activeUsersChanged { [self applyActiveLabel]; }
+
+// Battement léger (pas de re-téléchargement de la table downloads) — garde CET appareil compté comme
+// actif et récupère le compte à jour. La réponse met à jour le libellé via la notification.
+- (void)pulseActiveUsers { [[StatsClient shared] sendHeartbeatWithCompletion:nil]; }
+
+// Le timer ne tourne QUE pendant que l'accueil est visible au premier plan (perf : pas de trafic
+// réseau en arrière-plan ni hors écran ; important pour les vieux appareils / le futur iOS 3-4).
+- (void)startActiveUsersTimer {
+    if (self.activeUsersTimer || self.parentCategory.length) return;   // accueil racine seulement
+    self.activeUsersTimer = [NSTimer scheduledTimerWithTimeInterval:30.0 target:self
+        selector:@selector(pulseActiveUsers) userInfo:nil repeats:YES];
+}
+
+- (void)stopActiveUsersTimer {
+    [self.activeUsersTimer invalidate];
+    self.activeUsersTimer = nil;
+}
+
+// v3.2 — rafraîchit les 4 icônes de la tuile « Plus téléchargées » quand les compteurs changent.
+- (void)statsDownloadsChanged {
+    CategoryTileView *tile = self.topDLTile;
+    if (!tile) return;
+    NSArray *icons = [[LocalCatalog shared] topDownloadedIconURLs:4];
+    if (icons.count) {
+        [tile configureMosaicWithLabel:T(@"categories.top_downloads")
+                              subtitle:[NSString stringWithFormat:T(@"categories.napps"), fmtCount([[LocalCatalog shared] uniqueAppCount])]
+                              iconURLs:icons colorSeed:@"top_downloads"];
+    } else {
+        [tile setGlyphImage:AppDropDownloadsGlyph()];
+    }
+}
+
 #pragma mark Auto-scroll while dragging near an edge
 
 - (void)updateAutoScrollForPoint:(CGPoint)p {
@@ -1040,6 +1168,7 @@ static void parseSpan(NSString *s, int *w, int *h) {
 }
 
 - (void)dealloc {
+    [self.activeUsersTimer invalidate];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 

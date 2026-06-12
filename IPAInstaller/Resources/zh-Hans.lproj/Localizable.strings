@@ -216,6 +216,10 @@
 "filter.sort.name_long" = "名称 A-Z";
 "filter.sort.size_long" = "大小";
 "filter.sort.minos_long" = "最低 iOS";
+"filter.sort.downloads_long" = "下载量";
+"catalog.short.downloads" = "下载量";
+"categories.top_downloads" = "下载最多";
+"app.downloads_count" = "%@ 次下载";
 "filter.none" = "无";
 "filter.choose_none" = "无";
 "filter.reset" = "重置为默认";
@@ -558,3 +562,7 @@
 "suggestcat.same_category" = "此应用已在该类别中。请选择其他类别或分区来建议更改。";
 "settings.clear_catalog" = "清除目录缓存（重新下载）";
 "settings.catalog_cleared_msg" = "目录缓存已清除。AppDrop 正在重新下载最新目录（若离线则在下次启动时）。";
+"cat.Uncategorized" = "未分类";
+"home.active" = "%@ 人在线";
+"home.active_one" = "%@ 位用户在线";
+"home.active_other" = "%@ 位用户在线";
