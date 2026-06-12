@@ -155,6 +155,12 @@ Got an old `.ipa` that isn't in AppDrop yet? You can add it yourself — no acco
 
 Drag in one or more `.ipa` files (or a whole folder). Each upload lands in an isolated ingest area, is automatically checked (valid IPA, not encrypted, safety-screened), de-duplicated against the catalog, and queued for review before it joins the shared library that every AppDrop install sees. The site is available in 10 languages with automatic light/dark theming.
 
+Once an upload has been reviewed and accepted, the `.ipa` is published to the public archive that AppDrop's catalog points to:
+
+**[archive.org/details/appdrop-apps](https://archive.org/details/appdrop-apps)**
+
+So everything the community contributes ends up there, freely browsable and downloadable.
+
 ## How it works
 
 ```
