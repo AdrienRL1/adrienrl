@@ -79,6 +79,7 @@ static NSString *fmtCount(NSInteger n) {
 @property (nonatomic, assign) BOOL builtContent;
 @property (nonatomic, strong) UITapGestureRecognizer *retryTap;
 @property (nonatomic, strong) NSTimer *activeUsersTimer;   // v3.2 : rafraîchit « X en ligne » en continu
+@property (nonatomic, assign) NSInteger pulseTick;        // v3.2 : cadence le refresh des téléchargements
 @end
 
 @implementation CategoryViewController
@@ -237,9 +238,11 @@ static NSString *fmtCount(NSInteger n) {
 - (void)appDidBecomeActive {
     if (![[LocalCatalog shared] isReady]) [self attemptCatalogLoad];
     else [[LocalCatalog shared] checkForCatalogUpdate];
-    // v3.2 : de retour au premier plan sur l'accueil → battement immédiat + relance le timer.
+    // v3.2 : de retour au premier plan sur l'accueil → battement + refresh téléchargements immédiats
+    // + relance le timer.
     if (!self.parentCategory.length) {
         [self pulseActiveUsers];
+        [[StatsClient shared] refreshDownloads];
         [self startActiveUsersTimer];
     }
 }
@@ -279,10 +282,12 @@ static NSString *fmtCount(NSInteger n) {
         [self reshuffleIcons];
     }
     self.didFirstAppear = YES;
-    // v3.2 : reprend le suivi « X en ligne » en revenant sur l'accueil (un battement immédiat + le timer).
+    // v3.2 : reprend le suivi « X en ligne » + les compteurs de téléchargements en revenant sur
+    // l'accueil (battement + refresh immédiats, puis le timer prend le relais).
     if (!self.parentCategory.length && [[LocalCatalog shared] isReady]) {
         [self applyActiveLabel];
         [self pulseActiveUsers];
+        [[StatsClient shared] refreshDownloads];
         [self startActiveUsersTimer];
     }
 }
@@ -993,9 +998,14 @@ static void parseSpan(NSString *s, int *w, int *h) {
 
 - (void)activeUsersChanged { [self applyActiveLabel]; }
 
-// Battement léger (pas de re-téléchargement de la table downloads) — garde CET appareil compté comme
-// actif et récupère le compte à jour. La réponse met à jour le libellé via la notification.
-- (void)pulseActiveUsers { [[StatsClient shared] sendHeartbeatWithCompletion:nil]; }
+// Battement périodique. Le heartbeat (léger) part à chaque tick (30 s) → garde CET appareil compté
+// et met à jour « X en ligne » via la notification. Les compteurs de téléchargements (« Plus
+// téléchargées » + nombre par app) sont rafraîchis une fois sur deux (≈60 s) : assez pour rester à
+// jour en continu sans re-télécharger la table downloads trop souvent (perf vieux appareils).
+- (void)pulseActiveUsers {
+    [[StatsClient shared] sendHeartbeatWithCompletion:nil];
+    if ((++self.pulseTick % 2) == 0) [[StatsClient shared] refreshDownloads];
+}
 
 // Le timer ne tourne QUE pendant que l'accueil est visible au premier plan (perf : pas de trafic
 // réseau en arrière-plan ni hors écran ; important pour les vieux appareils / le futur iOS 3-4).

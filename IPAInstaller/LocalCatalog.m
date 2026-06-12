@@ -534,6 +534,17 @@ static void ADSetNoFileProtection(NSString *path) {
     });
 }
 
+// v3.2 — SQL predicate matching `category`, treating "Uncategorized" (the « Non triées » bucket)
+// as ALSO covering rows whose category is NULL/empty. The catalogue tags some apps with no
+// category at all, and contributed apps come in as "Uncategorized"; both must land in the same
+// « Non triées » tile/list. Category value is escaped for inline use.
+static NSString *ADCategoryPredicate(NSString *category) {
+    if ([category isEqualToString:@"Uncategorized"])
+        return @"(category IS NULL OR category = '' OR category = 'Uncategorized')";
+    NSString *c = [category stringByReplacingOccurrencesOfString:@"'" withString:@"''"];
+    return [NSString stringWithFormat:@"category = '%@'", c];
+}
+
 - (NSDictionary *)searchWithQuery:(NSString *)q
                             minIOS:(NSString *)minIOSStr
                             maxIOS:(NSString *)maxIOSStr
@@ -577,8 +588,7 @@ static void ADSetNoFileProtection(NSString *path) {
     // v1.7: category browse filter. Only entries_unique carries the category column,
     // so this applies in unique (browse) mode — which is what the category menu uses.
     if (unique && category.length) {
-        NSString *c = [category stringByReplacingOccurrencesOfString:@"'" withString:@"''"];
-        [whereClause appendString:[NSString stringWithFormat:@" AND category = '%@'", c]];
+        [whereClause appendString:[@" AND " stringByAppendingString:ADCategoryPredicate(category)]];
         if (subgenre.length) {
             NSString *s = [subgenre stringByReplacingOccurrencesOfString:@"'" withString:@"''"];
             [whereClause appendString:[NSString stringWithFormat:@" AND subgenre = '%@'", s]];
@@ -678,10 +688,13 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSMutableArray *out = [NSMutableArray array];
     // Count only apps that have a version runnable on THIS device (min_minos <= device
     // iOS), so the card counts match the category lists and exclude iOS 11+-only apps.
+    // v3.2 : les apps sans catégorie (NULL/vide) sont regroupées sous « Uncategorized » (tuile
+    // « Non triées ») au lieu d'être ignorées, pour qu'elles soient triables comme les autres.
     NSString *sqlStr = [NSString stringWithFormat:
-        @"SELECT category, COUNT(*) FROM entries_unique "
-        @"WHERE category IS NOT NULL AND category<>'' AND min_minos <= %ld%@ "
-        @"GROUP BY category ORDER BY COUNT(*) DESC",
+        @"SELECT CASE WHEN category IS NULL OR category = '' THEN 'Uncategorized' ELSE category END AS cat, "
+        @"COUNT(*) FROM entries_unique "
+        @"WHERE min_minos <= %ld%@ "
+        @"GROUP BY cat ORDER BY COUNT(*) DESC",
         (long)[self deviceMaxMinos], [self deviceIdiomPlatClause]];
     const char *sql = [sqlStr UTF8String];
     sqlite3_stmt *st = NULL;
@@ -776,14 +789,14 @@ static NSString *iconURLForImgPk(long imgPk) {
     // 0 — so the card would never reshuffle. entries_unique still has hundreds of smaller
     // device-runnable apps with icons, giving a varied pool of REAL example icons. Deduped by img_pk.
     if (out.count < 6) {
+        // v3.2 : ADCategoryPredicate gère « Uncategorized » = catégorie NULL/vide (tuile « Non triées »).
         NSString *fsqlStr = [NSString stringWithFormat:
-                           @"SELECT img_pk FROM entries_unique WHERE category=?1 AND min_minos<=?2 "
-                           @"AND img_pk>0%@ ORDER BY size_kb DESC LIMIT 24", platClause];
+                           @"SELECT img_pk FROM entries_unique WHERE %@ AND min_minos<=?1 "
+                           @"AND img_pk>0%@ ORDER BY size_kb DESC LIMIT 24", ADCategoryPredicate(category), platClause];
         const char *fsql = [fsqlStr UTF8String];
         sqlite3_stmt *f = NULL;
         if (sqlite3_prepare_v2(self.db, fsql, -1, &f, NULL) == SQLITE_OK) {
-            sqlite3_bind_text(f, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int64(f, 2, [self deviceMaxMinos]);
+            sqlite3_bind_int64(f, 1, [self deviceMaxMinos]);
             while (sqlite3_step(f) == SQLITE_ROW) {
                 int pk = sqlite3_column_int(f, 0);
                 NSString *u = iconURLForImgPk(pk);
