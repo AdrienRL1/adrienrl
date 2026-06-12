@@ -1215,25 +1215,51 @@ static NSString *iconURLForImgPk(long imgPk) {
             }
             sqlite3_finalize(q);
 
-            BOOL versionExists = NO; NSString *existingUrl = nil;
+            BOOL versionExists = NO; NSString *existingUrl = nil; int existingMinos = 0;
             q = NULL;
-            if (sqlite3_prepare_v2(wdb, "SELECT base_idx, filename FROM entries WHERE bid_lower=? AND version=? LIMIT 1", -1, &q, NULL) == SQLITE_OK) {
+            if (sqlite3_prepare_v2(wdb, "SELECT base_idx, filename, minos FROM entries WHERE bid_lower=? AND version=? LIMIT 1", -1, &q, NULL) == SQLITE_OK) {
                 sqlite3_bind_text(q, 1, [bidLow UTF8String], -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(q, 2, [ver UTF8String], -1, SQLITE_TRANSIENT);
                 if (sqlite3_step(q) == SQLITE_ROW) {
                     versionExists = YES;
                     NSInteger bi = sqlite3_column_int(q, 0);
                     const unsigned char *fn = sqlite3_column_text(q, 1);
+                    existingMinos = sqlite3_column_int(q, 2);
                     existingUrl = [self urlForBaseIdx:bi filename:(fn ? [NSString stringWithUTF8String:(const char *)fn] : @"")];
                 }
             }
             sqlite3_finalize(q);
 
             if (versionExists) {
-                // Exact duplicate → keep the contributed (decrypted) build only if the catalogue's copy
-                // is KNOWN FairPlay-encrypted: swap its download URL in place (no duplicate row). Else skip.
-                if (existingUrl.length && [MachOInspector cachedResultForURL:existingUrl] == MachOInspectionResultEncrypted)
-                    newURLs[key] = ipa;
+                // Même bid+version déjà au catalogue. On adopte la copie contribuée dans 2 cas :
+                //  (a) REPLACE_ENCRYPTED : la copie du catalogue est chiffrée (FairPlay) → on remplace l'URL
+                //      par la copie déchiffrée contribuée.
+                //  (b) VARIANTE DE COMPATIBILITÉ (v3.2.0.2) : même version mais min-iOS contribué PLUS BAS
+                //      (ex. binaire identique avec MinimumOSVersion abaissé pour iOS 6) → on adopte son URL
+                //      ET on baisse le min-iOS enregistré (par-version + app) pour que l'app la propose et
+                //      l'installe sur les vieux appareils. La modération a vérifié que le binaire est identique
+                //      (même exec_sha256) → ce n'est PAS un mod, juste une app rendue installable plus bas.
+                BOOL catEncrypted = (existingUrl.length && [MachOInspector cachedResultForURL:existingUrl] == MachOInspectionResultEncrypted);
+                BOOL lowerMin = (minos > 0 && (existingMinos == 0 || existingMinos > minos));
+                if (catEncrypted || lowerMin) newURLs[key] = ipa;   // adopte l'URL contribuée
+                if (lowerMin) {
+                    sqlite3_stmt *uv = NULL;   // baisse le min de CETTE version
+                    if (sqlite3_prepare_v2(wdb, "UPDATE entries SET minos=? WHERE bid_lower=? AND version=?", -1, &uv, NULL) == SQLITE_OK) {
+                        sqlite3_bind_int(uv, 1, minos);
+                        sqlite3_bind_text(uv, 2, [bidLow UTF8String], -1, SQLITE_TRANSIENT);
+                        sqlite3_bind_text(uv, 3, [ver UTF8String], -1, SQLITE_TRANSIENT);
+                        sqlite3_step(uv);
+                    }
+                    sqlite3_finalize(uv);
+                    sqlite3_stmt *uu = NULL;   // baisse le min de l'APP si c'était le plus haut
+                    if (sqlite3_prepare_v2(wdb, "UPDATE entries_unique SET min_minos=? WHERE bid_lower=? AND min_minos>?", -1, &uu, NULL) == SQLITE_OK) {
+                        sqlite3_bind_int(uu, 1, minos);
+                        sqlite3_bind_text(uu, 2, [bidLow UTF8String], -1, SQLITE_TRANSIENT);
+                        sqlite3_bind_int(uu, 3, minos);
+                        sqlite3_step(uu);
+                    }
+                    sqlite3_finalize(uu);
+                }
                 continue;
             }
 
