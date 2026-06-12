@@ -48,7 +48,9 @@ static NSString *const kStatsBase = @"https://appdrop-stats.adrienruestlorquet.w
     NSString *did = [d stringForKey:@"AppDropDeviceID"];
     if (did.length) return did;
     CFUUIDRef u = CFUUIDCreate(NULL);
-    did = (__bridge_transfer NSString *)CFUUIDCreateString(NULL, u);
+    CFStringRef cfDid = CFUUIDCreateString(NULL, u);
+    did = [[(NSString *)cfDid retain] autorelease];
+    CFRelease(cfDid);
     CFRelease(u);
     [d setObject:did forKey:@"AppDropDeviceID"]; [d synchronize];
     return did;
@@ -61,7 +63,7 @@ static NSString *const kStatsBase = @"https://appdrop-stats.adrienruestlorquet.w
 - (void)sendHeartbeatWithCompletion:(void (^)(NSInteger active))completion {
     NSData *body = [[NSString stringWithFormat:@"{\"id\":\"%@\"}", [self deviceID]]
                     dataUsingEncoding:NSUTF8StringEncoding];
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [HTTPSClient postURL:[kStatsBase stringByAppendingString:@"/heartbeat"]
                  headers:@{ @"Content-Type": @"application/json" }
                     body:body
@@ -95,7 +97,7 @@ static NSString *const kStatsBase = @"https://appdrop-stats.adrienruestlorquet.w
     // Réinjecte d'abord les compteurs en cache dans la base (le tri/top marche même hors-ligne au démarrage).
     if (self.counts.count) [[LocalCatalog shared] mergeDownloadCounts:self.counts];
     @synchronized (self) { if (self.downloadsInFlight) return; self.downloadsInFlight = YES; }
-    __weak typeof(self) ws = self;
+    AD_WEAK typeof(self) ws = self;
     [HTTPSClient getURL:[kStatsBase stringByAppendingString:@"/downloads"]
                 timeout:15
              completion:^(NSData *body, NSInteger status, NSError *err) {

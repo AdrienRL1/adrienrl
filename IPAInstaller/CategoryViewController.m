@@ -51,7 +51,7 @@ static NSString *fmtCount(NSInteger n) {
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) NSArray *items;          // model: one dict per tile (pinned first, then the rest)
 @property (nonatomic, strong) NSArray *tiles;          // CategoryTileView*, parallel to items
-@property (nonatomic, weak)   CategoryTileView *topDLTile;  // v3.2 : tuile « Plus téléchargées » (icônes = top 4)
+@property (nonatomic, assign)   CategoryTileView *topDLTile;  // v3.2 : tuile « Plus téléchargées » (icônes = top 4)
 @property (nonatomic, assign) NSInteger pinnedCount;   // first N items are in the pinned (top) zone
 @property (nonatomic, strong) UIView *zoneDivider;     // thin rule between pinned + unpinned zones
 @property (nonatomic, strong) UIButton *addFolderButton;   // small distinct "+ Nouveau dossier", always at top
