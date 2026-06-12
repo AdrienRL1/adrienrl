@@ -157,9 +157,9 @@ static NSString *fmtCount(NSInteger n) {
 
     if (!sub) {
         [[NSNotificationCenter defaultCenter] addObserver:self
-            selector:@selector(appDidBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
+            selector:@selector(appDidBecomeActive) name:@"UIApplicationDidBecomeActiveNotification" object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
-            selector:@selector(appDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
+            selector:@selector(appDidEnterBackground) name:@"UIApplicationDidEnterBackgroundNotification" object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
             selector:@selector(catalogDidUpdate) name:LocalCatalogDidUpdateNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
