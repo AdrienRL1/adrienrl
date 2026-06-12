@@ -55,8 +55,14 @@ after-stage::
 	@for d in $(THEOS_STAGING_DIR)/Applications/AppDrop.app/*.lproj; do \
 		lang=`basename "$$d" .lproj`; \
 		src="Resources/$$lang.lproj/Localizable.strings"; \
-		if [ -f "$$src" ]; then plutil -convert json -o "$$d/Localizable.json" "$$src" && echo "  $$lang ok" || echo "  $$lang FAILED"; fi; \
+		if [ -f "$$src" ]; then \
+			if command -v plutil >/dev/null 2>&1; then \
+				plutil -convert json -o "$$d/Localizable.json" "$$src" && echo "  $$lang ok" || echo "  $$lang FAILED"; \
+			else \
+				python3 "$(PWD)/../tools/strings2json.py" "$$src" "$$d/Localizable.json" && echo "  $$lang ok" || echo "  $$lang FAILED"; \
+			fi; \
+		fi; \
 	done
 	@echo "iOS 5 fix: rebinding NSObject (libobjc -> CoreFoundation) so the app launches on iOS 5.x, then re-signing…"
-	@python3 "$(PWD)/../tools/ios5_rebind.py" "$(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop"
-	@"$(THEOS)/toolchain/linux/iphone/bin/ldid" -Sentitlements.plist "$(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop" && echo "  re-signed ok"
+	@python3 "$(PWD)/../tools/ios5_rebind.py" "$(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop.armv7"
+	@"$(THEOS)/toolchain/linux/iphone/bin/ldid" -Sentitlements.plist "$(THEOS_STAGING_DIR)/Applications/AppDrop.app/AppDrop.armv7" && echo "  re-signed ok"
