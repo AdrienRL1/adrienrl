@@ -12,7 +12,7 @@ memes dylibs liees (il demarre donc sur iPad 1 / iOS 5.1.1 comme avant).
 ./build.sh clean
 ```
 
-Le `.deb` (et le `.ipa` si besoin) sort dans `IPAInstaller/packages/`.
+Le `.deb` (et l`.ipa` si besoin) sort dans `IPAInstaller/packages/`.
 
 ## Contenu de build-toolchain/
 
