@@ -1171,6 +1171,25 @@ static NSString *iconURLForImgPk(long imgPk) {
     sqlite3_exec(wdb, "DELETE FROM entries_unique WHERE base_idx = -1", NULL, NULL, NULL);   // purge prior extras
     sqlite3_exec(wdb, "DELETE FROM entries WHERE base_idx = -1", NULL, NULL, NULL);
 
+    // RÉVERSIBILITÉ des variantes de compatibilité (v3.2.0.3) : une variante au min-iOS abaissé fait un
+    // UPDATE sur une VRAIE ligne de base (minos), qui persiste dans le cache. Pour pouvoir « revenir en
+    // arrière » si une variante est retirée du catalogue (ex. elle ne marche pas), on mémorise le min-iOS
+    // d'ORIGINE de chaque ligne qu'on abaisse dans `extras_minos_restore`. À CHAQUE ré-application on commence
+    // par TOUT restaurer (remettre les minos d'origine + recalculer min_minos depuis les vraies lignes), puis
+    // on ré-applique seulement les variantes encore présentes. Donc retirer la variante (revert git de
+    // catalog-extras.json) rétablit automatiquement le min-iOS d'origine au prochain merge. Coût ~nul (ne
+    // touche que la poignée de lignes abaissées). L'IPA original, lui, n'est jamais écrasé sur archive.org
+    // (la variante a un nom de fichier distinct côté pipeline).
+    sqlite3_exec(wdb, "CREATE TABLE IF NOT EXISTS extras_minos_restore (bid_lower TEXT, version TEXT, orig_minos INTEGER, PRIMARY KEY (bid_lower, version))", NULL, NULL, NULL);
+    // 1) restaurer les minos par-version d'origine sur les lignes encore présentes
+    sqlite3_exec(wdb, "UPDATE entries SET minos = (SELECT r.orig_minos FROM extras_minos_restore r WHERE r.bid_lower = entries.bid_lower AND r.version = entries.version) "
+                      "WHERE EXISTS (SELECT 1 FROM extras_minos_restore r WHERE r.bid_lower = entries.bid_lower AND r.version = entries.version)", NULL, NULL, NULL);
+    // 2) recalculer le min-iOS de l'app (min_minos) depuis les vraies lignes restaurées, pour les bids touchés
+    sqlite3_exec(wdb, "UPDATE entries_unique SET min_minos = (SELECT MIN(e.minos) FROM entries e WHERE e.bid_lower = entries_unique.bid_lower) "
+                      "WHERE bid_lower IN (SELECT DISTINCT bid_lower FROM extras_minos_restore)", NULL, NULL, NULL);
+    // 3) repartir d'une mémoire vierge : on ré-enregistrera seulement les variantes encore appliquées
+    sqlite3_exec(wdb, "DELETE FROM extras_minos_restore", NULL, NULL, NULL);
+
     NSMutableDictionary *newURLs = [NSMutableDictionary dictionary];
     NSMutableDictionary *newIcons = [NSMutableDictionary dictionary];
 
@@ -1243,6 +1262,16 @@ static NSString *iconURLForImgPk(long imgPk) {
                 BOOL lowerMin = (minos > 0 && (existingMinos == 0 || existingMinos > minos));
                 if (catEncrypted || lowerMin) newURLs[key] = ipa;   // adopte l'URL contribuée
                 if (lowerMin) {
+                    // Mémorise le min-iOS D'ORIGINE de cette version (pristine, car restauré ci-dessus) pour
+                    // pouvoir revenir en arrière si la variante est un jour retirée du catalogue.
+                    sqlite3_stmt *rs = NULL;
+                    if (sqlite3_prepare_v2(wdb, "INSERT OR IGNORE INTO extras_minos_restore (bid_lower, version, orig_minos) VALUES (?,?,?)", -1, &rs, NULL) == SQLITE_OK) {
+                        sqlite3_bind_text(rs, 1, [bidLow UTF8String], -1, SQLITE_TRANSIENT);
+                        sqlite3_bind_text(rs, 2, [ver UTF8String], -1, SQLITE_TRANSIENT);
+                        sqlite3_bind_int(rs, 3, existingMinos);
+                        sqlite3_step(rs);
+                    }
+                    sqlite3_finalize(rs);
                     sqlite3_stmt *uv = NULL;   // baisse le min de CETTE version
                     if (sqlite3_prepare_v2(wdb, "UPDATE entries SET minos=? WHERE bid_lower=? AND version=?", -1, &uv, NULL) == SQLITE_OK) {
                         sqlite3_bind_int(uv, 1, minos);
