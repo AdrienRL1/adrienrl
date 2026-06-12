@@ -83,8 +83,8 @@ jobs:
           name: AppDrop-iOS3-armv6-deb
           path: ios3/build/AppDrop.deb
 
-  universal-ipa:
-    name: Assemble universal IPA (armv6 + armv7, separate slices)
+  universal-deb:
+    name: Assemble universal DEB (armv6 + armv7, separate slices)
     runs-on: ubuntu-24.04
     needs: [ ios5_10-armv7, ios3-armv6 ]
     steps:
@@ -100,39 +100,31 @@ jobs:
           name: AppDrop-iOS3-armv6-deb
           path: artifacts/armv6-deb
 
-      - name: Build universal IPA
+      - name: Build universal DEB
         run: |
           set -euo pipefail
           rm -rf merge
-          mkdir -p merge
-          cd merge
+          mkdir -p merge/root
 
-          # Extract both binaries from their DEB files
-          armv7_deb="$(find ../artifacts/armv7 -name '*.deb' | head -n1)"
-          armv6_deb="$(find ../artifacts/armv6-deb -name '*.deb' | head -n1)"
+          armv7_deb="$(find artifacts/armv7 -name '*.deb' | head -n1)"
+          armv6_deb="$(find artifacts/armv6-deb -name '*.deb' | head -n1)"
           if [ -z "$armv7_deb" ] || [ -z "$armv6_deb" ]; then
             echo "ERROR: missing armv7 or armv6 DEB artifact" >&2
             exit 1
           fi
 
-          # Extract app structure from armv6 DEB (base bundle)
-          tmp_armv6="$(mktemp -d)"
-          dpkg-deb -x "$armv6_deb" "$tmp_armv6"
-          mkdir -p Payload
-          cp -r "$tmp_armv6/Applications/AppDrop.app" Payload/
-
-          # Extract armv7 binary from armv7 DEB and add it
+          dpkg-deb -R "$armv6_deb" merge/root
           tmp_armv7="$(mktemp -d)"
           dpkg-deb -x "$armv7_deb" "$tmp_armv7"
-          cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" Payload/AppDrop.app/AppDrop.armv7
-          chmod 0755 Payload/AppDrop.app/AppDrop.armv7
+          cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" merge/root/Applications/AppDrop.app/AppDrop.armv7
+          chmod 0755 merge/root/Applications/AppDrop.app/AppDrop.armv7
 
-          zip -qr AppDrop-universal.ipa Payload
-          echo "Assembled universal IPA:"
-          unzip -l AppDrop-universal.ipa | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
+          dpkg-deb -b merge/root merge/AppDrop-universal.deb >/dev/null
+          echo "Assembled universal DEB:"
+          dpkg-deb -I merge/AppDrop-universal.deb | sed -n '1,20p'
 
-      - name: Upload universal IPA
+      - name: Upload universal DEB
         uses: actions/upload-artifact@v4
         with:
-          name: AppDrop-universal-ipa
-          path: merge/AppDrop-universal.ipa
+          name: AppDrop-universal-deb
+          path: merge/AppDrop-universal.deb
