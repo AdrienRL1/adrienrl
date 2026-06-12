@@ -9,7 +9,7 @@ NSString *const StatsDownloadsChangedNotification   = @"StatsDownloadsChangedNot
 static NSString *const kStatsBase = @"https://appdrop-stats.adrienruestlorquet.workers.dev";
 
 @interface StatsClient ()
-@property (nonatomic, strong) NSMutableDictionary *counts;   // bid_lower (NSString) -> NSNumber
+@property (nonatomic, retain) NSMutableDictionary *counts;   // bid_lower (NSString) -> NSNumber
 @property (nonatomic, assign) NSInteger activeUsers;         // -1 = inconnu
 @property (nonatomic, assign) BOOL downloadsInFlight;
 @end
@@ -26,7 +26,7 @@ static NSString *const kStatsBase = @"https://appdrop-stats.adrienruestlorquet.w
     if ((self = [super init])) {
         _activeUsers = -1;
         NSDictionary *cached = [NSDictionary dictionaryWithContentsOfFile:[self countsCachePath]];
-        _counts = cached ? [cached mutableCopy] : [NSMutableDictionary dictionary];
+        _counts = cached ? [cached mutableCopy] : [[NSMutableDictionary alloc] init];
         // Re-pousser les compteurs en cache dans la base après chaque hot-swap du catalogue
         // (le fichier catalog.db est remplacé → la table downloads y est recréée vide).
         [[NSNotificationCenter defaultCenter] addObserver:self
@@ -34,6 +34,12 @@ static NSString *const kStatsBase = @"https://appdrop-stats.adrienruestlorquet.w
                 name:LocalCatalogDidUpdateNotification object:nil];
     }
     return self;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [_counts release];
+    [super dealloc];
 }
 
 - (NSString *)countsCachePath {
@@ -107,15 +113,16 @@ static NSString *const kStatsBase = @"https://appdrop-stats.adrienruestlorquet.w
         if (status != 200 || !body.length) return;
         id j = [NSJSONSerialization JSONObjectWithData:body options:0 error:NULL];
         if (![j isKindOfClass:[NSDictionary class]]) return;
-        NSMutableDictionary *m = [NSMutableDictionary dictionaryWithCapacity:[(NSDictionary *)j count]];
+        NSMutableDictionary *m = [[NSMutableDictionary alloc] initWithCapacity:[(NSDictionary *)j count]];
         for (NSString *bid in (NSDictionary *)j) {
             if (![bid isKindOfClass:[NSString class]]) continue;
             NSNumber *c = ((NSDictionary *)j)[bid];
             if ([c isKindOfClass:[NSNumber class]]) m[[bid lowercaseString]] = c;
         }
         self.counts = m;
-        [m writeToFile:[self countsCachePath] atomically:YES];
-        [[LocalCatalog shared] mergeDownloadCounts:m];
+        [m release];
+        [self.counts writeToFile:[self countsCachePath] atomically:YES];
+        [[LocalCatalog shared] mergeDownloadCounts:self.counts];
         [[NSNotificationCenter defaultCenter] postNotificationName:StatsDownloadsChangedNotification object:self];
     }];
 }
