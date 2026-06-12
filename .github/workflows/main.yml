@@ -100,83 +100,39 @@ jobs:
           name: AppDrop-iOS3-armv6-deb
           path: artifacts/armv6-deb
 
-      - name: Build universal DEB
+      - name: Build universal IPA
         run: |
           set -euo pipefail
           rm -rf merge
           mkdir -p merge
           cd merge
 
-          # Extract ZIP archives if present
-          for zips in ../artifacts/armv7/*.zip ../artifacts/armv6-deb/*.zip; do
-            if [ -f "$zips" ]; then
-              dir=$(dirname "$zips")
-              echo "Extracting $(basename "$zips")..."
-              unzip -q "$zips" -d "$dir"
-            fi
-          done
-          
-          # Find DEBs - look in subdirectories too
-          armv7_deb="$(find ../artifacts/armv7 -type f -name '*.deb' 2>/dev/null | head -n1)"
-          armv6_deb="$(find ../artifacts/armv6-deb -type f -name '*.deb' 2>/dev/null | head -n1)"
-          
-          echo "armv7_deb=$armv7_deb"
-          echo "armv6_deb=$armv6_deb"
-          
+          # Extract both binaries from their DEB files
+          armv7_deb="$(find ../artifacts/armv7 -name '*.deb' | head -n1)"
+          armv6_deb="$(find ../artifacts/armv6-deb -name '*.deb' | head -n1)"
           if [ -z "$armv7_deb" ] || [ -z "$armv6_deb" ]; then
             echo "ERROR: missing armv7 or armv6 DEB artifact" >&2
-            echo "=== Directory contents ===" >&2
-            find ../artifacts/ -type f 2>/dev/null || true
             exit 1
           fi
 
-          # Use ar to extract DEB internals (more reliable than dpkg-deb)
-          mkdir -p armv6_work armv7_work final_deb/Applications
-          cd armv6_work
-          ar x "$armv6_deb"
-          cd ..
-          cd armv7_work
-          ar x "$armv7_deb"
-          cd ..
+          # Extract app structure from armv6 DEB (base bundle)
+          tmp_armv6="$(mktemp -d)"
+          dpkg-deb -x "$armv6_deb" "$tmp_armv6"
+          mkdir -p Payload
+          cp -r "$tmp_armv6/Applications/AppDrop.app" Payload/
 
-          # Extract armv6 data.tar.gz
-          mkdir -p armv6_data
-          tar -xzf armv6_work/data.tar.gz -C armv6_data
+          # Extract armv7 binary from armv7 DEB and add it
+          tmp_armv7="$(mktemp -d)"
+          dpkg-deb -x "$armv7_deb" "$tmp_armv7"
+          cp "$tmp_armv7/Applications/AppDrop.app/AppDrop.armv7" Payload/AppDrop.app/AppDrop.armv7
+          chmod 0755 Payload/AppDrop.app/AppDrop.armv7
 
-          # Extract armv7 binary from armv7 data
-          mkdir -p armv7_data
-          tar -xzf armv7_work/data.tar.gz -C armv7_data
+          zip -qr AppDrop-universal.ipa Payload
+          echo "Assembled universal IPA:"
+          unzip -l AppDrop-universal.ipa | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
 
-          # Copy armv6 app bundle to final
-          cp -r armv6_data/Applications/AppDrop.app final_deb/Applications/
-
-          # Add armv7 binary
-          cp armv7_data/Applications/AppDrop.app/AppDrop.armv7 final_deb/Applications/AppDrop.app/AppDrop.armv7
-          chmod 0755 final_deb/Applications/AppDrop.app/AppDrop.armv7
-
-          # Copy DEBIAN from armv6
-          mkdir -p final_deb/DEBIAN
-          tar -xzf armv6_work/control.tar.gz -C final_deb/DEBIAN
-
-          # Rebuild data.tar.gz and control.tar.gz
-          cd final_deb
-          tar -czf ../data.tar.gz Applications/
-          tar -czf ../control.tar.gz DEBIAN/
-          cd ..
-
-          # Create debian-binary
-          echo "2.0" > debian-binary
-
-          # Assemble new DEB with ar
-          ar r AppDrop-universal.deb debian-binary control.tar.gz data.tar.gz
-          
-          echo "Assembled universal DEB:"
-          ar t AppDrop-universal.deb
-          echo "Files in app bundle:"
-          tar -tzf data.tar.gz | grep -E 'AppDrop(\.armv6|\.armv7)?$' || true
-
-      - name: Upload universal DEB
+      - name: Upload universal IPA
         uses: actions/upload-artifact@v4
         with:
-          name: AppDrop-universal-deb
-          path: merge/AppDrop-universal.deb
+          name: AppDrop-universal-ipa
+          path: merge/AppDrop-universal.ipa
