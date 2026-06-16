@@ -77,6 +77,7 @@ static NSString *fmtCount(NSInteger n) {
 @property (nonatomic, assign) BOOL didFirstAppear;
 @property (nonatomic, assign) BOOL catalogLoading;
 @property (nonatomic, assign) BOOL builtContent;
+@property (nonatomic, assign) NSInteger buildGeneration;   // A1: invalidates a stale async build (rebuild raced)
 @property (nonatomic, strong) UITapGestureRecognizer *retryTap;
 @property (nonatomic, strong) NSTimer *activeUsersTimer;   // v3.2 : rafraîchit « X en ligne » en continu
 @property (nonatomic, assign) NSInteger pulseTick;        // v3.2 : cadence le refresh des téléchargements
@@ -447,37 +448,150 @@ static UIImage *AppDropDownloadsGlyph(void) {
 }
 
 - (void)buildContent {
+    // A1 (gel au démarrage) : la collecte des données de l'accueil/catégorie fait des requêtes SQL
+    // (categoryCounts, iconPoolForCategory ×N, topDownloadedIconURLs…). La faire sur le thread PRINCIPAL gelait
+    // l'UI au démarrage — pire depuis la v3.2, dont les écritures de fond (refreshCatalogExtras→applyCatalogExtras,
+    // mergeDownloadCounts) font attendre chaque lecture sur le verrou (busy_timeout). On collecte donc sur la file
+    // de lecture sérielle du catalogue (hors thread principal, sérialisé avec les écritures), puis on construit
+    // l'UI sur le thread principal.
     BOOL sub = self.parentCategory.length > 0;
+    NSString *parent = self.parentCategory;
     LocalCatalog *cat = [LocalCatalog shared];
+    CGSize scr = [UIScreen mainScreen].bounds.size;   // UIKit : lu sur le thread principal, capturé pour le bloc
+    NSString *bigSpan = (MIN(scr.width, scr.height) < 480) ? @"1x1" : @"2x1";
+    NSInteger gen = ++self.buildGeneration;           // un rebuild plus récent invalide ce build async
+    __weak typeof(self) wself = self;
+    [cat performRead:^{
+        NSMutableArray *items = [NSMutableArray array];
+        NSInteger pinned = 0;
+        NSString *welcomeBase = nil;
 
-    NSMutableArray *items = [NSMutableArray array];
-    self.pinnedCount = 0;   // subgenre screens have no pinned zone; set below for the top level
-
-    if (sub) {
-        // "All <category>" tile FIRST so the user can browse the WHOLE category without being
-        // forced to pick a subgenre (feedback #152 — v3.0 regression; subgenre=nil → all apps in cat).
-        NSInteger catTotal = 0;
-        for (NSDictionary *cc in [cat categoryCounts]) {
-            if ([(cc[@"category"] ?: @"") isEqualToString:self.parentCategory]) {
-                catTotal = [cc[@"count"] integerValue]; break;
+        if (sub) {
+            // "All <category>" tile FIRST so the user can browse the WHOLE category without being
+            // forced to pick a subgenre (feedback #152 — v3.0 regression; subgenre=nil → all apps in cat).
+            NSInteger catTotal = 0;
+            for (NSDictionary *cc in [cat categoryCounts]) {
+                if ([(cc[@"category"] ?: @"") isEqualToString:parent]) {
+                    catTotal = [cc[@"count"] integerValue]; break;
+                }
             }
+            [items addObject:@{ @"id": [@"allcat:" stringByAppendingString:parent],
+                @"kind": @"all-cat", @"cat": parent,
+                @"label": T(@"categories.all_in_cat"),
+                @"seed": [@"allcat_" stringByAppendingString:parent],
+                @"defSpan": @"1x1", @"defaultPinned": @NO,
+                @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount(catTotal)],
+                @"iconPool": [cat iconPoolForCategory:parent] ?: @[] }];
+            // Subgenre tiles (this is a drilled-in screen — no collections / reorder).
+            for (NSDictionary *d in [cat subgenreCountsForCategory:parent]) {
+                NSString *sg = d[@"subgenre"] ?: @"";
+                [items addObject:@{ @"id": [@"sub:" stringByAppendingString:sg], @"kind": @"sub", @"sub": sg,
+                    @"label": locSub(sg), @"seed": sg, @"defSpan": @"1x1", @"defaultPinned": @NO,
+                    @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([d[@"count"] integerValue])],
+                    @"iconPool": [cat iconPoolForCategory:parent subgenre:sg] ?: @[] }];
+            }
+        } else {
+            welcomeBase = [NSString stringWithFormat:T(@"categories.welcome_sub"), fmtCount([cat uniqueAppCount])];
+
+            // ---- Category cards first (so we can sample their icons for the "All apps" mosaic) ----
+            NSMutableArray *catItems = [NSMutableArray array];
+            NSMutableArray *allSample = [NSMutableArray array];
+            for (NSDictionary *d in [cat categoryCounts]) {
+                NSString *cn = d[@"category"] ?: @"";
+                NSArray *pool = [cat iconPoolForCategory:cn] ?: @[];
+                [catItems addObject:@{ @"id": [@"cat:" stringByAppendingString:cn], @"kind": @"cat", @"cat": cn,
+                    @"label": locCat(cn), @"seed": cn, @"defSpan": @"1x1", @"defaultPinned": @NO,   // « Non triées » en bas comme les autres (triée par nombre)
+                    @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([d[@"count"] integerValue])],
+                    @"iconPool": pool }];
+                for (NSInteger i = 0; i < 2 && i < (NSInteger)pool.count; i++) [allSample addObject:pool[i]];
+            }
+
+            // ---- Collections (Favoris + folders) ----
+            CollectionStore *store = [CollectionStore shared];
+            BOOL showFavHome = ([[NSUserDefaults standardUserDefaults] objectForKey:@"IPAInstall.ShowFavoritesOnHome"] == nil)
+                               ? YES : [[NSUserDefaults standardUserDefaults] boolForKey:@"IPAInstall.ShowFavoritesOnHome"];
+            for (NSDictionary *col in [store collections]) {
+                NSString *cid = col[@"id"];
+                if (!showFavHome && [cid isEqualToString:CollectionFavoritesId]) continue;   // v3.0: Favoris tile hidden from Home via Settings toggle (default shown; the Favoris tab stays)
+                NSArray *pool = [store iconPoolForCollection:cid];
+                NSDictionary *it = @{ @"id": [@"col:" stringByAppendingString:cid], @"kind": @"col", @"cid": cid,
+                    @"label": [store nameForCollection:cid], @"seed": cid, @"defSpan": @"1x1",
+                    @"defaultPinned": @([cid isEqualToString:CollectionFavoritesId] || [cid isEqualToString:CollectionLaterId]),   // Favoris + Plus tard pinned; folders not
+                    @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([store countInCollection:cid])],
+                    @"iconPool": pool ?: @[] };   // tiles always show the auto mosaic (preview-image pinning removed)
+                [items addObject:it];
+            }
+
+            // ---- All apps (wide by default) ----
+            [items addObject:@{ @"id": @"item.all", @"kind": @"all", @"label": T(@"categories.all"),
+                @"seed": @"all_apps", @"defSpan": bigSpan, @"defaultPinned": @YES,
+                @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([cat uniqueAppCount])],
+                @"iconPool": allSample }];
+            // ---- v3.2 : raccourci « Plus téléchargées » (tout le catalogue trié par téléchargements). Ses 4
+            // icônes = les 4 apps EN CE MOMENT les plus téléchargées (mises à jour via statsDownloadsChanged). ----
+            [items addObject:@{ @"id": @"item.topdl", @"kind": @"topdl", @"label": T(@"categories.top_downloads"),
+                @"seed": @"top_downloads", @"defSpan": bigSpan, @"defaultPinned": @YES,
+                @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([cat uniqueAppCount])],
+                @"iconPool": [cat topDownloadedIconURLs:4] ?: @[] }];
+            // ---- Works today / Revival + Apps modifiées / Modded ----
+            // Retirées de l'accueil (kEnableWorksTodayModded = NO). Le code des tuiles + listes + upload
+            // reste en place mais inatteignable tant que le flag est NO.
+            if (kEnableWorksTodayModded) {
+                // ---- Works today / Revival (wide by default), mosaic of the curated apps' icons ----
+                NSMutableArray *revIcons = [NSMutableArray array];
+                for (NSDictionary *r in [[RevivalCatalog shared] appDicts]) {
+                    NSString *ic = r[@"icon"];
+                    if ([ic isKindOfClass:[NSString class]] && ic.length) [revIcons addObject:ic];
+                }
+                [items addObject:@{ @"id": @"item.revival", @"kind": @"revival", @"label": T(@"categories.revival"),
+                    @"seed": @"revival", @"defSpan": bigSpan, @"defaultPinned": @YES,
+                    @"subtitle": T(@"categories.revival_sub"), @"iconPool": revIcons }];
+                // ---- Apps modifiées / Modded (mosaic of the modded apps' icons) ----
+                NSMutableArray *modIcons = [NSMutableArray array];
+                for (NSDictionary *m in [[ModdedCatalog shared] appDicts]) {
+                    NSString *ic = m[@"icon"];
+                    if ([ic isKindOfClass:[NSString class]] && ic.length) [modIcons addObject:ic];
+                }
+                [items addObject:@{ @"id": @"item.modded", @"kind": @"modded", @"label": T(@"categories.modded"),
+                    @"seed": @"modded", @"defSpan": @"1x1", @"defaultPinned": @YES,
+                    @"subtitle": T(@"categories.modded_sub"), @"iconPool": modIcons }];
+            }
+            // ---- Then the categories ----
+            [items addObjectsFromArray:catItems];
+
+            // Resolve into the PINNED (top) zone + the rest, honoring the user's saved layout. New
+            // items land in their default zone, appended.
+            NSMutableArray *defItems = [NSMutableArray array];
+            for (NSDictionary *it in items)
+                [defItems addObject:@{ @"id": it[@"id"], @"defaultPinned": it[@"defaultPinned"] ?: @NO }];
+            NSMutableArray *pIds = [NSMutableArray array], *uIds = [NSMutableArray array];
+            [[HomeLayoutStore shared] resolveItems:defItems intoPinned:pIds unpinned:uIds];
+            NSMutableDictionary *byId = [NSMutableDictionary dictionary];
+            for (NSDictionary *it in items) byId[it[@"id"]] = it;
+            NSMutableArray *ordered = [NSMutableArray array];
+            for (NSString *iid in pIds) if (byId[iid]) [ordered addObject:byId[iid]];
+            pinned = (NSInteger)ordered.count;
+            for (NSString *iid in uIds) if (byId[iid]) [ordered addObject:byId[iid]];
+            items = ordered;
         }
-        [items addObject:@{ @"id": [@"allcat:" stringByAppendingString:self.parentCategory],
-            @"kind": @"all-cat", @"cat": self.parentCategory,
-            @"label": T(@"categories.all_in_cat"),
-            @"seed": [@"allcat_" stringByAppendingString:self.parentCategory],
-            @"defSpan": @"1x1", @"defaultPinned": @NO,
-            @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount(catTotal)],
-            @"iconPool": [cat iconPoolForCategory:self.parentCategory] ?: @[] }];
-        // Subgenre tiles (this is a drilled-in screen — no collections / reorder).
-        for (NSDictionary *d in [cat subgenreCountsForCategory:self.parentCategory]) {
-            NSString *sg = d[@"subgenre"] ?: @"";
-            [items addObject:@{ @"id": [@"sub:" stringByAppendingString:sg], @"kind": @"sub", @"sub": sg,
-                @"label": locSub(sg), @"seed": sg, @"defSpan": @"1x1", @"defaultPinned": @NO,
-                @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([d[@"count"] integerValue])],
-                @"iconPool": [cat iconPoolForCategory:self.parentCategory subgenre:sg] ?: @[] }];
-        }
-    } else {
+
+        NSArray *finalItems = items;
+        NSInteger finalPinned = pinned;
+        NSString *finalWelcome = welcomeBase;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            typeof(self) sself = wself;
+            if (!sself || gen != sself.buildGeneration) return;   // a newer rebuild superseded this one
+            [sself assembleContentWithItems:finalItems pinnedCount:finalPinned welcomeBase:finalWelcome subgenre:sub];
+        });
+    }];
+}
+
+// A1: build the home/category UI on the MAIN thread from data already gathered off-thread by buildContent.
+- (void)assembleContentWithItems:(NSArray *)items pinnedCount:(NSInteger)pinned
+                     welcomeBase:(NSString *)welcomeBase subgenre:(BOOL)sub {
+    self.pinnedCount = sub ? 0 : pinned;   // subgenre screens have no pinned zone
+
+    if (!sub) {
         // ---- Welcome header ----
         self.header = [[UIView alloc] initWithFrame:CGRectZero];
         UILabel *hi = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -489,8 +603,8 @@ static UIImage *AppDropDownloadsGlyph(void) {
         subL.tag = 102; subL.font = [UIFont systemFontOfSize:13];
         subL.textColor = [IOS6Theme labelGray]; subL.numberOfLines = 2;
         subL.backgroundColor = [UIColor clearColor];
-        self.welcomeSubBase = [NSString stringWithFormat:T(@"categories.welcome_sub"), fmtCount([cat uniqueAppCount])];
-        subL.text = self.welcomeSubBase;
+        self.welcomeSubBase = welcomeBase;
+        subL.text = welcomeBase;
         [self.header addSubview:subL];
         [self.scroll addSubview:self.header];
         [self refreshActiveUsers];   // v3.2 : affiche les utilisateurs actifs (+ envoie un battement anonyme)
@@ -503,91 +617,6 @@ static UIImage *AppDropDownloadsGlyph(void) {
                        forControlEvents:UIControlEventTouchUpInside];
         [self styleNewFolderButton];
         [self.scroll addSubview:self.addFolderButton];
-
-        // ---- Category cards first (so we can sample their icons for the "All apps" mosaic) ----
-        NSMutableArray *catItems = [NSMutableArray array];
-        NSMutableArray *allSample = [NSMutableArray array];
-        for (NSDictionary *d in [cat categoryCounts]) {
-            NSString *cn = d[@"category"] ?: @"";
-            NSArray *pool = [cat iconPoolForCategory:cn] ?: @[];
-            [catItems addObject:@{ @"id": [@"cat:" stringByAppendingString:cn], @"kind": @"cat", @"cat": cn,
-                @"label": locCat(cn), @"seed": cn, @"defSpan": @"1x1", @"defaultPinned": @NO,   // « Non triées » en bas comme les autres (triée par nombre)
-                @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([d[@"count"] integerValue])],
-                @"iconPool": pool }];
-            for (NSInteger i = 0; i < 2 && i < (NSInteger)pool.count; i++) [allSample addObject:pool[i]];
-        }
-
-        // ---- Collections (Favoris + folders) ----
-        CollectionStore *store = [CollectionStore shared];
-        BOOL showFavHome = ([[NSUserDefaults standardUserDefaults] objectForKey:@"IPAInstall.ShowFavoritesOnHome"] == nil)
-                           ? YES : [[NSUserDefaults standardUserDefaults] boolForKey:@"IPAInstall.ShowFavoritesOnHome"];
-        for (NSDictionary *col in [store collections]) {
-            NSString *cid = col[@"id"];
-            if (!showFavHome && [cid isEqualToString:CollectionFavoritesId]) continue;   // v3.0: Favoris tile hidden from Home via Settings toggle (default shown; the Favoris tab stays)
-            NSArray *pool = [store iconPoolForCollection:cid];
-            NSDictionary *it = @{ @"id": [@"col:" stringByAppendingString:cid], @"kind": @"col", @"cid": cid,
-                @"label": [store nameForCollection:cid], @"seed": cid, @"defSpan": @"1x1",
-                @"defaultPinned": @([cid isEqualToString:CollectionFavoritesId] || [cid isEqualToString:CollectionLaterId]),   // Favoris + Plus tard pinned; folders not
-                @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([store countInCollection:cid])],
-                @"iconPool": pool ?: @[] };   // tiles always show the auto mosaic (preview-image pinning removed)
-            [items addObject:it];
-        }
-        // Big-by-default tiles span 2×1 on iPad, but only 1×1 on a small phone screen (3GS / iPod
-        // touch) so the pinned zone stays compact. The user can still resize them manually.
-        CGSize scr = [UIScreen mainScreen].bounds.size;
-        NSString *bigSpan = (MIN(scr.width, scr.height) < 480) ? @"1x1" : @"2x1";
-
-        // ---- All apps (wide by default) ----
-        [items addObject:@{ @"id": @"item.all", @"kind": @"all", @"label": T(@"categories.all"),
-            @"seed": @"all_apps", @"defSpan": bigSpan, @"defaultPinned": @YES,
-            @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([cat uniqueAppCount])],
-            @"iconPool": allSample }];
-        // ---- v3.2 : raccourci « Plus téléchargées » (tout le catalogue trié par téléchargements). Ses 4
-        // icônes = les 4 apps EN CE MOMENT les plus téléchargées (mises à jour via statsDownloadsChanged). ----
-        [items addObject:@{ @"id": @"item.topdl", @"kind": @"topdl", @"label": T(@"categories.top_downloads"),
-            @"seed": @"top_downloads", @"defSpan": bigSpan, @"defaultPinned": @YES,
-            @"subtitle": [NSString stringWithFormat:T(@"categories.napps"), fmtCount([cat uniqueAppCount])],
-            @"iconPool": [cat topDownloadedIconURLs:4] ?: @[] }];
-        // ---- Works today / Revival + Apps modifiées / Modded ----
-        // Retirées de l'accueil (kEnableWorksTodayModded = NO). Le code des tuiles + listes + upload
-        // reste en place mais inatteignable tant que le flag est NO.
-        if (kEnableWorksTodayModded) {
-            // ---- Works today / Revival (wide by default), mosaic of the curated apps' icons ----
-            NSMutableArray *revIcons = [NSMutableArray array];
-            for (NSDictionary *r in [[RevivalCatalog shared] appDicts]) {
-                NSString *ic = r[@"icon"];
-                if ([ic isKindOfClass:[NSString class]] && ic.length) [revIcons addObject:ic];
-            }
-            [items addObject:@{ @"id": @"item.revival", @"kind": @"revival", @"label": T(@"categories.revival"),
-                @"seed": @"revival", @"defSpan": bigSpan, @"defaultPinned": @YES,
-                @"subtitle": T(@"categories.revival_sub"), @"iconPool": revIcons }];
-            // ---- Apps modifiées / Modded (mosaic of the modded apps' icons) ----
-            NSMutableArray *modIcons = [NSMutableArray array];
-            for (NSDictionary *m in [[ModdedCatalog shared] appDicts]) {
-                NSString *ic = m[@"icon"];
-                if ([ic isKindOfClass:[NSString class]] && ic.length) [modIcons addObject:ic];
-            }
-            [items addObject:@{ @"id": @"item.modded", @"kind": @"modded", @"label": T(@"categories.modded"),
-                @"seed": @"modded", @"defSpan": @"1x1", @"defaultPinned": @YES,
-                @"subtitle": T(@"categories.modded_sub"), @"iconPool": modIcons }];
-        }
-        // ---- Then the categories ----
-        [items addObjectsFromArray:catItems];
-
-        // Resolve into the PINNED (top) zone + the rest, honoring the user's saved layout. New
-        // items land in their default zone, appended.
-        NSMutableArray *defItems = [NSMutableArray array];
-        for (NSDictionary *it in items)
-            [defItems addObject:@{ @"id": it[@"id"], @"defaultPinned": it[@"defaultPinned"] ?: @NO }];
-        NSMutableArray *pIds = [NSMutableArray array], *uIds = [NSMutableArray array];
-        [[HomeLayoutStore shared] resolveItems:defItems intoPinned:pIds unpinned:uIds];
-        NSMutableDictionary *byId = [NSMutableDictionary dictionary];
-        for (NSDictionary *it in items) byId[it[@"id"]] = it;
-        NSMutableArray *ordered = [NSMutableArray array];
-        for (NSString *iid in pIds) if (byId[iid]) [ordered addObject:byId[iid]];
-        self.pinnedCount = (NSInteger)ordered.count;
-        for (NSString *iid in uIds) if (byId[iid]) [ordered addObject:byId[iid]];
-        items = ordered;
 
         // Thin rule shown between the pinned zone and the rest.
         if (!self.zoneDivider) {

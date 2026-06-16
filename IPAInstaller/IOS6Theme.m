@@ -434,16 +434,21 @@ static UIImage *ad_roundedCard(UIColor *fill, UIColor *border) {
 
 + (void)applyToTabBar:(UITabBar *)tab {
     if (!tab) return;
-    if ([self isDefaultTheme]) {
-        if ([tab respondsToSelector:@selector(setBackgroundImage:)]) tab.backgroundImage = nil;
-        if ([tab respondsToSelector:@selector(setTintColor:)]) tab.tintColor = nil;
-        return;
-    }
+    BOOL def = [self isDefaultTheme];
+    // v3.3 : l'icône SÉLECTIONNÉE du menu du bas ne doit PAS rester bleue (stock) dans un thème non-défaut →
+    // on la teinte avec l'accent du thème. iOS 5-6 : -setSelectedImageTintColor:. iOS 7+ : c'est -tintColor qui
+    // colore la sélection. Thème CLAIR PAR DÉFAUT = on laisse le bleu stock (sel = nil).
+    UIColor *sel = def ? nil : [self barTintColor];
     if ([tab respondsToSelector:@selector(setBackgroundImage:)]) {
-        UIImage *bg = [self tabBarBackground];
-        if (bg) tab.backgroundImage = bg;
+        if (def) {
+            tab.backgroundImage = nil;
+        } else {
+            UIImage *bg = [self tabBarBackground];
+            if (bg) tab.backgroundImage = bg;
+        }
     }
-    if ([tab respondsToSelector:@selector(setTintColor:)]) tab.tintColor = [self barTintColor];
+    if ([tab respondsToSelector:@selector(setSelectedImageTintColor:)]) tab.selectedImageTintColor = sel;  // iOS 5-6
+    if ([tab respondsToSelector:@selector(setTintColor:)]) tab.tintColor = sel;                            // iOS 7+
 }
 
 + (void)styleButton:(UIButton *)button {

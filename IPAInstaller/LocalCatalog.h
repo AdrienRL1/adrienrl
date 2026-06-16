@@ -71,6 +71,12 @@ extern NSString *const LocalCatalogDidUpdateNotification;
                          limit:(NSInteger)limit
                     completion:(void (^)(NSDictionary *result))completion;
 
+// Runs `block` on the serial search queue (the SAME queue every query/write uses), so the read methods
+// below (categoryCounts/iconPoolForCategory/…) can be called from inside it WITHOUT touching the main thread
+// and WITHOUT racing self.db. Use this to gather catalog data off the main thread, then hop back to main to
+// build UI. No-op if block is nil.
+- (void)performRead:(dispatch_block_t)block;
+
 // v1.7: category browse menu — counts per top-level category (only non-empty).
 // Returns NSArray of @{ @"category": NSString, @"count": NSNumber }, sorted by count desc.
 - (NSArray *)categoryCounts;

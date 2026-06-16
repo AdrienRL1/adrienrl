@@ -2,6 +2,13 @@
 
 Older release notes are also available on the [GitHub Releases](https://github.com/AdrienRL1/AppDrop/releases) page.
 
+## AppDrop v3.2.1
+
+- Freezing is a lot better now, especially on older devices. It can still happen once in a while, but nowhere near as much as before.
+- Tidied up the catalogue so apps that don't belong aren't recommended anymore.
+- The Search, Install and Settings icons at the bottom look a lot sharper.
+- If you use a colour or dark theme, the selected tab at the bottom now follows your theme instead of always being blue.
+
 ## AppDrop v3.1.4 — Crash & reliability fixes, plus some trimming
 
 ### Fixed

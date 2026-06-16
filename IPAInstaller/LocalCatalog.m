@@ -13,6 +13,9 @@
 static NSString *const kCatalogURL = @"https://adrienrl1.github.io/cydia/catalog.db.gz";
 static NSString *const kCategoryOverridesURL = @"https://adrienrl1.github.io/cydia/category-overrides.json";  // #156
 static NSString *const kCatalogExtrasURL     = @"https://adrienrl1.github.io/cydia/catalog-extras.json";      // v3.1
+// #37 de-recommandation : apps pour adultes retirées des surfaces de RECO (accueil/compteurs/mosaïques),
+// mais toujours trouvables UNIQUEMENT par recherche textuelle. Format : { "version":N, "hidden":[bid,...] }.
+static NSString *const kHiddenAppsURL        = @"https://adrienrl1.github.io/cydia/hidden.json";              // #37
 // v3.1 ⇄ v3.2 SWITCH (must match kEnableCatalogType in UploadViewController.m). The community-app
 // catalog-extras merge is DEFERRED to v3.2 — methods are KEPT but not called. Flip to YES for v3.2.
 static const BOOL kEnableCatalogExtras = YES;   // v3.2 : fusionne les apps contribuées (catégorie « Non triées »)
@@ -71,6 +74,11 @@ static void ADSetNoFileProtection(NSString *path) {
 // real base_idx/img_pk. Atomic so dictFromRow can read a consistent snapshot off the search queue.
 @property (atomic, strong) NSDictionary *extraURLs;   // "bid_lower|version" -> .ipa URL
 @property (atomic, strong) NSDictionary *extraIcons;  // "bid_lower"          -> icon URL
+// #37 de-recommandation : fragments SQL " NOT IN (...)" construits depuis hidden.json. Atomiques car lus
+// depuis _searchQueue. hiddenBidList exclut par bid_lower ; hiddenImgList exclut par img_pk (cat_icon_pool
+// n'a pas de colonne bid). nil si aucune app cachée.
+@property (atomic, strong) NSString *hiddenBidList;   // "('com.x','com.y',...)" ou nil
+@property (atomic, strong) NSString *hiddenImgList;   // "(123,456,...)" ou nil
 @end
 
 @implementation LocalCatalog {
@@ -362,6 +370,7 @@ static void ADSetNoFileProtection(NSString *path) {
         [self applyStoredCategoryOverrides];     // #156: re-apply category corrections to the fresh DB
         [self ensureDownloadsTable];             // v3.2 : recréer la table downloads dans le nouveau fichier
         if (kEnableCatalogExtras) [self applyCatalogExtras];     // v3.2 (deferred): re-merge community apps
+        [self applyStoredHiddenApps];            // #37 : reconstruire la de-recommandation sur le nouveau DB
 
         if (expectedGzSize > 0)
             [[NSUserDefaults standardUserDefaults] setObject:@(expectedGzSize) forKey:kCatalogGzSizeKey];
@@ -481,15 +490,32 @@ static void ADSetNoFileProtection(NSString *path) {
         self.db = db;
         self.urls = urls;
         self.loaded = YES;
-        [self applyStoredCategoryOverrides];   // #156: apply cached category corrections to this DB
-        [self refreshCategoryOverrides];       // #156: fetch the latest in the background, apply + notify
-        [self ensureDownloadsTable];           // v3.2 : table downloads prête pour le tri SQL
-        if (kEnableCatalogExtras) [self applyCatalogExtras];     // v3.2 (deferred): merge community apps
-        if (kEnableCatalogExtras) [self refreshCatalogExtras];   // v3.2 (deferred): fetch catalog-extras
+        [self ensureDownloadsTable];           // v3.2 : table downloads prête pour le tri SQL (rapide, gardée avant l'affichage)
 
+        // A1 (démarrage encore plus rapide + tout en arrière-plan) : on AFFICHE l'accueil dès que le catalogue
+        // en cache est ouvert (completion ci-dessous), PUIS on fait l'enrichissement (corrections de catégories
+        // + apps contribuées + refreshes réseau) en ARRIÈRE-PLAN. L'enrichissement est mis en file APRÈS la
+        // 1re collecte de l'accueil (déclenchée par completion → buildContent → performRead, donc en tête de la
+        // file sérielle), puis poste LocalCatalogDidUpdateNotification → l'accueil se reconstruit avec les données
+        // fusionnées. Rien ne bloque l'UI ; le catalogue se met à jour tout seul.
+        __weak typeof(self) ws = self;
         dispatch_async(dispatch_get_main_queue(), ^{
             if (progressBlock) progressBlock([NSString stringWithFormat:@"Catalogue : %lld apps", entryCount]);
-            if (completion) completion(YES, nil);
+            if (completion) completion(YES, nil);   // accueil affiché MAINTENANT (catalogue en cache)
+            [ws performRead:^{                       // enrichissement en arrière-plan, APRÈS la 1re collecte
+                if (!ws) return;
+                // Le catalogue en cache contient déjà la fusion du dernier lancement (lignes base_idx=-1
+                // persistées) → le 1er affichage montre déjà les apps contribuées. Ces appels ré-assurent la
+                // cohérence (idempotents) — surtout après une re-décompression fraîche du catalogue. Pas de
+                // notification de rebuild explicite ici (redondante, éviterait un clignotement) : les refreshes
+                // réseau ci-dessous postent LocalCatalogDidUpdateNotification SEULEMENT s'ils apportent du neuf.
+                [ws applyStoredCategoryOverrides];                      // #156 : corrections de catégories en cache
+                if (kEnableCatalogExtras) [ws applyCatalogExtras];      // v3.2 : fusionne les apps contribuées
+                [ws applyStoredHiddenApps];                            // #37 : de-recommandation en cache
+                [ws refreshCategoryOverrides];                         // #156 : réseau → applique + notifie si nouveau
+                if (kEnableCatalogExtras) [ws refreshCatalogExtras];   // v3.2 : réseau → applique + notifie si nouveau
+                [ws refreshHiddenApps];                                // #37 : réseau → applique + notifie si nouveau
+            }];
         });
     });
 }
@@ -532,6 +558,11 @@ static void ADSetNoFileProtection(NSString *path) {
             if (completion) completion(res);
         });
     });
+}
+
+- (void)performRead:(dispatch_block_t)block {
+    if (!block) return;
+    dispatch_async(_searchQueue, block);   // serial queue → safe self.db access, off the main thread
 }
 
 // v3.2 — SQL predicate matching `category`, treating "Uncategorized" (the « Non triées » bucket)
@@ -594,6 +625,9 @@ static NSString *ADCategoryPredicate(NSString *category) {
             [whereClause appendString:[NSString stringWithFormat:@" AND subgenre = '%@'", s]];
         }
     }
+    // #37 : en NAVIGATION (pas en recherche), retirer les apps de-recommandées de la liste — elles
+    // restent trouvables UNIQUEMENT par recherche textuelle.
+    if (!qLike) [whereClause appendString:[self hiddenExclusionForBidColumn:@"bid_lower"]];
     // (Suspect-file SQL filter removed in v2.0.8 — too many false positives.
     //  See AppDetailViewController for per-row install-time mismatch alert.)
 
@@ -693,9 +727,10 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSString *sqlStr = [NSString stringWithFormat:
         @"SELECT CASE WHEN category IS NULL OR category = '' THEN 'Uncategorized' ELSE category END AS cat, "
         @"COUNT(*) FROM entries_unique "
-        @"WHERE min_minos <= %ld%@ "
+        @"WHERE min_minos <= %ld%@%@ "
         @"GROUP BY cat ORDER BY COUNT(*) DESC",
-        (long)[self deviceMaxMinos], [self deviceIdiomPlatClause]];
+        (long)[self deviceMaxMinos], [self deviceIdiomPlatClause],
+        [self hiddenExclusionForBidColumn:@"bid_lower"]];   // #37 : exclure les apps de-recommandées des compteurs
     const char *sql = [sqlStr UTF8String];
     sqlite3_stmt *st = NULL;
     if (sqlite3_prepare_v2(self.db, sql, -1, &st, NULL) == SQLITE_OK) {
@@ -715,9 +750,10 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSString *sql = [NSString stringWithFormat:
                     @"SELECT subgenre, COUNT(*) FROM entries_unique "
                     @"WHERE category=?1 AND subgenre IS NOT NULL AND subgenre<>'' "
-                    @"AND min_minos <= %ld%@ "
+                    @"AND min_minos <= %ld%@%@ "
                     @"GROUP BY subgenre ORDER BY COUNT(*) DESC",
-                    (long)[self deviceMaxMinos], [self deviceIdiomPlatClause]];
+                    (long)[self deviceMaxMinos], [self deviceIdiomPlatClause],
+                    [self hiddenExclusionForBidColumn:@"bid_lower"]];   // #37
     sqlite3_stmt *st = NULL;
     if (sqlite3_prepare_v2(self.db, [sql UTF8String], -1, &st, NULL) == SQLITE_OK) {
         sqlite3_bind_text(st, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
@@ -768,8 +804,10 @@ static NSString *iconURLForImgPk(long imgPk) {
     //    cat_icon_pool has NO plat column, so on iPhone (where iPad-only apps must be hidden) we
     //    SKIP it and source from entries_unique below (which has plat). iPad runs everything → use it.
     if (platClause.length == 0) {
-        const char *sql = "SELECT img_pk FROM cat_icon_pool WHERE category=?1 AND minos<=?2 "
-                          "ORDER BY rn_cat LIMIT 24";
+        NSString *sqlStr = [NSString stringWithFormat:
+            @"SELECT img_pk FROM cat_icon_pool WHERE category=?1 AND minos<=?2%@ "
+            @"ORDER BY rn_cat LIMIT 24", [self hiddenExclusionForImgColumn:@"img_pk"]];   // #37
+        const char *sql = [sqlStr UTF8String];
         sqlite3_stmt *st = NULL;
         if (sqlite3_prepare_v2(self.db, sql, -1, &st, NULL) == SQLITE_OK) {
             sqlite3_bind_text(st, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
@@ -792,7 +830,8 @@ static NSString *iconURLForImgPk(long imgPk) {
         // v3.2 : ADCategoryPredicate gère « Uncategorized » = catégorie NULL/vide (tuile « Non triées »).
         NSString *fsqlStr = [NSString stringWithFormat:
                            @"SELECT img_pk FROM entries_unique WHERE %@ AND min_minos<=?1 "
-                           @"AND img_pk>0%@ ORDER BY size_kb DESC LIMIT 24", ADCategoryPredicate(category), platClause];
+                           @"AND img_pk>0%@%@ ORDER BY size_kb DESC LIMIT 24", ADCategoryPredicate(category), platClause,
+                           [self hiddenExclusionForBidColumn:@"bid_lower"]];   // #37
         const char *fsql = [fsqlStr UTF8String];
         sqlite3_stmt *f = NULL;
         if (sqlite3_prepare_v2(self.db, fsql, -1, &f, NULL) == SQLITE_OK) {
@@ -815,8 +854,10 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSString *platClause = [self deviceIdiomPlatClause];   // "" on iPad, " AND (plat&2)!=0" on iPhone
     // cat_icon_pool has no plat column → skip it on iPhone (source from entries_unique below instead).
     if (platClause.length == 0) {
-        const char *sql = "SELECT img_pk FROM cat_icon_pool WHERE category=?1 AND subgenre=?2 "
-                          "AND minos<=?3 ORDER BY rn_sub LIMIT 24";
+        NSString *sqlStr = [NSString stringWithFormat:
+            @"SELECT img_pk FROM cat_icon_pool WHERE category=?1 AND subgenre=?2 "
+            @"AND minos<=?3%@ ORDER BY rn_sub LIMIT 24", [self hiddenExclusionForImgColumn:@"img_pk"]];   // #37
+        const char *sql = [sqlStr UTF8String];
         sqlite3_stmt *st = NULL;
         if (sqlite3_prepare_v2(self.db, sql, -1, &st, NULL) == SQLITE_OK) {
             sqlite3_bind_text(st, 1, [category UTF8String], -1, SQLITE_TRANSIENT);
@@ -836,7 +877,8 @@ static NSString *iconURLForImgPk(long imgPk) {
     if (out.count < 6) {
         NSString *fsqlStr = [NSString stringWithFormat:
                            @"SELECT img_pk FROM entries_unique WHERE category=?1 AND subgenre=?2 "
-                           @"AND min_minos<=?3 AND img_pk>0%@ ORDER BY size_kb DESC LIMIT 24", platClause];
+                           @"AND min_minos<=?3 AND img_pk>0%@%@ ORDER BY size_kb DESC LIMIT 24", platClause,
+                           [self hiddenExclusionForBidColumn:@"bid_lower"]];   // #37
         const char *fsql = [fsqlStr UTF8String];
         sqlite3_stmt *f = NULL;
         if (sqlite3_prepare_v2(self.db, fsql, -1, &f, NULL) == SQLITE_OK) {
@@ -937,8 +979,9 @@ static NSString *iconURLForImgPk(long imgPk) {
     NSString *platClause = [self deviceIdiomPlatClause];   // "" sur iPad, " AND (plat&2)!=0" sur iPhone
     NSString *sqlStr = [NSString stringWithFormat:
         @"SELECT e.img_pk FROM entries_unique e JOIN downloads d ON d.bid_lower = e.bid_lower "
-        @"WHERE d.count > 0 AND e.min_minos <= ?1 AND e.img_pk > 0%@ "
-        @"ORDER BY d.count DESC LIMIT ?2", platClause];
+        @"WHERE d.count > 0 AND e.min_minos <= ?1 AND e.img_pk > 0%@%@ "
+        @"ORDER BY d.count DESC LIMIT ?2", platClause,
+        [self hiddenExclusionForBidColumn:@"e.bid_lower"]];   // #37
     sqlite3_stmt *st = NULL;
     if (sqlite3_prepare_v2(self.db, [sqlStr UTF8String], -1, &st, NULL) == SQLITE_OK) {
         sqlite3_bind_int64(st, 1, [self deviceMaxMinos]);
@@ -957,8 +1000,9 @@ static NSString *iconURLForImgPk(long imgPk) {
     // downloads when tapped.
     if ((NSInteger)out.count < n) {
         NSString *fillStr = [NSString stringWithFormat:
-            @"SELECT img_pk FROM entries_unique WHERE min_minos <= ?1 AND img_pk > 0%@ "
-            @"ORDER BY size_kb DESC LIMIT ?2", platClause];
+            @"SELECT img_pk FROM entries_unique WHERE min_minos <= ?1 AND img_pk > 0%@%@ "
+            @"ORDER BY size_kb DESC LIMIT ?2", platClause,
+            [self hiddenExclusionForBidColumn:@"bid_lower"]];   // #37
         sqlite3_stmt *f = NULL;
         if (sqlite3_prepare_v2(self.db, [fillStr UTF8String], -1, &f, NULL) == SQLITE_OK) {
             sqlite3_bind_int64(f, 1, [self deviceMaxMinos]);
@@ -1119,10 +1163,95 @@ static NSString *iconURLForImgPk(long imgPk) {
         if (err || code < 200 || code >= 300 || data.length < 2) return;
         id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
         if (![obj isKindOfClass:[NSDictionary class]]) return;
+        // A1 : ne ré-appliquer/notifier QUE si le contenu a changé (évite un rebuild/clignotement inutile).
+        NSData *cached = [NSData dataWithContentsOfFile:[self categoryOverridesCachePath]];
+        if (cached && [cached isEqualToData:data]) return;   // identique → rien à faire
         [data writeToFile:[self categoryOverridesCachePath] atomically:YES];
         dispatch_async(self->_searchQueue, ^{
             [self applyStoredCategoryOverrides];
             self->_countCacheKey = nil;   // SQL-01: category/subgenre changed → counts may differ
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSNotificationCenter defaultCenter] postNotificationName:LocalCatalogDidUpdateNotification object:nil];
+            });
+        });
+    }];
+}
+
+#pragma mark - Hidden apps (#37, de-recommandation des apps pour adultes)
+
+- (NSString *)hiddenAppsCachePath {
+    NSString *c = [NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) firstObject];
+    return [c stringByAppendingPathComponent:@"appdrop-hidden.json"];
+}
+
+// Fragment SQL " AND <col> NOT IN ('a','b',...)" pour exclure les apps cachées d'une surface de
+// recommandation. Vide si aucune liste. `col` = nom (éventuellement préfixé, ex. "e.bid_lower").
+- (NSString *)hiddenExclusionForBidColumn:(NSString *)col {
+    NSString *list = self.hiddenBidList;   // lecture atomique
+    return list.length ? [NSString stringWithFormat:@" AND %@ NOT IN %@", col, list] : @"";
+}
+
+// Idem mais par img_pk (pour cat_icon_pool, qui n'a pas de colonne bid).
+- (NSString *)hiddenExclusionForImgColumn:(NSString *)col {
+    NSString *list = self.hiddenImgList;
+    return list.length ? [NSString stringWithFormat:@" AND %@ NOT IN %@", col, list] : @"";
+}
+
+// Lit le hidden.json en cache, construit les listes SQL NOT IN (bids + img_pk résolus depuis le
+// catalogue) et les publie dans hiddenBidList/hiddenImgList. MUST run on _searchQueue (lit self.db).
+- (void)applyStoredHiddenApps {
+    NSData *data = [NSData dataWithContentsOfFile:[self hiddenAppsCachePath]];
+    NSArray *bids = nil;
+    if (data.length > 1) {
+        id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+        if ([obj isKindOfClass:[NSDictionary class]]) {
+            id h = [(NSDictionary *)obj objectForKey:@"hidden"];
+            bids = [h isKindOfClass:[NSArray class]] ? h : nil;
+        } else if ([obj isKindOfClass:[NSArray class]]) {
+            bids = obj;
+        }
+    }
+    if (!bids.count) { self.hiddenBidList = nil; self.hiddenImgList = nil; return; }
+
+    // Liste des bids (minuscules, échappés) → "('com.x','com.y',...)".
+    NSMutableArray *quoted = [NSMutableArray arrayWithCapacity:bids.count];
+    for (id b in bids) {
+        if (![b isKindOfClass:[NSString class]] || ![b length]) continue;
+        NSString *low = [(NSString *)b lowercaseString];
+        NSString *esc = [low stringByReplacingOccurrencesOfString:@"'" withString:@"''"];
+        [quoted addObject:[NSString stringWithFormat:@"'%@'", esc]];
+    }
+    if (!quoted.count) { self.hiddenBidList = nil; self.hiddenImgList = nil; return; }
+    self.hiddenBidList = [NSString stringWithFormat:@"(%@)", [quoted componentsJoinedByString:@","]];
+
+    // Résoudre les img_pk de ces bids (pour exclure aussi de cat_icon_pool, qui n'a pas de bid).
+    NSMutableArray *imgs = [NSMutableArray array];
+    if (self.db) {
+        NSString *sql = [NSString stringWithFormat:
+            @"SELECT DISTINCT img_pk FROM entries_unique WHERE bid_lower IN %@ AND img_pk>0",
+            self.hiddenBidList];
+        sqlite3_stmt *st = NULL;
+        if (sqlite3_prepare_v2(self.db, [sql UTF8String], -1, &st, NULL) == SQLITE_OK) {
+            while (sqlite3_step(st) == SQLITE_ROW)
+                [imgs addObject:[NSString stringWithFormat:@"%d", sqlite3_column_int(st, 0)]];
+        }
+        sqlite3_finalize(st);
+    }
+    self.hiddenImgList = imgs.count ? [NSString stringWithFormat:@"(%@)", [imgs componentsJoinedByString:@","]] : nil;
+}
+
+// Télécharge hidden.json, le met en cache, reconstruit les listes et rafraîchit l'UI. Best-effort.
+- (void)refreshHiddenApps {
+    [HTTPSClient getURL:kHiddenAppsURL timeout:20 completion:^(NSData *data, NSInteger code, NSError *err) {
+        if (err || code < 200 || code >= 300 || data.length < 2) return;
+        id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+        if (![obj isKindOfClass:[NSDictionary class]] && ![obj isKindOfClass:[NSArray class]]) return;
+        NSData *cached = [NSData dataWithContentsOfFile:[self hiddenAppsCachePath]];
+        if (cached && [cached isEqualToData:data]) return;   // identique → rien à faire
+        [data writeToFile:[self hiddenAppsCachePath] atomically:YES];
+        dispatch_async(self->_searchQueue, ^{
+            [self applyStoredHiddenApps];
+            self->_countCacheKey = nil;   // SQL-01 : le filtre a changé → les totaux diffèrent
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[NSNotificationCenter defaultCenter] postNotificationName:LocalCatalogDidUpdateNotification object:nil];
             });
@@ -1347,6 +1476,10 @@ static NSString *iconURLForImgPk(long imgPk) {
         if (err || code < 200 || code >= 300 || data.length < 2) return;
         id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
         if (![obj isKindOfClass:[NSDictionary class]] && ![obj isKindOfClass:[NSArray class]]) return;
+        // A1 : ne ré-appliquer/notifier QUE si le contenu a changé (sinon : rebuild = clignotement inutile à
+        // chaque lancement, puisque le catalogue en cache reflète déjà ces extras).
+        NSData *cached = [NSData dataWithContentsOfFile:[self catalogExtrasCachePath]];
+        if (cached && [cached isEqualToData:data]) return;   // identique → rien à faire
         [data writeToFile:[self catalogExtrasCachePath] atomically:YES];
         dispatch_async(self->_searchQueue, ^{
             [self applyCatalogExtras];

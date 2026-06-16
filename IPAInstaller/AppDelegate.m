@@ -68,6 +68,77 @@ static UIImage *AppDropFavoritesTabIcon(void) {
     return cached;
 }
 
+// v3.3 : icônes d'onglet Recherche / Installer / Réglages — DESSINÉES EN CODE (comme Accueil/Favoris), pour
+// remplacer les anciens PNG `tab-search`/`tab-install`/`tab-settings` qui étaient pixelisés/malformés sur
+// certains appareils. Masque alpha 30×30 redessiné au scale de l'écran → NET partout (iPad, iPhone Retina
+// 2×/3× ET non-Retina 1×), teinté exactement comme les autres onglets. Mémoïsées (géométrie pure).
+static UIImage *AppDropSearchTabIcon(void) {
+    static UIImage *cached = nil; static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        UIGraphicsBeginImageContextWithOptions(CGSizeMake(30, 30), NO, [UIScreen mainScreen].scale);
+        [[UIColor blackColor] setStroke];
+        UIBezierPath *lens = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(5, 5, 14, 14)];  // loupe
+        lens.lineWidth = 2.8; [lens stroke];
+        UIBezierPath *handle = [UIBezierPath bezierPath];                                        // manche
+        [handle moveToPoint:CGPointMake(17.4, 17.4)];
+        [handle addLineToPoint:CGPointMake(25, 25)];
+        handle.lineWidth = 3.0; handle.lineCapStyle = kCGLineCapRound; [handle stroke];
+        cached = UIGraphicsGetImageFromCurrentImageContext();
+        UIGraphicsEndImageContext();
+    });
+    return cached;
+}
+
+static UIImage *AppDropInstallTabIcon(void) {
+    static UIImage *cached = nil; static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        UIGraphicsBeginImageContextWithOptions(CGSizeMake(30, 30), NO, [UIScreen mainScreen].scale);
+        [[UIColor blackColor] setStroke];
+        // Flèche descendante (téléchargement/installation) tombant dans un bac ouvert.
+        UIBezierPath *shaft = [UIBezierPath bezierPath];
+        [shaft moveToPoint:CGPointMake(15, 4)];
+        [shaft addLineToPoint:CGPointMake(15, 17)];
+        shaft.lineWidth = 2.8; shaft.lineCapStyle = kCGLineCapRound; [shaft stroke];
+        UIBezierPath *head = [UIBezierPath bezierPath];
+        [head moveToPoint:CGPointMake(9.5, 12)];
+        [head addLineToPoint:CGPointMake(15, 17.5)];
+        [head addLineToPoint:CGPointMake(20.5, 12)];
+        head.lineWidth = 2.8; head.lineCapStyle = kCGLineCapRound; head.lineJoinStyle = kCGLineJoinRound; [head stroke];
+        UIBezierPath *tray = [UIBezierPath bezierPath];
+        [tray moveToPoint:CGPointMake(5.5, 19)];
+        [tray addLineToPoint:CGPointMake(5.5, 25.5)];
+        [tray addLineToPoint:CGPointMake(24.5, 25.5)];
+        [tray addLineToPoint:CGPointMake(24.5, 19)];
+        tray.lineWidth = 2.8; tray.lineCapStyle = kCGLineCapRound; tray.lineJoinStyle = kCGLineJoinRound; [tray stroke];
+        cached = UIGraphicsGetImageFromCurrentImageContext();
+        UIGraphicsEndImageContext();
+    });
+    return cached;
+}
+
+static UIImage *AppDropSettingsTabIcon(void) {
+    static UIImage *cached = nil; static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        UIGraphicsBeginImageContextWithOptions(CGSizeMake(30, 30), NO, [UIScreen mainScreen].scale);
+        CGContextRef c = UIGraphicsGetCurrentContext();
+        [[UIColor blackColor] setFill];
+        CGContextTranslateCTM(c, 15, 15);                       // origine au centre
+        for (int i = 0; i < 8; i++) {                           // 8 dents
+            CGContextSaveGState(c);
+            CGContextRotateCTM(c, i * (M_PI / 4.0));
+            [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(-2.3, -13, 4.6, 6.5) cornerRadius:1.2] fill];
+            CGContextRestoreGState(c);
+        }
+        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(-9, -9, 18, 18)] fill];   // corps
+        CGContextSetBlendMode(c, kCGBlendModeClear);                                  // trou central
+        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(-3.7, -3.7, 7.4, 7.4)] fill];
+        CGContextSetBlendMode(c, kCGBlendModeNormal);
+        cached = UIGraphicsGetImageFromCurrentImageContext();
+        UIGraphicsEndImageContext();
+    });
+    return cached;
+}
+
 // iOS 5 does NOT forward rotation from a UINavigationController to its visible view
 // controller (iOS 6+ does). Since every tab is nav-wrapped, that left the whole app
 // portrait-locked on iPad iOS 5.1.1 (feedback #13: "goes crazy"/"won't rotate"). This
@@ -151,7 +222,7 @@ static UIImage *AppDropFavoritesTabIcon(void) {
         SearchViewController *search = [[SearchViewController alloc] init];
         UINavigationController *searchNav = [[ADNavigationController alloc] initWithRootViewController:search];
         searchNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.search")
-                                                              image:[UIImage imageNamed:@"tab-search"]
+                                                              image:AppDropSearchTabIcon()
                                                                 tag:1];
 
         CPLog(@"alloc FavVC");
@@ -166,14 +237,14 @@ static UIImage *AppDropFavoritesTabIcon(void) {
         RootViewController *install = [[RootViewController alloc] init];  // legacy URL/jobs screen
         UINavigationController *installNav = [[ADNavigationController alloc] initWithRootViewController:install];
         installNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.install")
-                                                              image:[UIImage imageNamed:@"tab-install"]
+                                                              image:AppDropInstallTabIcon()
                                                                 tag:3];
 
         CPLog(@"alloc SettingsVC");
         SettingsViewController *settings = [[SettingsViewController alloc] init];
         UINavigationController *settingsNav = [[ADNavigationController alloc] initWithRootViewController:settings];
         settingsNav.tabBarItem = [[UITabBarItem alloc] initWithTitle:T(@"tab.settings")
-                                                               image:[UIImage imageNamed:@"tab-settings"]
+                                                               image:AppDropSettingsTabIcon()
                                                                  tag:4];
 
         CPLog(@"alloc TabBarController");
