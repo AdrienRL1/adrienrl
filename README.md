@@ -143,24 +143,6 @@ Pick from **8 light colours** or **9 dark themes** — the whole app retints ins
   <img src="screenshots/v3-home-teal.png" width="300" alt="Home screen in a teal light theme">
 </p>
 
-## Contribute apps
-
-Got an old `.ipa` that isn't in AppDrop yet? You can add it yourself — no account, no GitHub, just a browser:
-
-**[upload.appdrop.ca](https://upload.appdrop.ca)**
-
-<p align="center">
-  <img src="screenshots/upload-site.png" width="700" alt="The AppDrop upload site — drag in .ipa files to contribute, no account needed">
-</p>
-
-Drag in one or more `.ipa` files (or a whole folder). Each upload lands in an isolated ingest area, is automatically checked (valid IPA, not encrypted, safety-screened), de-duplicated against the catalog, and queued for review before it joins the shared library that every AppDrop install sees. The site is available in 10 languages with automatic light/dark theming.
-
-Once an upload has been reviewed and accepted, the `.ipa` is published to the public archive that AppDrop's catalog points to:
-
-**[archive.org/details/appdrop-apps](https://archive.org/details/appdrop-apps)**
-
-So everything the community contributes ends up there, freely browsable and downloadable.
-
 ## How it works
 
 ```
