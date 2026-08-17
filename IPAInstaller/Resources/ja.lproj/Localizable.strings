@@ -185,6 +185,7 @@
 "install.error.no_ipainstaller" = "ipainstaller が見つかりません。Cydia から「IPA Installer Console」パッケージをインストールしてください (検索: appinst または ipainstaller)。";
 "install.error.spawn_failed" = "posix_spawn(%s) が失敗: %s";
 "install.error.install_failed" = "インストールに失敗しました。非常に大きなアプリ、または空き容量やメモリが少ないときに起こることがあります。もう一度試す、空き容量を増やす、または別のバージョンを試してください。";
+"install.error.refused" = "インストールが拒否されました: %@ — このアプリはお使いのデバイスでは動作しないため、再試行しても解決しません。バージョン一覧から古いバージョンをお試しください。";
 "install.error.no_space" = "このアプリをインストールする空き容量が足りません（約%@の空きが必要）。空き容量を増やして再試行してください。";
 
 /* ===== App detail extras (v1.8.7) ===== */

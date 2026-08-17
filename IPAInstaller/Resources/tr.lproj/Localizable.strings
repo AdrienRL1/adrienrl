@@ -191,6 +191,7 @@
 "install.error.no_ipainstaller" = "ipainstaller bulunamadı. Cydia'dan « IPA Installer Console » paketini yükleyin (arama kısmına: appinst veya ipainstaller yazın).";
 "install.error.spawn_failed" = "posix_spawn(%s) başarısız oldu: %s";
 "install.error.install_failed" = "Yükleme başarısız oldu. Çok büyük uygulamalarda ya da depolama/bellek azaldığında olabilir — tekrar dene, yer aç veya farklı bir sürüm dene.";
+"install.error.refused" = "Yükleme reddedildi: %@ — bu uygulama cihazında çalışamaz, tekrar denemek işe yaramaz. Sürümler listesinden daha eski bir sürüm dene.";
 "install.error.no_space" = "Bu uygulamayı yüklemek için yeterli boş alan yok (yaklaşık %@ boş alan gerekli). Yer açıp tekrar deneyin.";
 
 /* ===== App detail extras (v1.8.7) ===== */

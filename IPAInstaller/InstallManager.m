@@ -887,13 +887,23 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
             }
             NSString *out = nil;
             int exitCode = [self runIpainstallerOnFile:localPath capturedOutput:&out];
-            BOOL claimed = (exitCode == 0) || (out && [out.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
+
+            // ipainstaller's EXIT CODE IS MEANINGLESS — verified on an iPad 3 / iOS 5.1.1 running
+            // autopear's build: it exits 0 when it REFUSES the .ipa ("Opera Mini (v13.0.1) requires
+            // iOS 7.0 while your system is 5.1.1.") and exits 1 when the install actually SUCCEEDS.
+            // Treating exit 0 as success is precisely what produced the long-standing "AppDrop says
+            // installed but the app never appears on my home screen" reports: every app the device
+            // was too old to run was reported as a success. The exit code is therefore ignored from
+            // here on — the only positive signal we take from the CLI is its "…successfully." line,
+            // and the device itself is the tiebreaker.
+            NSString *refusal = [self refusalReasonFromInstallerOutput:out];
+            BOOL claimed = (out && [out.lowercaseString rangeOfString:@"successfully"].location != NSNotFound);
             BOOL success = claimed;
-            // ipainstaller's exit code is UNRELIABLE on several jailbreaks. The feedback screenshots
-            // show two opposite failure modes, both fixed by trusting the DEVICE over the exit code:
-            //   • #163/#120/#121: it exits 1 (output stuck at "Analyzing…/Installing…") yet the app
-            //     actually installed and appears on the home screen → false "Install failed".
-            //   • #150 (iOS 9): it prints "…successfully" / exits 0 yet the app isn't registered.
+            // ipainstaller's output is UNRELIABLE on several jailbreaks too. The feedback screenshots
+            // show two opposite failure modes, both fixed by trusting the DEVICE over the CLI:
+            //   • #163/#120/#121: output stuck at "Analyzing…/Installing…" yet the app actually
+            //     installed and appears on the home screen → false "Install failed".
+            //   • #150 (iOS 9): it prints "…successfully" yet the app isn't registered.
             // So read the app's REAL bundle id from the downloaded .ipa's Info.plist (most reliable;
             // fall back to parsing stdout) and ask the device whether it's actually installed.
             NSString *vbid = [[IPAPackage metadataForIPA:localPath] objectForKey:@"bid"];
@@ -902,11 +912,17 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                 if (!claimed) {
                     // RESCUE (#163/#120/#121): only when POSITIVELY confirmed installed — a "couldn't
                     // check" must NOT turn a real failure into a false success, so use the strict probe.
-                    if ([self isBundleIdDefinitelyInstalled:vbid]) success = YES;
-                } else if ([InstallManager iosMajorVersion] >= 9) {
-                    // DOWNGRADE (#150): claimed success but not registered. Gate to iOS 9 (where the
-                    // silent-fail exists); the tolerant verify returns YES when it can't list, so a
-                    // genuinely-working install (e.g. iPad 4 / iOS 6) is never false-failed.
+                    // Skipped on an explicit refusal: ipainstaller stated why it declined, and the
+                    // bundle id may well be on disk already from an EARLIER install of the same app —
+                    // which would otherwise resurrect the very false "Installed" this fixes.
+                    if (!refusal.length && [self isBundleIdDefinitelyInstalled:vbid]) success = YES;
+                } else {
+                    // DOWNGRADE (#150): claimed success but not registered. Applies to EVERY iOS
+                    // version now — the silent failure was never iOS-9-specific, and gating it to
+                    // iOS 9+ is exactly why iOS 5-8 users were told "Installed" for an app that was
+                    // never installed. The tolerant verify returns YES whenever it cannot actually
+                    // disprove the install, so a genuinely-working install (iPad 4 / iOS 6) is never
+                    // false-failed.
                     if (![self verifyInstalledBundleId:vbid]) {
                         success = NO;
                         out = [(out ?: @"") stringByAppendingString:
@@ -966,7 +982,12 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
                     // instead of the raw "(exit 1): Analyzing _inst_….ipa" jargon. The technical
                     // output still goes to the device console for debugging.
                     NSLog(@"[InstallManager] install failed (exit %d): %@", exitCode, out);
-                    job.message = T(@"install.error.install_failed");
+                    // When ipainstaller stated a reason (too-new iOS, unsupported device, corrupt
+                    // .ipa…), show THAT instead of the generic "try again" text — retrying an app
+                    // your device can't run never helps, and the vague message sent users in circles.
+                    job.message = refusal.length
+                        ? [NSString stringWithFormat:T(@"install.error.refused"), refusal]
+                        : T(@"install.error.install_failed");
                     [[NSFileManager defaultManager] removeItemAtPath:localPath error:nil];
                 }
                 [self postChanged];
@@ -1117,6 +1138,36 @@ NSString *const InstallManagerJobSavedNotification     = @"InstallManagerJobSave
     NSTextCheckingResult *m = re ? [re firstMatchInString:out options:0
                                                     range:NSMakeRange(0, out.length)] : nil;
     return (m && m.range.location != NSNotFound) ? [out substringWithRange:m.range] : nil;
+}
+
+// The line ipainstaller printed to explain why it DECLINED to install, or nil if it never said so.
+// It reports these on stdout and then exits 0 — the same exit code as a success — so the text is
+// the only way to tell a refusal apart from an install. The patterns below are the literal format
+// strings extracted from autopear's binary (`strings /usr/bin/ipainstaller`):
+//     "%s (v%s) requires iOS %s while your system is %s."   ← iOS too old (by far the common one)
+//     "%s (v%s) requires %s while your device is %s."       ← unsupported device / capability
+//     "%s is not a valid IPA."                              ← corrupt or truncated download
+//     "Failed to install %s (v%s)."
+//     "Failed to use force installation mode, %s (v%s) will not be installed."
+//     "Cannot find %s."
+// Matching is done on whole lines so the reason can be shown to the user verbatim.
+- (NSString *)refusalReasonFromInstallerOutput:(NSString *)out {
+    if (!out.length) return nil;
+    NSArray *needles = @[ @"requires ios", @"requires ", @"is not a valid ipa",
+                          @"failed to install", @"failed to use force installation mode",
+                          @"cannot find " ];
+    for (NSString *line in [out componentsSeparatedByString:@"\n"]) {
+        NSString *trimmed = [line stringByTrimmingCharactersInSet:
+                                [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (!trimmed.length) continue;
+        // A line announcing success is never a refusal, whatever else it happens to contain.
+        NSString *lower = trimmed.lowercaseString;
+        if ([lower rangeOfString:@"successfully"].location != NSNotFound) continue;
+        for (NSString *needle in needles) {
+            if ([lower rangeOfString:needle].location != NSNotFound) return trimmed;
+        }
+    }
+    return nil;
 }
 
 // #150: YES if the bundle id is confirmed installed (it appears in `ipainstaller -l`). If we

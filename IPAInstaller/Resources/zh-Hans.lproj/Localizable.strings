@@ -185,6 +185,7 @@
 "install.error.no_ipainstaller" = "找不到 ipainstaller。请从 Cydia 安装「IPA Installer Console」软件包 (搜索: appinst 或 ipainstaller)。";
 "install.error.spawn_failed" = "posix_spawn(%s) 失败: %s";
 "install.error.install_failed" = "安装失败。安装超大应用、或存储空间或内存不足时可能发生 — 请重试、释放一些空间，或尝试其他版本。";
+"install.error.refused" = "安装被拒绝：%@ — 此应用无法在你的设备上运行，重试也没有用。请在版本列表中尝试更旧的版本。";
 "install.error.no_space" = "存储空间不足，无法安装此应用（需要约 %@ 可用空间）。请清理空间后重试。";
 
 /* ===== App detail extras (v1.8.7) ===== */
