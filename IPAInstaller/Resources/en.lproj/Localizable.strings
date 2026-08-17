@@ -193,6 +193,7 @@
 "install.error.no_ipainstaller" = "ipainstaller not found. Install the « IPA Installer Console » package from Cydia (search: appinst or ipainstaller).";
 "install.error.spawn_failed" = "posix_spawn(%s) failed: %s";
 "install.error.install_failed" = "Install failed. This can happen with very large apps, or when storage or memory is low — try again, free up some space, or try a different version.";
+"install.error.refused" = "Install refused: %@ — this app can’t run on your device, so retrying won’t help. Try an older version from the Versions list.";
 "install.error.no_space" = "Not enough free storage to install this app (about %@ free needed). Free up space and try again.";
 
 /* ===== App detail extras (v1.8.7) ===== */

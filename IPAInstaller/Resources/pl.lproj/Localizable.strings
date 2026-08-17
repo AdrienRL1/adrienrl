@@ -193,6 +193,7 @@
 "install.error.no_ipainstaller" = "Nie znaleziono ipainstaller. Zainstaluj pakiet « IPA Installer Console » z Cydia (szukaj: appinst lub ipainstaller).";
 "install.error.spawn_failed" = "posix_spawn(%s) nie powiodło się: %s";
 "install.error.install_failed" = "Instalacja nie powiodła się. Może się to zdarzyć przy bardzo dużych aplikacjach lub gdy brakuje miejsca lub pamięci — spróbuj ponownie, zwolnij miejsce, lub wypróbuj inną wersję.";
+"install.error.refused" = "Instalacja odrzucona: %@ — ta aplikacja nie zadziała na Twoim urządzeniu, więc ponawianie nic nie da. Wypróbuj starszą wersję z listy Wersje.";
 "install.error.no_space" = "Za mało wolnego miejsca aby zainstalować tę aplikację (potrzeba około %@ wolnego). Zwolnij miejsce i spróbuj ponownie.";
 "install.error.arch64" = "Ta aplikacja jest tylko 64-bitowa (arm64) i nie będzie działać na twoim 32-bitowym urządzeniu — została stworzona dla nowszych iPhone'ów/iPadów (iOS 11+). Nie ma tu nic do zainstalowania.";
 
